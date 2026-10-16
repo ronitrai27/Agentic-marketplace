@@ -1,0 +1,50 @@
+Source: https://docs.temporal.io/cloud
+
+# Temporal Cloud guide
+
+> For the complete documentation index, see [llms.txt](https://docs.temporal.io/llms.txt).
+> Any documentation page is available as raw Markdown by appending `.md` to its URL.
+
+> Find guides for onboarding, security, pricing, monitoring, access management, Nexus, and the Cloud Ops API in one place.
+
+Welcome to the Temporal Cloud guide.
+
+In this guide you will find information about Temporal Cloud, onboarding, features, and how to use them.
+
+To create a Temporal Cloud account, sign up [here](https://temporal.io/get-cloud).
+
+**[Get started with Temporal Cloud.](/cloud/get-started)**
+
+## Become familiar with Temporal Cloud
+
+- [Overview of Temporal Cloud](/evaluate/cloud)
+  - [Security model](/evaluate/cloud/security)
+  - [Uptime, latency, and SLOs](/cloud/slo) (uptime and latency objectives, measured latency, and throughput)
+  - [Service Level Agreement (SLA)](https://temporal.io/sla)
+  - [Account, Namespace, and application level configurations](/evaluate/cloud/limits)
+  - [Pricing](/cloud/pricing)
+  - [Support](/evaluate/cloud/support)
+
+## Feature guides
+
+- [Get started with Temporal Cloud](/cloud/get-started)
+  - [Manage certificates](/cloud/certificates)
+  - [Manage API keys](/cloud/api-keys)
+  - [Manage Namespaces](/cloud/namespaces)
+  - [Manage users](/cloud/manage-access/users)
+  - [Manage user groups](/cloud/manage-access/user-groups)
+  - [Manage billing](/cloud/billing)
+  - [Manage Service Accounts](/cloud/manage-access/service-accounts)
+- [API key feature guide](/cloud/api-keys)
+- [Monitor Temporal Cloud](/cloud/monitor)
+  - [Set up Cloud metrics](/cloud/metrics/openmetrics)
+  - [Set up SDK metrics](/cloud/metrics/sdk-metrics-setup)
+  - [Monitor Worker health](/cloud/worker-health)
+  - [Monitor service health](/cloud/service-health)
+  - [Receive notifications](/cloud/notifications)
+- [Temporal Nexus](/cloud/nexus)
+- [SAML authentication feature guide](/cloud/manage-access/saml)
+- [Cloud Ops API](/ops)
+- [Audit logging feature guide](/cloud/audit-logs)
+- [Temporal CLI Cloud extension](/cli/cloud)
+- [`tcld` (Temporal Cloud command-line interface) reference](/cloud/tcld)

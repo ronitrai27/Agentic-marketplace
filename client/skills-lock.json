@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "skills": {
+    "arcjet": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "arcjet/SKILL.md",
+      "computedHash": "63642b0f7472f82b3ac30b197181ae7d85984708e3becddbfd5636b198b47c3c"
+    },
+    "integrate-arcjet-guard-agent-framework-go": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-agent-framework-go/SKILL.md",
+      "computedHash": "566fcb7ca8d90f6b3af2fc80de0561bc87a189b03796d82a351942716edf7f3d"
+    },
+    "integrate-arcjet-guard-claude-agent-sdk-py": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-claude-agent-sdk-py/SKILL.md",
+      "computedHash": "77eec980c12c3c2407284610f69cc5ee1b1306f1810736d99c4a476bf02ae917"
+    },
+    "integrate-arcjet-guard-claude-managed-agents-py": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-claude-managed-agents-py/SKILL.md",
+      "computedHash": "575954a2f4c3da2bc94ae490d5c722f3e4e84cee2a3c98a5112a4941f00e33bb"
+    },
+    "integrate-arcjet-guard-cloudflare-think": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-cloudflare-think/SKILL.md",
+      "computedHash": "ce935d6e15ec0b3d6dcfa3270d10c6cb0b091a47226acc5277d723688930eb47"
+    },
+    "integrate-arcjet-guard-crewai": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-crewai/SKILL.md",
+      "computedHash": "c428c89dfa1ec9280b2a61cea26060959a60d842cad8c5abf45d3e35a4d94124"
+    },
+    "integrate-arcjet-guard-google-adk-py": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-google-adk-py/SKILL.md",
+      "computedHash": "f685fa7f6aeb162c512f04f71d4991ebaefe585ceb3acee865bf6b79440dd0d9"
+    },
+    "integrate-arcjet-guard-langchain-py": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-langchain-py/SKILL.md",
+      "computedHash": "60a497bf040c1f4d015cd3a2dc5a0c850e71e76c482802a57fc7ad6e05cba8b0"
+    },
+    "integrate-arcjet-guard-openai-agents-py": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-openai-agents-py/SKILL.md",
+      "computedHash": "c7c30cbf132eb80743b0b617e774941a866d6641400e7b8be8d266533bbb3f82"
+    },
+    "integrate-arcjet-guard-strands-agents-py": {
+      "source": "arcjet/skills",
+      "sourceType": "github",
+      "skillPath": "integrate-arcjet-guard-strands-agents-py/SKILL.md",
+      "computedHash": "7318e8f4fe05d6ca933fe46f89d8f034262e4a3240ce109cf8b149d76adbbd80"
+    },
+    "temporal-developer": {
+      "source": "temporalio/skill-temporal-developer",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "3b3dc6a2e2dd27901733a5ab10102faaf5240fe38ecbfd9f65aa696f56f42907"
+    }
+  }
+}
