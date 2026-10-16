@@ -1,0 +1,1 @@
+the ideal pattern is an Orchestrator-Worker with Parallel Fan-Out (Map-Reduce) and a Bounded Recursive Feedback Loop.
