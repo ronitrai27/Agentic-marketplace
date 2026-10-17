@@ -7,7 +7,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "test:run": "tsx src/test-run.ts",
-    "trigger:dev": "npx trigger.dev@latest dev"
+    "trigger:dev": "npx trigger.dev@latest dev",
+    "ui": "tsx src/server.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.18",

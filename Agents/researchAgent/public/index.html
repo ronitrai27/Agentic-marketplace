@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deep Research Agent</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Lightweight Markdown Parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Bar -->
+    <header class="chat-header">
+      <div class="header-title">
+        <span class="agent-logo">🔬</span>
+        <strong>Deep Research Agent</strong>
+        <span class="badge" id="status-badge">Ready</span>
+      </div>
+      <div class="header-actions">
+        <button id="clear-btn" title="Clear Chat">Clear</button>
+      </div>
+    </header>
+
+    <!-- Main Chat Feed -->
+    <main class="chat-feed" id="chat-feed">
+      <div class="welcome-card" id="welcome-card">
+        <h2>What would you like to explore?</h2>
+        <p>Ask a quick question or enter a research topic. JEV will evaluate your query and route to instant Chit-chat or a multi-source Deep Research graph.</p>
+        <div class="example-pills">
+          <button class="pill-btn" data-query="Hi! Who are you and what can you do?">💬 "Hi! Who are you?" (Chit-chat)</button>
+          <button class="pill-btn" data-query="Analyze current trends in humanoid robotics manufacturing and venture investment in 2025">🚀 "Humanoid robotics in 2025" (Deep Research)</button>
+          <button class="pill-btn" data-query="Commercialization bottlenecks of solid-state EV batteries">🔋 "Solid-state batteries" (Deep Research)</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Floating Live Telemetry Drawer -->
+    <div class="telemetry-bar" id="telemetry-bar" style="display: none;">
+      <div class="telemetry-header">
+        <span class="telemetry-indicator" id="telemetry-indicator">●</span>
+        <strong id="telemetry-title">Evaluating query...</strong>
+      </div>
+      <div class="telemetry-details" id="telemetry-details"></div>
+    </div>
+
+    <!-- Input Footer -->
+    <footer class="chat-footer">
+      <form id="chat-form" class="chat-input-wrapper">
+        <textarea
+          id="prompt-input"
+          placeholder="Ask a question or enter a research topic..."
+          rows="1"
+          required
+        ></textarea>
+        <button type="submit" id="send-btn" title="Send Prompt">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+          </svg>
+        </button>
+      </form>
+      <div class="footer-note">
+        Powered by JEV-1.14 Guardrails • LangGraph Engine • Trigger.dev • Langfuse Tracing
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
