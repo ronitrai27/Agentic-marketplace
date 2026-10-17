@@ -16,6 +16,7 @@ client/build/
 out/
 build/
 dist/
+.trigger/
 
 # Python & Agents
 __pycache__/

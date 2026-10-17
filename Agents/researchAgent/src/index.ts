@@ -1,6 +1,13 @@
 import { evaluateInputGuardrail } from "./guardrail/jev-guard.js";
 import { generateDirectAnswer } from "./graph/nodes/direct-answer.js";
 import { researchGraph } from "./graph/research-graph.js";
+import { langfuse, createLangfuseHandler } from "./observability/langfuse.js";
+
+export interface AgentExecutionOptions {
+  userId?: string;
+  sessionId?: string;
+  onProgress?: (step: string) => void;
+}
 
 export interface AgentExecutionResult {
   status: "COMPLETED" | "GUARDRAIL_BLOCKED" | "DIRECT_ANSWER";
@@ -12,21 +19,50 @@ export interface AgentExecutionResult {
 }
 
 /**
- * Main execution handler for the Research Agent
+ * Main execution handler for the Research Agent with Langfuse observability
  */
-export async function runResearchAgent(userPrompt: string): Promise<AgentExecutionResult> {
+export async function runResearchAgent(
+  userPrompt: string,
+  options?: AgentExecutionOptions
+): Promise<AgentExecutionResult> {
   const startTime = Date.now();
+  options?.onProgress?.("Initializing request & guardrails");
+
+  // Create Langfuse trace
+  const trace = langfuse.trace({
+    name: "research-agent-run",
+    userId: options?.userId,
+    sessionId: options?.sessionId,
+    input: { prompt: userPrompt },
+    tags: ["research-agent", "production"],
+  });
+
   console.log(`\n======================================================`);
   console.log(`[Research Agent] Received prompt: "${userPrompt}"`);
   console.log(`======================================================`);
 
   // STEP 1: JEV Input Guardrail & Intent Classification
+  options?.onProgress?.("Evaluating input guardrail with JEV");
   console.log("[Phase 1.1] Evaluating input guardrails with JEV...");
   const guard = await evaluateInputGuardrail(userPrompt);
+
+  trace.update({
+    metadata: {
+      guardrailScores: guard.scores,
+      isAllowed: guard.isAllowed,
+      needsResearch: guard.needsResearch,
+    },
+  });
 
   if (!guard.isAllowed) {
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     console.warn(`[Guardrail] Request rejected: ${guard.rejectionReason}`);
+
+    trace.update({
+      output: { error: guard.rejectionReason, status: "GUARDRAIL_BLOCKED" },
+    });
+    await langfuse.flushAsync();
+
     return {
       status: "GUARDRAIL_BLOCKED",
       prompt: userPrompt,
@@ -39,9 +75,16 @@ export async function runResearchAgent(userPrompt: string): Promise<AgentExecuti
 
   // STEP 2: Intent Routing (Direct Answer vs. Deep Research)
   if (!guard.needsResearch) {
+    options?.onProgress?.("Generating quick response with Groq");
     console.log("[Phase 1.2] Prompt identified as conversational / direct question. Routing to Groq...");
     const directAns = await generateDirectAnswer(userPrompt);
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
+
+    trace.update({
+      output: { answer: directAns, status: "DIRECT_ANSWER" },
+    });
+    await langfuse.flushAsync();
+
     return {
       status: "DIRECT_ANSWER",
       prompt: userPrompt,
@@ -53,11 +96,23 @@ export async function runResearchAgent(userPrompt: string): Promise<AgentExecuti
   }
 
   // STEP 3: Deep Research Graph Execution
+  options?.onProgress?.("Starting deep research with LangGraph & Firecrawl");
   console.log("[Phase 1.3] Topic requires deep multi-source research. Initiating LangGraph research engine...");
-  
-  const graphResult: any = await researchGraph.invoke({
-    topic: userPrompt,
+
+  const langfuseHandler = createLangfuseHandler({
+    userId: options?.userId,
+    sessionId: options?.sessionId,
+    tags: ["langgraph-deep-research"],
   });
+
+  const graphResult: any = await researchGraph.invoke(
+    {
+      topic: userPrompt,
+    },
+    {
+      callbacks: [langfuseHandler],
+    }
+  );
 
   const durationSeconds = Math.round((Date.now() - startTime) / 1000);
   const totalSources = graphResult.sections?.flatMap((s: any) => s.sources || []).length || 0;
@@ -66,6 +121,16 @@ export async function runResearchAgent(userPrompt: string): Promise<AgentExecuti
   console.log(`[Research Agent] Completed in ${durationSeconds}s (${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s)`);
   console.log(`[Research Agent] Total Sources Referenced: ${totalSources}`);
   console.log(`======================================================`);
+
+  trace.update({
+    output: {
+      reportLength: graphResult.finalReport?.length || 0,
+      sourcesCount: totalSources,
+      sectionsCount: graphResult.sections?.length || 0,
+      status: "COMPLETED",
+    },
+  });
+  await langfuse.flushAsync();
 
   return {
     status: "COMPLETED",

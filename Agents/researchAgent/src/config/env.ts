@@ -22,6 +22,11 @@ export const ENV = {
   FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY || "",
   SERPAPI_KEY: process.env.SERPAI_KEY || process.env.SERPAPI_API_KEY || "",
   
+  // Langfuse Observability
+  LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY?.replace(/"/g, "") || "",
+  LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY?.replace(/"/g, "") || "",
+  LANGFUSE_BASE_URL: process.env.LANGFUSE_BASE_URL?.replace(/"/g, "") || "https://hipaa.cloud.langfuse.com",
+  
   // Guardrail thresholds
   JEV_OFFENSIVE_THRESHOLD: 0.5,
   JEV_RESEARCH_THRESHOLD: 0.5,
