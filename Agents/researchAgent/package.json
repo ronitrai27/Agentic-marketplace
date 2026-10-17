@@ -1,0 +1,27 @@
+{
+  "name": "research-agent",
+  "version": "1.0.0",
+  "description": "Long-running Deep Research Agent using LangGraph, Firecrawl, SerpAPI, and JEV Guardrails",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test:run": "tsx src/test-run.ts"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.18",
+    "@langchain/groq": "^1.3.1",
+    "@langchain/langgraph": "^1.5.1",
+    "@langchain/openai": "^1.6.2",
+    "@mendable/firecrawl-js": "^4.46.0",
+    "dotenv": "^18.0.8",
+    "openai": "^7.36.0",
+    "serpapi": "^2.2.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
