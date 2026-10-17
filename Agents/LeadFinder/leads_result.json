@@ -1,0 +1,296 @@
+{
+  "search_criteria": "find 20 coffee shops and their owner in ludhiana",
+  "target_count": 20,
+  "total_found": 20,
+  "rounds_executed": 5,
+  "stopped_reason": "TARGET_REACHED",
+  "leads": [
+    {
+      "title": "Crazy Coffee | Ludhiana, Punjab",
+      "primary_url": "https://www.crazycoffeeindia.com/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 63760 12386",
+      "location": "B/1, Ground Floor, B-19-353/B & B-19-353, Dr Hira Singh Rd, near Khalsa College for Women, Ghumar Mandi, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.9,
+        "has_website": true
+      }
+    },
+    {
+      "title": "HeeBee Coffee",
+      "primary_url": "https://heebee.in/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 77173 11870",
+      "location": "48, I Block Rd, I - Block, Sarabha Nagar, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.3,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Cafe Rue 18",
+      "primary_url": "https://www.instagram.com/caferue18",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 86996 16629",
+      "location": "Sukhmani Enclave, Canal Rd, Barewal Awana, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.4,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Coso Cafe",
+      "primary_url": "https://serpapi.com/search.json?engine=google_maps&google_domain=google.com&hl=en&place_id=ChIJAxLNu9iDGjkRFV51UVGgfxY",
+      "match_reason": "Verified match for coffee shops in ludhiana (No website - Maps listing only).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 79860 52499",
+      "location": "Sector 32, Sector 32A, Ludhiana, Punjab 141003, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.8,
+        "has_website": false
+      }
+    },
+    {
+      "title": "Barista Cafe",
+      "primary_url": "http://barista.co.in/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 98762 32315",
+      "location": "Sco49 , lower ground floor, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.7,
+        "has_website": true
+      }
+    },
+    {
+      "title": "The Cat Caffé & Ristorant",
+      "primary_url": "https://landing-builder-328.preview.emergentagent.com/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 91155 91000",
+      "location": "355, Dr, Dr Hira Singh Rd, Sant Nagar, Civil Lines, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.7,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Nothing Before Coffee Cafe - Ludhiana",
+      "primary_url": "https://stores.nothingbeforecoffee.com/nothing-before-coffee-in-ludhiana-85025",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 92160 63641",
+      "location": "SCF 20, Sarabha Nagar Main Market, KSS Nagar, Sarabha Nagar, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.9,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Tealogy, Model Town Extension, Ludhiana",
+      "primary_url": "http://sites.google.com/view/tealogyludhiana/home",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 98346 99844",
+      "location": "Oberoi Tower, 331-A/1, Krishna Mandir Rd, near Ishmeet Singh Chowk, opposite Chennai maratha, Nehru Nagar, Model Town Extension, Model Town, Ludhiana, Punjab 141002, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.8,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Chai Sutta Bar Ludhiana",
+      "primary_url": "https://www.chaisuttabarindia.com/locations/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 99880 08523",
+      "location": "Tuition Market, SCO 1 , GroundFloor, Model Town Extension, Ludhiana, Punjab 141002, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.2,
+        "has_website": true
+      }
+    },
+    {
+      "title": "RAASTA LUDHIANA",
+      "primary_url": "http://www.raastaludhiana.com/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 70830 00093",
+      "location": "VICTORIA MARKET, Pritm Nagar, Model Town, Ludhiana, Punjab 141002, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.8,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Barista",
+      "primary_url": "https://stores.barista.co.in/store-pages/barista-coffee-model-town-ludhiana/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 93193 92273",
+      "location": "SHOP NO B, 224 / L, near GULATI CHOWK, Pritm Nagar, Model Town, Ludhiana, Punjab 141002, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.2,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Starbucks - Sarabha Nagar",
+      "primary_url": "https://stores.starbucks.in/store-pages/starbucks-ludhiana/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 1860 266 0010",
+      "location": "Ground Floor, No 5F, Sat Paul Mittal Rd, F-Block, Sarabha Nagar, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.4,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Tim Hortons",
+      "primary_url": "https://timhortonsindia.com/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 88288 14090",
+      "location": "93A, Sarabha Nagar Rd, A - Block, Sarabha Nagar, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.8,
+        "has_website": true
+      }
+    },
+    {
+      "title": "The Ozasco",
+      "primary_url": "https://theozasco.com/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": null,
+      "location": "J, Gurmeet, J Block, 142, Sarabha Nagar, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.8,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Blue Tokai Coffee Roasters | Downtown Market",
+      "primary_url": "https://stores.bluetokaicoffee.com/blue-tokai-coffee-roasters-downtown-market-cafe-bhai-randhir-singh-nagar-ludhiana-562853/Home?utm_source=locator&utm_medium=googleplaces",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 87962 17300",
+      "location": "Ground Floor, Downtown Market, SCO 86, Block F Marg, Sunet, GHS Sunet, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.8,
+        "has_website": true
+      }
+    },
+    {
+      "title": "The Coffee Bean & Tea Leaf",
+      "primary_url": "https://coffeebean.in/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 93119 13478",
+      "location": "Ground Floor, Downtown Market, SCF 78, Block F Marg, Sunet, GHS Sunet, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.6,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Third Wave Coffee - Wave Mall Ludhiana",
+      "primary_url": "https://stores.thirdwavecoffeeroasters.com/store-pages/third-wave-coffee-wave-mall-ludhiana",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 91801 01091",
+      "location": "Wave Mall, Plot No. 2&3, Ferozepur Rd, Housing Board Colony, Bhai Randhir Singh Nagar, Ludhiana, Punjab 141012, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.6,
+        "has_website": true
+      }
+    },
+    {
+      "title": "Triesto Cafe - Coffee Roasters & Italian Kitchen",
+      "primary_url": "https://www.triesto.in/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 82888 31389",
+      "location": "Punjab Agricultural University New Student Centre, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.6,
+        "has_website": true
+      }
+    },
+    {
+      "title": "RAKH BAGH CAFE",
+      "primary_url": "http://main.mcludhiana.gov.in/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": null,
+      "location": "29A, Club Rd, Officers Colony, Rakh Bagh, Civil Lines, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.3,
+        "has_website": true
+      }
+    },
+    {
+      "title": "The Coffee Bean & Tea Leaf Pavilion",
+      "primary_url": "http://www.coffeebean.com/",
+      "match_reason": "Verified match for coffee shops in ludhiana (Website verified).",
+      "contact_name": null,
+      "email": null,
+      "phone": "+91 161 466 2285",
+      "location": "Lower Ground Floor, Pavilion Mall, Kailash Cinema Rd, Fountain Chowk, Civil Lines, Ludhiana, Punjab 141001, India",
+      "social_links": [],
+      "attributes": {
+        "rating": 4.1,
+        "has_website": true
+      }
+    }
+  ],
+  "jev_telemetry": {
+    "evaluated": true,
+    "model": "typesafe/jev-1.14",
+    "satisfied": true,
+    "confidence": 0.95,
+    "raw_decision": {}
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "lead-finder-agent",
+  "version": "1.0.0",
+  "description": "Trigger.dev Durable Long-Running Lead Generation Agent with Pydantic AI, SerpAPI, Firecrawl, and JEV",
+  "type": "module",
+  "scripts": {
+    "trigger:dev": "npx trigger.dev@latest dev",
+    "test:run": "tsx test-trigger.ts"
+  },
+  "dependencies": {
+    "@trigger.dev/sdk": "4.7.4",
+    "dotenv": "^18.0.8"
+  },
+  "devDependencies": {
+    "@trigger.dev/build": "4.7.4",
+    "@types/node": "^26.6.5",
+    "trigger.dev": "^4.7.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

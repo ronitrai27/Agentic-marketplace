@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LeadFinder — Autonomous Discovery Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="12 8 8 12 12 16 16 12 12 8"></polygon>
+          </svg>
+        </div>
+        <span class="brand-name">LeadFinder</span>
+        <span class="version-tag">Pydantic AI + Trigger.dev</span>
+      </div>
+
+      <div class="system-pills">
+        <div class="pill"><span class="dot online"></span> Engine: SerpAPI Google Maps</div>
+        <div class="pill"><span class="dot purple"></span> JEV: typesafe/jev-1.14 Intent & Eval</div>
+      </div>
+    </header>
+
+    <!-- Main Command Interface -->
+    <main class="main-content">
+      <section class="command-section">
+        <div class="input-card">
+          <div class="input-row">
+            <div class="search-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <input 
+              id="promptInput" 
+              type="text" 
+              placeholder="Give a lead discovery command (e.g. find 20 coffee shops and their owner in ludhiana)..."
+              autocomplete="off"
+            />
+            <div class="target-control">
+              <label for="targetCount">Target:</label>
+              <input id="targetCount" type="number" value="20" min="1" max="100" />
+            </div>
+            <button id="runBtn" class="btn-primary">
+              <span>Run Agent</span>
+              <kbd>↵</kbd>
+            </button>
+          </div>
+
+          <div class="quick-prompts">
+            <span class="quick-label">Quick benchmarks:</span>
+            <button class="quick-chip" data-query="find 20 coffee shops and their owner in ludhiana" data-target="20">
+              ☕ 20 coffee shops & owners in Ludhiana
+            </button>
+            <button class="quick-chip" data-query="find me 6 jewellery business in ludhiana that doesn't own a website" data-target="6">
+              💎 6 jewellery shops (no website)
+            </button>
+            <button class="quick-chip" data-query="find 50 B2B SaaS devtools startups in India" data-target="50">
+              ⚡ 50 B2B SaaS startups
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Execution Monitor -->
+      <section id="monitorSection" class="monitor-section hidden">
+        <!-- Live Status Bar -->
+        <div class="status-bar">
+          <div class="status-item">
+            <span class="label">Doing What:</span>
+            <div class="status-active">
+              <span class="pulse-indicator"></span>
+              <span id="currentAction">Initializing Agent...</span>
+            </div>
+          </div>
+
+          <div class="status-item">
+            <span class="label">Live Timer:</span>
+            <span id="timerDisplay" class="timer-value">00:00.0</span>
+          </div>
+
+          <div class="status-item">
+            <span class="label">Leads Gathered:</span>
+            <span id="leadsCountBadge" class="count-badge">0 / 20</span>
+          </div>
+        </div>
+
+        <!-- Telemetry Split View -->
+        <div class="telemetry-grid">
+          <!-- Sites Visited Panel -->
+          <div class="telemetry-card">
+            <div class="card-header">
+              <div class="card-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                Sites & Places Visited
+              </div>
+              <span id="sitesVisitedCount" class="counter-tag">0</span>
+            </div>
+            <div id="sitesList" class="sites-container">
+              <div class="empty-state">No sites visited yet...</div>
+            </div>
+          </div>
+
+          <!-- SSE Real-Time Event Stream Log -->
+          <div class="telemetry-card">
+            <div class="card-header">
+              <div class="card-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="4 17 10 11 4 5"></polyline>
+                  <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+                Real-Time SSE Event Stream
+              </div>
+              <span class="live-tag">LIVE SSE</span>
+            </div>
+            <div id="eventLogs" class="logs-container">
+              <!-- Logs stream here -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- JEV Output Satisfaction & Report Section -->
+      <section id="resultsSection" class="results-section hidden">
+        <!-- JEV Results Box -->
+        <div id="jevCard" class="jev-card">
+          <div class="jev-header">
+            <div class="jev-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              TypeSafe JEV-1.14 Satisfaction Telemetry
+            </div>
+            <span id="jevDecisionPill" class="decision-pill">EVALUATING</span>
+          </div>
+          <div class="jev-body">
+            <div class="jev-metric">
+              <span class="metric-label">Confidence Score</span>
+              <span id="jevConfidence" class="metric-value">--</span>
+            </div>
+            <div class="jev-metric">
+              <span class="metric-label">User Intent Match</span>
+              <span id="jevMatchStatus" class="metric-value">--</span>
+            </div>
+            <div class="jev-metric full-width">
+              <span class="metric-label">Model Verdict</span>
+              <p id="jevVerdict" class="verdict-text">Verifying query fulfillment...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export Toolbar -->
+        <div class="results-toolbar">
+          <div class="results-meta">
+            <h2 id="resultsHeading">Extracted Leads (0)</h2>
+            <span id="stoppedReasonTag" class="reason-tag">TARGET_REACHED</span>
+          </div>
+          <div class="export-actions">
+            <a id="downloadCsvBtn" class="btn-secondary" download="leads.csv" href="#">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Download CSV
+            </a>
+            <a id="downloadJsonBtn" class="btn-secondary" download="leads.json" href="#">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 16 12 12 8 16"></polyline>
+                <line x1="12" y1="12" x2="12" y2="21"></line>
+                <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+              </svg>
+              Download JSON
+            </a>
+          </div>
+        </div>
+
+        <!-- Leads Table -->
+        <div class="table-container">
+          <table class="leads-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Title & Name</th>
+                <th>Primary URL</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>Contact / Owner</th>
+                <th>Location</th>
+                <th>Match Reason</th>
+              </tr>
+            </thead>
+            <tbody id="leadsTableBody">
+              <!-- Rendered leads -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
