@@ -183,6 +183,7 @@ export function SpaceChefMascot() {
           <TooltipProvider>
             <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
               <TooltipTrigger
+                render={<div />}
                 onClick={handleMascotClick}
                 className="inline-block cursor-pointer outline-none focus:outline-none bg-transparent border-0 p-0 transition-transform active:scale-95"
               >
