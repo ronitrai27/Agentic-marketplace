@@ -44,12 +44,12 @@
             <input 
               id="promptInput" 
               type="text" 
-              placeholder="Give a lead discovery command (e.g. find 20 coffee shops and their owner in ludhiana)..."
+              placeholder="Ask for any leads (e.g. Find 20 SaaS companies in the USA with name, website, industry, and LinkedIn URL)..."
               autocomplete="off"
             />
             <div class="target-control">
               <label for="targetCount">Target:</label>
-              <input id="targetCount" type="number" value="20" min="1" max="100" />
+              <input id="targetCount" type="number" value="10" min="1" max="100" />
             </div>
             <button id="runBtn" class="btn-primary">
               <span>Run Agent</span>
@@ -58,15 +58,15 @@
           </div>
 
           <div class="quick-prompts">
-            <span class="quick-label">Quick benchmarks:</span>
-            <button class="quick-chip" data-query="find 20 coffee shops and their owner in ludhiana" data-target="20">
-              ☕ 20 coffee shops & owners in Ludhiana
+            <span class="quick-label">Try any prompt:</span>
+            <button class="quick-chip" data-query="Find 10 AI startups in India with their company name and website." data-target="10">
+              🚀 10 AI Startups in India
             </button>
-            <button class="quick-chip" data-query="find me 6 jewellery business in ludhiana that doesn't own a website" data-target="6">
-              💎 6 jewellery shops (no website)
+            <button class="quick-chip" data-query="Find 20 SaaS companies in the USA and return their name, website, industry, and LinkedIn URL." data-target="20">
+              ⚡ 20 US SaaS Companies
             </button>
-            <button class="quick-chip" data-query="find 50 B2B SaaS devtools startups in India" data-target="50">
-              ⚡ 50 B2B SaaS startups
+            <button class="quick-chip" data-query="Find 10 solar energy installers in Texas with company name, phone, and website." data-target="10">
+              ☀️ 10 Solar Installers in Texas
             </button>
           </div>
         </div>
@@ -192,17 +192,8 @@
         <!-- Leads Table -->
         <div class="table-container">
           <table class="leads-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Title & Name</th>
-                <th>Primary URL</th>
-                <th>Phone</th>
-                <th>Email</th>
-                <th>Contact / Owner</th>
-                <th>Location</th>
-                <th>Match Reason</th>
-              </tr>
+            <thead id="leadsTableHead">
+              <!-- Dynamically populated from lead.data keys -->
             </thead>
             <tbody id="leadsTableBody">
               <!-- Rendered leads -->

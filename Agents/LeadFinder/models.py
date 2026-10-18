@@ -4,73 +4,55 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-class LeadItem(BaseModel):
+class UniversalLeadSpec(BaseModel):
     """
-    Domain-agnostic lead representation.
-    Only title, primary_url, and match_reason are mandatory.
-    All other contact/location fields and attributes are optional.
+    Dynamically planned specification extracted from ANY user prompt.
+    Zero hardcoding.
     """
-    # Mandatory core fields
-    title: str = Field(
-        ...,
-        description="Name of the company, business, shop, organization, or individual.",
+    target_count: int = Field(default=10, description="Number of leads requested by user")
+    entity_description: str = Field(description="Description of what is being searched for")
+    required_fields: List[str] = Field(
+        description="Exact fields/columns the user wants extracted (e.g. ['company_name', 'website', 'careers_page', 'employee_range'])"
     )
-    primary_url: str = Field(
-        ...,
-        description="Official website URL, Google Maps place link, or canonical social profile.",
-    )
-    match_reason: str = Field(
-        ...,
-        description="Short 1-2 sentence evidence explaining why this lead matches the search criteria.",
-    )
-
-    # Optional contact & location fields
-    contact_name: Optional[str] = Field(
-        default=None,
-        description="Key contact person, founder, or manager if identifiable.",
-    )
-    email: Optional[str] = Field(
-        default=None,
-        description="Contact email address if found in listing or site.",
-    )
-    phone: Optional[str] = Field(
-        default=None,
-        description="Contact phone number with area/country code.",
-    )
-    location: Optional[str] = Field(
-        default=None,
-        description="Physical address, city, neighborhood, or operational region.",
-    )
-    social_links: List[str] = Field(
+    constraints: List[str] = Field(
         default_factory=list,
-        description="Associated social profile URLs (Instagram, Facebook, LinkedIn, X).",
+        description="Every condition, filter, and negative/positive rule the Critic must strictly verify"
     )
-
-    # Domain-agnostic flexible attributes
-    attributes: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Domain-specific key-values (e.g. rating, reviews, price_level, open_hours, categories).",
+    preferred_engine: str = Field(
+        default="google",
+        description="'google_maps' for local/city physical venues, 'google' for companies, startups, SaaS, digital, funds"
     )
-
-
-class BatchExtractionResult(BaseModel):
-    """Structured output returned by the Pydantic AI agent on each iteration."""
-    query_used: str = Field(
-        ...,
-        description="The query string and parameters used during this batch.",
-    )
-    leads: List[LeadItem] = Field(
+    initial_search_queries: List[str] = Field(
         default_factory=list,
-        description="List of verified leads extracted from search results in this batch.",
+        description="Initial search query strings tailored to find these entities"
     )
 
 
-class FinalLeadReport(BaseModel):
-    """Aggregated final report returned to the caller."""
-    search_criteria: str
+class UniversalLead(BaseModel):
+    """
+    A single lead containing dynamic fields matching exactly what the user asked for.
+    """
+    data: Dict[str, Any] = Field(
+        description="Key-value pairs matching exactly the user's required fields"
+    )
+    source_url: str = Field(
+        default="",
+        description="Primary evidence or source URL where this entity was found/verified"
+    )
+    critic_verdict: str = Field(
+        default="",
+        description="Explanation from the Critic confirming why this lead satisfies all user constraints"
+    )
+
+
+class UniversalLeadReport(BaseModel):
+    """Final aggregated report containing dynamic leads and telemetry."""
+    user_prompt: str
     target_count: int
     total_found: int
+    required_fields: List[str]
+    constraints_enforced: List[str]
     rounds_executed: int
     stopped_reason: str
-    leads: List[LeadItem]
+    leads: List[UniversalLead]
     jev_telemetry: Optional[Dict[str, Any]] = None

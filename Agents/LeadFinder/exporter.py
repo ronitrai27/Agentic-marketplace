@@ -4,11 +4,11 @@ import csv
 import json
 from pathlib import Path
 from typing import Union
-from models import FinalLeadReport, LeadItem
+from models import UniversalLeadReport
 
 
-def export_to_json(report: FinalLeadReport, filepath: Union[str, Path]) -> Path:
-    """Exports FinalLeadReport to a formatted JSON file."""
+def export_to_json(report: UniversalLeadReport, filepath: Union[str, Path]) -> Path:
+    """Exports UniversalLeadReport to formatted JSON."""
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -16,56 +16,39 @@ def export_to_json(report: FinalLeadReport, filepath: Union[str, Path]) -> Path:
     return path
 
 
-def export_to_csv(report: FinalLeadReport, filepath: Union[str, Path]) -> Path:
+def export_to_csv(report: UniversalLeadReport, filepath: Union[str, Path]) -> Path:
     """
-    Exports FinalLeadReport leads to a clean, outreach-ready CSV file.
-    Compatible with Google Sheets, Excel, Instantly, Apollo, and HubSpot.
+    Exports dynamic leads to CSV.
+    Headers are generated dynamically from the user's required_fields.
     """
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    headers = [
-        "Title",
-        "Primary URL",
-        "Phone",
-        "Email",
-        "Contact Person",
-        "Location",
-        "Match Reason",
-        "Social Links",
-        "Rating",
-        "Reviews Count",
-        "Extra Attributes",
-    ]
+    # Determine dynamic columns from report required_fields and leads
+    fields = list(report.required_fields)
+    for lead in report.leads:
+        for k in lead.data.keys():
+            if k not in fields:
+                fields.append(k)
+
+    headers = [f.replace("_", " ").title() for f in fields] + ["Evidence Source URL", "Critic Audit Verdict"]
 
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(headers)
 
         for lead in report.leads:
-            socials_str = "; ".join(lead.social_links) if lead.social_links else ""
-            rating = lead.attributes.get("rating", "")
-            reviews = lead.attributes.get("reviews_count", "")
-            
-            # Format remaining attributes cleanly
-            other_attrs = {
-                k: v for k, v in lead.attributes.items()
-                if k not in ("rating", "reviews_count")
-            }
-            attrs_str = json.dumps(other_attrs, ensure_ascii=False) if other_attrs else ""
-
-            writer.writerow([
-                lead.title,
-                lead.primary_url,
-                lead.phone or "",
-                lead.email or "",
-                lead.contact_name or "",
-                lead.location or "",
-                lead.match_reason,
-                socials_str,
-                rating,
-                reviews,
-                attrs_str,
-            ])
+            row = []
+            for f in fields:
+                val = lead.data.get(f)
+                if val is None:
+                    row.append("")
+                elif isinstance(val, (list, dict)):
+                    row.append(json.dumps(val, ensure_ascii=False))
+                else:
+                    row.append(str(val))
+            row.append(lead.source_url)
+            row.append(lead.critic_verdict)
+            writer.writerow(row)
 
     return path
