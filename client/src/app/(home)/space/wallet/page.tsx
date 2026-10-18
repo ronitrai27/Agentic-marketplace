@@ -147,51 +147,69 @@ export default function WalletPage() {
       {/* Balance Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {/* Total Balance */}
-        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4">
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            Total Balance
-          </span>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold text-foreground tracking-tight">
-              {totalCredits.toLocaleString()}
+        <div className="relative overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800 bg-linear-to-br from-white to-gray-100 dark:from-neutral-950 dark:to-neutral-950 p-4">
+          <div className="relative z-10">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+              Total Balance
             </span>
-            <span className="text-xs text-muted-foreground">credits</span>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-2xl font-semibold text-foreground tracking-tight">
+                {totalCredits.toLocaleString()}
+              </span>
+              <span className="text-xs text-muted-foreground">credits</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              ≈ ${totalUsd} USD
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            ≈ ${totalUsd} USD
-          </p>
+          <Wallet
+            className="absolute right-3.5 bottom-3.5 h-12 w-12 text-muted-foreground/15 pointer-events-none select-none"
+            strokeWidth={1.5}
+          />
         </div>
 
         {/* Available for Withdrawal */}
-        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4">
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            Available to Withdraw
-          </span>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold text-foreground tracking-tight">
-              ${withdrawableUsd}
+        <div className="relative overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800 bg-linear-to-br from-white to-gray-100 dark:from-neutral-950 dark:to-neutral-950 p-4">
+          <div className="relative z-10">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+              Available to Withdraw
             </span>
-            <span className="text-xs text-muted-foreground">USD</span>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-2xl font-semibold text-foreground tracking-tight">
+                ${withdrawableUsd}
+              </span>
+              <span className="text-xs text-muted-foreground">USD</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {withdrawableCredits.toLocaleString()} credits ($5 reserve locked)
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {withdrawableCredits.toLocaleString()} credits ($5 reserve locked)
-          </p>
+          <ArrowUpRight
+            className="absolute right-3.5 bottom-3.5 h-12 w-12 text-muted-foreground/15 pointer-events-none select-none"
+            strokeWidth={1.5}
+          />
         </div>
 
         {/* Escrow Hold */}
-        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4">
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            In Escrow / Hold
-          </span>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold text-foreground tracking-tight">
-              ${escrowUsd}
+        <div className="relative overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800 bg-linear-to-br from-white to-gray-100 dark:from-neutral-950 dark:to-neutral-950 p-4">
+          <div className="relative z-10">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+              In Escrow / Hold
             </span>
-            <span className="text-xs text-muted-foreground">USD</span>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-2xl font-semibold text-foreground tracking-tight">
+                ${escrowUsd}
+              </span>
+              <span className="text-xs text-muted-foreground">USD</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {escrowCredits.toLocaleString()} credits held for active tasks
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {escrowCredits.toLocaleString()} credits held for active tasks
-          </p>
+          <Lock
+            className="absolute right-3.5 bottom-3.5 h-12 w-12 text-muted-foreground/15 pointer-events-none select-none"
+            strokeWidth={1.5}
+          />
         </div>
       </div>
 
@@ -486,7 +504,7 @@ export default function WalletPage() {
       )}
 
       {/* Enterprise Platform Financial Disclosures & Regulatory Compliance */}
-      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 space-y-4">
+      <div className=" p-5 space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-900 pb-3">
           <div className="flex items-center gap-2">
             <Building2 className="size-4 text-muted-foreground" />
@@ -494,14 +512,11 @@ export default function WalletPage() {
               Treasury, Settlement & Regulatory Disclosures
             </h3>
           </div>
-          <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-900 text-muted-foreground border border-neutral-200/60 dark:border-neutral-800/60">
-            Compliance Spec v2.6
-          </span>
         </div>
 
         <div className="flex flex-col space-y-4 text-xs text-muted-foreground">
           {/* Section 1 */}
-          <div className="space-y-1.5 border-l-2 border-neutral-300 dark:border-neutral-700 pl-3">
+          <div className="space-y-1.5 border-l-2 border-yellow-300 dark:border-yellow-400 pl-3">
             <div className="flex items-center gap-1.5 text-foreground font-semibold">
               <Scale className="size-3.5" />
               <span>1. Regulatory Banking & Cross-Border Framework</span>
@@ -522,7 +537,7 @@ export default function WalletPage() {
           </div>
 
           {/* Section 2 */}
-          <div className="space-y-1.5 border-l-2 border-neutral-300 dark:border-neutral-700 pl-3">
+          <div className="space-y-1.5 border-l-2 border-yellow-300 dark:border-yellow-400 pl-3">
             <div className="flex items-center gap-1.5 text-foreground font-semibold">
               <Lock className="size-3.5" />
               <span>
@@ -542,7 +557,7 @@ export default function WalletPage() {
           </div>
 
           {/* Section 3 */}
-          <div className="space-y-1.5 border-l-2 border-neutral-300 dark:border-neutral-700 pl-3">
+          <div className="space-y-1.5 border-l-2 border-yellow-300 dark:border-yellow-400 pl-3">
             <div className="flex items-center gap-1.5 text-foreground font-semibold">
               <ShieldCheck className="size-3.5" />
               <span>3. Escrow Custody & Cryptographic Verification Gate</span>
@@ -558,7 +573,7 @@ export default function WalletPage() {
           </div>
 
           {/* Section 4 */}
-          <div className="space-y-1.5 border-l-2 border-neutral-300 dark:border-neutral-700 pl-3">
+          <div className="space-y-1.5 border-l-2 border-yellow-300 dark:border-yellow-400 pl-3">
             <div className="flex items-center gap-1.5 text-foreground font-semibold">
               <FileText className="size-3.5" />
               <span>
