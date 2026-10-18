@@ -32,6 +32,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | {
                 data: {
                   createdAt: number;
+                  credits?: number;
                   email: string;
                   emailVerified: boolean;
                   hearAboutUs?: string;
@@ -118,6 +119,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "onboardingCompleted"
                     | "hearAboutUs"
                     | "primaryUse"
+                    | "credits"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -314,6 +316,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "onboardingCompleted"
                     | "hearAboutUs"
                     | "primaryUse"
+                    | "credits"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -562,6 +565,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 model: "user";
                 update: {
                   createdAt?: number;
+                  credits?: number;
                   email?: string;
                   emailVerified?: boolean;
                   hearAboutUs?: string;
@@ -585,6 +589,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "onboardingCompleted"
                     | "hearAboutUs"
                     | "primaryUse"
+                    | "credits"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
@@ -806,6 +811,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 model: "user";
                 update: {
                   createdAt?: number;
+                  credits?: number;
                   email?: string;
                   emailVerified?: boolean;
                   hearAboutUs?: string;
@@ -829,6 +835,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "onboardingCompleted"
                     | "hearAboutUs"
                     | "primaryUse"
+                    | "credits"
                     | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:

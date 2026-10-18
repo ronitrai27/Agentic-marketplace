@@ -13,6 +13,7 @@ export default defineSchema({
     onboardingCompleted: v.optional(v.boolean()),
     hearAboutUs: v.optional(v.string()),
     primaryUse: v.optional(v.string()),
+    credits: v.optional(v.number()),
   }).index("email", ["email"]),
 
   session: defineTable({

@@ -3,6 +3,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
 import { ThemeToggle } from "@/modules/space/components/theme-toggle";
+import { NotificationButton } from "@/modules/space/components/notification-button";
+import { WalletBadge } from "@/modules/space/components/wallet-badge";
 import { HeaderUserMenu } from "@/modules/space/components/header-user-menu";
 
 export const metadata: Metadata = {
@@ -28,9 +30,11 @@ export default function HomeLayout({
             {/* Left slot (breadcrumbs, etc.) */}
             <div className="flex items-center gap-2" />
 
-            {/* Right slot: theme toggle and user avatar with dropdown */}
+            {/* Right slot: theme toggle, notification, wallet badge, and user avatar with dropdown */}
             <div className="flex items-center gap-2">
+              <WalletBadge />
               <ThemeToggle />
+              <NotificationButton />
               <HeaderUserMenu />
             </div>
           </header>

@@ -58,6 +58,13 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
           input: true,
           returned: true,
         },
+        credits: {
+          type: "number",
+          required: false,
+          defaultValue: 0,
+          input: true,
+          returned: true,
+        },
       },
     },
     emailAndPassword: {
