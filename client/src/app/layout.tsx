@@ -29,7 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       suppressHydrationWarning
       className={cn(
-        "h-full",
+        "h-full overflow-hidden",
         "antialiased",
         geistSans.variable,
         geistMono.variable,
@@ -37,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         inter.variable,
       )}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="h-screen max-h-screen overflow-hidden flex flex-col">
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

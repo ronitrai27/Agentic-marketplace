@@ -13,6 +13,7 @@
     "@arcjet/next": "^1.14.1",
     "@base-ui/react": "^1.9.0",
     "@convex-dev/better-auth": "^0.12.5",
+    "@paypal/react-paypal-js": "^10.6.0",
     "@shadcn/react": "^0.3.1",
     "@t3-oss/env-nextjs": "^0.13.11",
     "better-auth": "1.6.15",
