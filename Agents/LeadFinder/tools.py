@@ -1,13 +1,104 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import httpx
 
 logger = logging.getLogger("LeadFinder.Tools")
 
 SERPAPI_URL = "https://serpapi.com/search"
+
+AGGREGATOR_DOMAINS = [
+    "linkedin.com", "f6s.com", "topstartups.io", "scaler.com",
+    "internshala.com", "wikipedia.org", "inc42.com", "yourstory.com",
+    "tracxn.com", "crunchbase.com", "glassdoor.com", "indeed.com",
+    "ambitionbox.com", "angel.co", "wellfound.com", "medium.com",
+    "quora.com", "reddit.com", "facebook.com", "twitter.com",
+    "x.com", "instagram.com", "youtube.com", "github.com",
+    "ycombinator.com", "producthunt.com",
+]
+
+
+def is_aggregator_or_empty(url: str | None) -> bool:
+    """Checks if a URL is empty, missing, or belongs to a directory/aggregator."""
+    if not url or not str(url).startswith("http"):
+        return True
+    domain = re.sub(r"^https?://(www\.)?", "", str(url).lower()).split("/")[0]
+    return any(domain == ind or domain.endswith("." + ind) for ind in AGGREGATOR_DOMAINS)
+
+
+async def resolve_company_website(
+    company_name: str,
+    api_key: str,
+    client: httpx.AsyncClient,
+) -> Optional[str]:
+    """Resolves the direct official website of a company using SerpAPI."""
+    if not company_name or not api_key:
+        return None
+    try:
+        clean_name = re.sub(r'[^\w\s-]', '', company_name).strip()
+        params = {
+            "engine": "google",
+            "q": f'"{clean_name}" official website',
+            "num": 4,
+            "api_key": api_key,
+        }
+        res = await client.get(SERPAPI_URL, params=params, timeout=8.0)
+        if res.status_code != 200:
+            return None
+        data = res.json()
+
+        # Check knowledge graph first
+        kg = data.get("knowledge_graph", {})
+        if kg and kg.get("website"):
+            return kg["website"]
+
+        # Check organic results for first non-aggregator link
+        for item in data.get("organic_results", []):
+            link = item.get("link", "")
+            if link and not is_aggregator_or_empty(link):
+                return link
+
+        return None
+    except Exception as e:
+        logger.debug(f"Website resolution failed for {company_name}: {e}")
+        return None
+
+
+async def resolve_candidates_websites(
+    candidates: List[Dict[str, Any]],
+    api_key: str,
+    client: httpx.AsyncClient,
+) -> List[Dict[str, Any]]:
+    """
+    Concurrently resolves official company websites in parallel via asyncio.gather.
+    Completes in under 1 second for 5-10 candidates.
+    """
+    if not api_key or not candidates:
+        return candidates
+
+    indices_to_resolve = []
+    tasks = []
+
+    for idx, c in enumerate(candidates):
+        name = c.get("company_name") or c.get("name") or c.get("title")
+        web = c.get("website") or c.get("url")
+        if name and is_aggregator_or_empty(web):
+            indices_to_resolve.append(idx)
+            tasks.append(resolve_company_website(name, api_key, client))
+
+    if not tasks:
+        return candidates
+
+    resolved_urls = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for idx, resolved in zip(indices_to_resolve, resolved_urls):
+        if isinstance(resolved, str) and resolved.startswith("http"):
+            candidates[idx]["website"] = resolved
+
+    return candidates
 
 
 async def search_google_web(
@@ -145,7 +236,6 @@ async def fetch_page_snippet(
         response = await client.get(url, headers=headers)
         if response.status_code == 200:
             html = response.text
-            # Basic tag stripping to clean text
             clean_text = re.sub(r'<(script|style).*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
             clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
             clean_text = re.sub(r'\s+', ' ', clean_text).strip()

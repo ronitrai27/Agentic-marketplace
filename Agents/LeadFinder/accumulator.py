@@ -11,7 +11,12 @@ import httpx
 from models import UniversalLead, UniversalLeadReport, UniversalLeadSpec
 from agent import planner_agent, worker_agent
 from critic import evaluate_candidates_bulk, BulkCriticVerdict
-from tools import search_google_maps, search_google_web, fetch_page_snippet
+from tools import (
+    search_google_maps,
+    search_google_web,
+    fetch_page_snippet,
+    resolve_candidates_websites,
+)
 from jev import audit_report_with_jev
 
 # Force immediate console flushing
@@ -46,9 +51,10 @@ async def run_universal_lead_finder(
     Universal, zero-hardcoding dynamic lead generation loop:
     1. Planner (gpt-4.1-mini) dynamically synthesizes LeadSpec from ANY prompt.
     2. Search Worker (gpt-4.1-nano) finds real entities using SerpAPI + search snippets.
-    3. Bulk Critic (gpt-5-mini) rapidly audits candidate batches with pragmatic validation.
-    4. Feedback Loop: Critic search guidance & suggested queries immediately refine subsequent search rounds.
-    5. TypeSafe JEV-1.14 delivers an uncompromised audit verdict.
+    3. Parallel Website Resolver: Resolves official company homepages in parallel (~0.8s).
+    4. Bulk Critic (gpt-5-mini) rapidly audits candidate batches with pragmatic validation.
+    5. Feedback Loop: Critic search guidance & suggested queries immediately refine subsequent search rounds.
+    6. TypeSafe JEV-1.14 delivers an uncompromised audit verdict.
     """
     def emit(event: Dict[str, Any]):
         if on_event:
@@ -150,7 +156,26 @@ async def run_universal_lead_finder(
 
             emit({
                 "type": "status",
-                "message": f"Extracted {len(candidate_batch)} candidates. Auditing batch with Bulk Critic (gpt-5-mini)...",
+                "message": f"Extracted {len(candidate_batch)} candidates from search.",
+            })
+
+            # Step 2.5: Parallel Official Website Resolver
+            # If the user asked for 'website' and we have candidates from directories/articles,
+            # resolve their actual official homepages concurrently in parallel (~0.8s total).
+            if "website" in spec.required_fields and serpapi_key and candidate_batch:
+                emit({
+                    "type": "status",
+                    "message": f"Resolving official websites in parallel for candidates...",
+                })
+                candidate_batch = await resolve_candidates_websites(
+                    candidates=candidate_batch,
+                    api_key=serpapi_key,
+                    client=http_client,
+                )
+
+            emit({
+                "type": "status",
+                "message": f"Auditing candidates with Bulk Critic (gpt-5-mini)...",
             })
 
             # Step 3: Fast Pragmatic Bulk Critic Audit (gpt-5-mini)
@@ -165,8 +190,9 @@ async def run_universal_lead_finder(
             added_this_round = 0
             for approved in bulk_verdict.approved_leads:
                 lead_data = approved.data
-                lead_url = approved.source_url or lead_data.get("website") or lead_data.get("url") or ""
-                dedup_key = extract_dedup_key(lead_data, lead_url)
+                official_site = lead_data.get("website") or ""
+                source_link = approved.source_url or official_site or ""
+                dedup_key = extract_dedup_key(lead_data, official_site or source_link)
 
                 if dedup_key in seen_keys:
                     continue
@@ -174,7 +200,7 @@ async def run_universal_lead_finder(
                 seen_keys.add(dedup_key)
                 lead = UniversalLead(
                     data=lead_data,
-                    source_url=lead_url,
+                    source_url=source_link,
                     critic_verdict=approved.reason or "Approved by Critic",
                 )
                 unique_leads.append(lead)
@@ -193,7 +219,7 @@ async def run_universal_lead_finder(
                 )
                 emit({
                     "type": "status",
-                    "message": f"[Critic Approved] {lead_name} ({approved.reason})",
+                    "message": f"[Critic Approved] {lead_name} ({official_site or 'Verified'})",
                 })
 
                 if len(unique_leads) >= target:

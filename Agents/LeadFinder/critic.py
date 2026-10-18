@@ -60,9 +60,10 @@ CORE PRINCIPLES:
    - Reject ONLY if the candidate is fundamentally wrong (e.g. an article author, an educational portal, a blog listicle itself instead of an actual company, wrong country, or explicitly violates a negative constraint like 'no website' when it has one).
 
 2. TOLERANCE FOR MISSING SECONDARY FIELDS:
-   - It is COMPLETELY ACCEPTABLE if some fields (such as direct website, phone, email, owner name, or employee range) are null, empty, or not found in the search snippet.
+   - It is COMPLETELY ACCEPTABLE if some fields (such as direct phone, email, owner name, or employee range) are null, empty, or not found in the search snippet.
    - NEVER reject a genuine candidate simply because an optional or secondary field is missing or empty!
-   - If 'website' was requested and is missing, you can use the source URL where the company was discovered or leave it as null.
+   - If candidate already has an official website (e.g. 'https://www.sarvam.ai'), PRESERVE it in 'data' under 'website'.
+   - If 'website' was requested and is completely missing, you can use the source discovery link or leave as null.
    - For approved candidates, normalize their attributes into `data` with keys matching the user's requested fields.
 
 3. SEARCH FEEDBACK / GUIDANCE:

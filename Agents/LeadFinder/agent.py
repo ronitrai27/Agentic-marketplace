@@ -33,7 +33,8 @@ Rules:
 4. Preferred Engine:
    - Use 'google_maps' ONLY if the search is for physical, local venues, clinics, local stores, or offline contractors in a specific city.
    - Use 'google' for everything else: SaaS, AI startups, B2B companies, tech, funds, remote companies, websites.
-5. Initial Search Queries: Generate 2-3 high-density Google search queries or dorks tailored to find these exact entities.
+5. Initial Search Queries: Generate 2-3 high-density Google search queries tailored to find these exact entities.
+   - When location constraints are present (e.g. 'in India', 'in California'), include explicit location qualifiers in all initial queries (e.g. '"AI startups" ("Bengaluru" OR "India")' or '"AI companies" site:topstartups.io/?hq_location=India') to avoid irrelevant international results.
 """
 
 planner_agent = Agent(
