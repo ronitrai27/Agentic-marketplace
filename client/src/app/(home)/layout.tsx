@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/modules/space/components/theme-toggle";
 import { NotificationButton } from "@/modules/space/components/notification-button";
 import { WalletBadge } from "@/modules/space/components/wallet-badge";
 import { HeaderUserMenu } from "@/modules/space/components/header-user-menu";
+import { SpaceBreadcrumbs } from "@/modules/space/components/space-breadcrumbs";
 
 export const metadata: Metadata = {
   title: "Space | Marketplace",
@@ -28,7 +29,9 @@ export default function HomeLayout({
           {/* Top Header Bar above the main content box (for breadcrumbs, search, user avatar, icons) */}
           <header className="h-12 sm:h-14 w-full flex items-center justify-between px-2 shrink-0">
             {/* Left slot (breadcrumbs, etc.) */}
-            <div className="flex items-center gap-2" />
+            <div className="flex items-center gap-2">
+              <SpaceBreadcrumbs />
+            </div>
 
             {/* Right slot: theme toggle, notification, wallet badge, and user avatar with dropdown */}
             <div className="flex items-center gap-2">

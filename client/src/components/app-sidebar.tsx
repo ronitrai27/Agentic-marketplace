@@ -45,7 +45,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               width={72}
               height={22}
               priority
-              className="dark:invert brightness-100 object-contain h-8 w-auto shrink-0 group-data-[collapsible=icon]:hidden"
+              className="dark:invert brightness-100 object-contain h-9 w-auto shrink-0 group-data-[collapsible=icon]:hidden"
             />
           </div>
           <SidebarTrigger className="text-foreground hover:bg-black/5 dark:hover:bg-white/10 shrink-0" />
