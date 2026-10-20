@@ -1,0 +1,21 @@
+{
+  "name": "research-agent-2",
+  "version": "1.0.0",
+  "description": "Simple dual-mode research agent using OpenAI Responses API and Web Search",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "ui": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.8",
+    "openai": "^7.39.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
