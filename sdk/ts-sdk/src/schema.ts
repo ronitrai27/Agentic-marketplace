@@ -1,43 +1,69 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { ZodTypeAny } from "zod";
 
-export type SchemaLike = ZodTypeAny | Record<string, unknown>;
+export type SchemaLike = ZodTypeAny | Record<string, unknown> | any;
 
-export function isZodSchema(schema: unknown): schema is ZodTypeAny {
+export function isZodSchema(schema: unknown): boolean {
   return (
     typeof schema === "object" &&
     schema !== null &&
-    "_def" in schema &&
-    typeof (schema as { safeParse?: unknown }).safeParse === "function"
+    (("_def" in schema) || ("def" in schema) || ("_zod" in schema)) &&
+    (typeof (schema as any).safeParse === "function" || typeof (schema as any).parse === "function")
   );
 }
 
 /**
- * Converts a Zod schema or passes through a JSON schema object
- * to standard JSON Schema (Draft-07).
+ * Converts a Zod schema (v3 or v4) or passes through a JSON schema object
+ * to standard JSON Schema.
  */
 export function toJsonSchema(schema: SchemaLike, title?: string): Record<string, unknown> {
-  if (isZodSchema(schema)) {
-    const converted = zodToJsonSchema(schema, {
-      name: title,
-      target: "jsonSchema7",
-      $refStrategy: "none",
-    });
+  if (!schema) return { type: "object" };
 
-    // If wrapped in definitions, unwrap the root object
-    if (converted && typeof converted === "object") {
-      const record = converted as Record<string, unknown>;
-      const defs = record.definitions as Record<string, unknown> | undefined;
-      if (defs && title && defs[title]) {
-        return defs[title] as Record<string, unknown>;
+  // 1. Zod v4 native toJSONSchema() support
+  if (typeof (schema as any).toJSONSchema === "function") {
+    try {
+      const nativeJson = (schema as any).toJSONSchema();
+      if (nativeJson && typeof nativeJson === "object") {
+        return nativeJson;
       }
-      return record;
+    } catch (err) {
+      console.warn("[catelog] Native toJSONSchema failed, falling back to converter:", err);
     }
-    return converted as Record<string, unknown>;
   }
 
-  // Already a raw JSON schema object
-  return schema as Record<string, unknown>;
+  // 2. Zod v3 conversion via zod-to-json-schema
+  if (isZodSchema(schema)) {
+    try {
+      const converted = zodToJsonSchema(schema as any, {
+        target: "jsonSchema7",
+        $refStrategy: "none",
+      }) as any;
+
+      if (converted && typeof converted === "object") {
+        if (converted.definitions && typeof converted.definitions === "object") {
+          const keys = Object.keys(converted.definitions);
+          if (keys.length > 0) {
+            return {
+              $schema: "http://json-schema.org/draft-07/schema#",
+              ...converted.definitions[keys[0]],
+            };
+          }
+        }
+        if (converted.properties || converted.type) {
+          return converted;
+        }
+      }
+    } catch (err) {
+      console.error("[catelog] Failed to convert Zod schema to JSON Schema:", err);
+    }
+  }
+
+  // 3. Raw JSON schema object pass-through
+  if (typeof schema === "object") {
+    return schema as Record<string, unknown>;
+  }
+
+  return { type: "object" };
 }
 
 /**
@@ -49,12 +75,12 @@ export function validateSchemaData<T>(
   data: unknown
 ): { success: true; data: T } | { success: false; errors: string[] } {
   if (isZodSchema(schema)) {
-    const result = schema.safeParse(data);
+    const result = (schema as any).safeParse(data);
     if (result.success) {
       return { success: true, data: result.data as T };
     }
-    const formattedErrors = result.error.errors.map(
-      (err) => `${err.path.join(".") || "root"}: ${err.message}`
+    const formattedErrors = (result.error?.errors || []).map(
+      (err: any) => `${err.path?.join(".") || "root"}: ${err.message}`
     );
     return { success: false, errors: formattedErrors };
   }

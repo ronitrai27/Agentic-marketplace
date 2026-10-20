@@ -8,12 +8,18 @@ importers:
 
   .:
     dependencies:
+      catelog:
+        specifier: ^1.0.0
+        version: 1.0.0
       dotenv:
         specifier: ^18.0.8
         version: 18.0.8
       openai:
         specifier: ^7.39.0
-        version: 7.39.0
+        version: 7.39.0(zod@4.6.7)
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^26.6.5
@@ -306,6 +312,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  catelog@1.0.0:
+    resolution: {integrity: sha512-nUWpeesYzEDTY/ub900H0j3K6RhsFfFQ4jwtDJ62Mp0GSETf3al2hzezkR3QfmAYC76JCtIfQlLjamNHOvoOTQ==}
+    hasBin: true
+
   dotenv@18.0.8:
     resolution: {integrity: sha512-2KDeoFoK/zRtcnbunCDlLG5VWVMcyqeQc6iK65o231nfNAcuGrKoqUQfJFUtBI+QlShk5HKIHxwebBtUl3rEfA==}
     engines: {node: '>=12'}
@@ -357,6 +367,17 @@ packages:
 
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
+
+  zod-to-json-schema@3.25.2:
+    resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
+    peerDependencies:
+      zod: ^3.25.28 || ^4
+
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -502,6 +523,11 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
+  catelog@1.0.0:
+    dependencies:
+      zod: 3.25.76
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
+
   dotenv@18.0.8: {}
 
   esbuild@0.28.2:
@@ -536,7 +562,9 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  openai@7.39.0: {}
+  openai@7.39.0(zod@4.6.7):
+    optionalDependencies:
+      zod: 4.6.7
 
   tsx@4.23.15:
     dependencies:
@@ -568,3 +596,11 @@ snapshots:
       '@typescript/typescript-win32-x64': 7.0.2
 
   undici-types@8.9.0: {}
+
+  zod-to-json-schema@3.25.2(zod@3.25.76):
+    dependencies:
+      zod: 3.25.76
+
+  zod@3.25.76: {}
+
+  zod@4.6.7: {}

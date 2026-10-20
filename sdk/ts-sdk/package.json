@@ -1,23 +1,46 @@
 {
   "name": "catelog",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official TypeScript SDK for Marketplace Agent Protocol Specification (MAPS)",
   "type": "module",
   "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "bin": {
     "catelog": "./scripts/postinstall.js"
   },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "DECISION.md",
+    "LICENSE"
+  ],
+  "author": "ROX",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "marketplace",
+    "maps",
+    "protocol",
+    "langgraph",
+    "openai",
+    "paypal",
+    "sdk"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "tsx test/index.test.ts",
+    "prepublishOnly": "npm run build",
     "postinstall": "node ./scripts/postinstall.js"
   },
   "dependencies": {
