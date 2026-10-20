@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
@@ -11,7 +12,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut } from "lucide-react";
+import { LogOut, ArrowRight, Sparkles } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 
@@ -53,7 +54,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <SidebarContent className="p-2" />
 
-        <SidebarFooter className="p-2 pb-3">
+        <SidebarFooter className="p-2 pb-3 flex flex-col gap-2">
+          {/* Minimal stylish Creator Space card */}
+          <Link
+            href="/space/creator"
+            className="group/card block p-2.5 rounded-lg border border-neutral-200/80 dark:border-neutral-800 bg-white/60 dark:bg-neutral-950/60 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-all text-left group-data-[collapsible=icon]:hidden"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-foreground tracking-tight flex items-center gap-1.5">
+                <Sparkles className="size-3 text-muted-foreground" />
+                Creator Space
+              </span>
+              <ArrowRight className="size-3 text-muted-foreground group-hover/card:translate-x-0.5 transition-transform" />
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Publish your agent and start generating revenue
+            </p>
+          </Link>
+
           {/* User Profile Card */}
           <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-white dark:bg-neutral-950 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs group-data-[collapsible=icon]:p-1 group-data-[collapsible=icon]:justify-center transition-all">
             <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">

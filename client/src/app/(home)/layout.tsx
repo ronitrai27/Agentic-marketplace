@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
 import { ThemeToggle } from "@/modules/space/components/theme-toggle";
@@ -12,17 +11,19 @@ export const metadata: Metadata = {
   title: "Space | Marketplace",
 };
 
-export default function HomeLayout({
+export default function Layout({
   children,
+  sidebar,
 }: {
   children: React.ReactNode;
+  sidebar: React.ReactNode;
 }) {
   return (
     <SidebarProvider
       defaultOpen={true}
       className="bg-neutral-100 dark:bg-neutral-900 text-foreground h-screen max-h-screen overflow-hidden"
     >
-      <AppSidebar />
+      {sidebar}
       <SidebarInset className="bg-transparent m-0 p-0 md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none h-screen max-h-screen overflow-hidden flex flex-col min-h-0">
         {/* Outer connected container with padding surrounding the inner main content box */}
         <div className="flex flex-col flex-1 h-full max-h-screen w-full px-3 pb-3 pt-1.5 bg-neutral-100 dark:bg-neutral-900 overflow-hidden min-h-0">
