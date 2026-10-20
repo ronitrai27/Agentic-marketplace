@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: outreach-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_marketplace
+      POSTGRES_USER: outreach
+      POSTGRES_PASSWORD: outreach_local_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - outreach_postgres_data:/var/lib/postgresql/data
+      - ./database/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+      - ./database/002_runtime_store.sql:/docker-entrypoint-initdb.d/002_runtime_store.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outreach -d agent_marketplace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  outreach_postgres_data:

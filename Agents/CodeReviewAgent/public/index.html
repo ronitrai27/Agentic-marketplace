@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <title>Code Review Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="skip" href="#workbench">Skip to review</a>
+
+  <!-- Nav · N9 edge-aligned minimal: wordmark hard-left, status hard-right, nothing between -->
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+        <rect width="30" height="30" rx="6" fill="var(--color-accent)" />
+        <path d="M11.5 9.5 L6.5 15 L11.5 20.5 M18.5 9.5 L23.5 15 L18.5 20.5"
+              fill="none" stroke="var(--color-surface)" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <div class="brand-text">
+        <h1 class="wordmark">Code Review Agent</h1>
+        <p class="tagline">Paste a snippet or drop up to ten files. Findings ranked by severity, with the fix spelled out.</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Workbench: control instrument (left) · review instrument (right) -->
+  <main class="workbench" id="workbench">
+    <!-- ── Control panel ── -->
+    <section class="panel panel--control" aria-label="Review input">
+      <p class="panel-label">Source</p>
+
+      <div class="tabs" role="tablist" aria-label="Input mode">
+        <button class="tab active" id="tab-paste" data-tab="paste" role="tab"
+                aria-selected="true" aria-controls="panel-paste" type="button">Paste code</button>
+        <button class="tab" id="tab-upload" data-tab="upload" role="tab"
+                aria-selected="false" aria-controls="panel-upload" type="button">Upload files</button>
+        <button class="tab" id="tab-repo" data-tab="repo" role="tab"
+                aria-selected="false" aria-controls="panel-repo" type="button">Public repo</button>
+      </div>
+
+      <!-- Paste mode -->
+      <div class="tab-panel active" id="panel-paste" role="tabpanel" aria-labelledby="tab-paste">
+        <div class="field-row">
+          <label class="field">
+            <span>Language</span>
+            <input type="text" id="pasteLanguage" placeholder="javascript, python, go…" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>File name</span>
+            <input type="text" id="pasteFilename" placeholder="auth.js" autocomplete="off" />
+          </label>
+        </div>
+        <label class="field">
+          <span>Context</span>
+          <input type="text" id="pasteContext" placeholder="e.g. login endpoint for a SaaS app" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Code</span>
+          <textarea id="codeInput" rows="14" spellcheck="false"
+            placeholder="// Paste the code you want reviewed…"></textarea>
+        </label>
+        <div class="actions">
+          <button class="btn btn--primary" id="reviewPasteBtn" type="button">Review code</button>
+          <span class="char-count" id="charCount" aria-live="polite">0 chars</span>
+        </div>
+      </div>
+
+      <!-- Upload mode -->
+      <div class="tab-panel" id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
+        <label class="field">
+          <span>Context</span>
+          <input type="text" id="uploadContext" placeholder="e.g. Node + Express backend, focus on security" autocomplete="off" />
+        </label>
+
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload source files">
+          <input type="file" id="fileInput" multiple hidden
+            accept=".js,.ts,.jsx,.tsx,.py,.go,.java,.rb,.php,.cs,.c,.cpp,.h,.hpp,.rs,.kt,.swift,.sql,.html,.css,.json,.yml,.yaml,.md,.txt,.sh,.vue,.svelte" />
+          <svg class="dz-mark" width="26" height="26" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+            <path d="M13 17.5 V6.5 M8 11 L13 6 L18 11" fill="none" stroke="currentColor"
+                  stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M5 18.5 v1.5 a1 1 0 0 0 1 1 h14 a1 1 0 0 0 1-1 v-1.5" fill="none"
+                  stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <p class="dz-title">Drag &amp; drop files, or <span class="dz-browse">browse</span></p>
+          <p class="dz-sub">1–10 files · up to 200&nbsp;KB each · code files</p>
+        </div>
+
+        <ul class="file-list" id="fileList"></ul>
+
+        <div class="actions">
+          <button class="btn btn--primary" id="reviewFilesBtn" type="button" disabled>Review files</button>
+          <button class="btn btn--ghost" id="clearFilesBtn" type="button">Clear</button>
+        </div>
+      </div>
+
+      <!-- Public repo mode -->
+      <div class="tab-panel" id="panel-repo" role="tabpanel" aria-labelledby="tab-repo">
+        <label class="field">
+          <span>Public repo URL</span>
+          <input type="url" id="repoUrl" placeholder="https://github.com/owner/repo" autocomplete="off" spellcheck="false" />
+        </label>
+
+        <label class="field">
+          <span>What should the agent look for?</span>
+          <textarea id="repoFocus" rows="4" spellcheck="true"
+            placeholder="e.g. Scan for security issues and SQL injection. Ignore styling. Focus on the API handlers and anything touching user input."></textarea>
+        </label>
+
+        <p class="field-hint">
+          The agent shallow-clones the default branch, picks the most relevant source files
+          (up to 10), and reviews them through the lens of your instructions above.
+        </p>
+
+        <div class="actions">
+          <button class="btn btn--primary" id="reviewRepoBtn" type="button">Scan repo</button>
+          <button class="btn btn--ghost" id="clearRepoBtn" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div class="progress" id="progress" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="progressText">Analysing…</span>
+      </div>
+    </section>
+
+    <!-- ── Review panel ── -->
+    <section class="panel panel--output" aria-label="Review output" aria-live="polite">
+      <p class="panel-label">Review</p>
+
+      <div class="empty-state" id="emptyState">
+        <svg class="empty-mark" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+          <circle cx="17" cy="17" r="10" fill="none" stroke="currentColor" stroke-width="1.75" />
+          <path d="M24.5 24.5 L33 33" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
+          <path d="M13 17 h8 M17 13 v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".5" />
+        </svg>
+        <h2>No review yet</h2>
+        <p>Paste a snippet or upload files to see mistakes, security risks and performance issues ranked by severity.</p>
+      </div>
+
+      <div id="results" hidden>
+        <div class="score-card">
+          <div class="score-ring" id="scoreRing">
+            <span class="score-num" id="scoreNum">0</span>
+            <span class="score-label">/ 100</span>
+          </div>
+          <div class="score-meta">
+            <span class="verdict" id="verdict">—</span>
+            <p class="summary" id="summary"></p>
+            <div class="meta-row">
+              <span id="issueCount"></span>
+              <span id="reviewMeta"></span>
+              <button class="btn btn--ghost btn--sm" id="copyBtn" type="button">Copy report</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3 class="section-title">Findings <span class="pill" id="issueBadge">0</span></h3>
+          <div id="issuesList" class="issues"></div>
+        </div>
+
+        <div class="section">
+          <h3 class="section-title">Risks <span class="pill" id="riskBadge">0</span></h3>
+          <div id="risksList" class="cards"></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="section">
+            <h3 class="section-title">Strengths</h3>
+            <ul id="strengthsList" class="bullets"></ul>
+          </div>
+          <div class="section">
+            <h3 class="section-title">Recommendations</h3>
+            <ul id="recommendationsList" class="bullets"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- History -->
+  <section class="history-wrap" aria-label="Review history">
+    <h3 class="section-title">History <span class="pill" id="historyBadge">0</span></h3>
+    <div class="history" id="historyList">
+      <p class="muted">No reviews saved yet.</p>
+    </div>
+  </section>
+
+  <!-- Footer · Ft2 inline single line -->
+  <footer class="foot">
+    <span class="foot-credit">Agentic Marketplace</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

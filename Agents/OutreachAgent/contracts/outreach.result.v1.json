@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "outreach.result.v1",
+  "title": "OutreachResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "workflow_run_id", "agent_instance_id", "status", "results", "warnings"],
+  "properties": {
+    "contract_version": { "const": "1.0" },
+    "workflow_run_id": { "type": "string" },
+    "agent_instance_id": { "type": "string" },
+    "status": { "enum": ["accepted", "running", "partial", "succeeded", "failed", "cancelled"] },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["recipient_id", "status", "outcome", "warnings"],
+        "properties": {
+          "recipient_id": { "type": "string" },
+          "status": { "type": "string" },
+          "provider_reference": { "type": ["string", "null"] },
+          "outcome": { "type": "object" },
+          "error_code": { "type": ["string", "null"] },
+          "error_message_safe": { "type": ["string", "null"] },
+          "completed_at": { "type": ["string", "null"], "format": "date-time" },
+          "warnings": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -1,0 +1,5 @@
+# pnpm configuration for the Code Review Agent.
+# esbuild (a tsx dependency) needs its install script allowed to run.
+# pnpm 10.26+ uses `allowBuilds`; older `onlyBuiltDependencies` was removed in v11.
+allowBuilds:
+  esbuild: true

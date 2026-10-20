@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: code-review-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: code_review_agent
+      POSTGRES_USER: review
+      POSTGRES_PASSWORD: review_local_password
+    ports:
+      - "5435:5432"
+    volumes:
+      - code_review_postgres_data:/var/lib/postgresql/data
+      - ./database/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U review -d code_review_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  code_review_postgres_data:
