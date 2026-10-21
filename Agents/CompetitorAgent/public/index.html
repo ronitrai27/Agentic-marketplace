@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>Competitor Agent — research chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=aurora1" />
+</head>
+<body>
+  <a class="skip" href="#ideaInput">Skip to the composer</a>
+
+  <div class="app">
+    <!-- ── Side rail: conversation history ── -->
+    <aside class="sidebar" id="sidebar" aria-label="Conversation history">
+      <div class="sidebar-top">
+        <div class="brand">
+          <svg class="brand-mark" width="26" height="26" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+            <rect width="30" height="30" rx="6" fill="var(--accent)" />
+            <path d="M8 20.5 L13 12.5 L17 17 L22 8.5" fill="none" stroke="var(--accent-ink)"
+                  stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span class="wordmark">Competitor&nbsp;Agent</span>
+        </div>
+        <button class="btn btn--new" id="newChatBtn" type="button">
+          <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true" focusable="false">
+            <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          New analysis
+        </button>
+      </div>
+
+      <nav class="convos" id="convos" aria-label="Analyses"></nav>
+
+      <div class="sidebar-foot">
+        <span class="dot" id="healthDot" role="img" aria-label="Backend status"></span>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim" hidden></div>
+
+    <!-- ── Thread + composer ── -->
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="menuBtn" type="button" aria-label="Open conversations" aria-expanded="false">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+        </button>
+        <!-- title + status stack in one column (gate 54: no label beside a heading) -->
+        <div class="topbar-main">
+          <h1 class="topbar-title" id="threadTitle">New analysis</h1>
+          <span class="topbar-meta" id="threadMeta"></span>
+        </div>
+      </header>
+
+      <!-- welcome / empty state — assistant hero card -->
+      <section class="welcome" id="welcome">
+        <p class="welcome-kicker">Four agents · live sources</p>
+        <h2>What should we research today?</h2>
+
+        <div class="hero">
+          <div class="hero-card">
+            <div class="hero-head">
+              <div class="hero-id">
+                <svg class="hero-avatar" width="38" height="38" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+                  <rect width="30" height="30" rx="8" fill="var(--accent)" />
+                  <path d="M8 20.5 L13 12.5 L17 17 L22 8.5" fill="none" stroke="var(--accent-ink)"
+                        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <div class="hero-id-text">
+                  <span class="hero-name">Competitor Agent</span>
+                  <span class="hero-status">
+                    <span class="dot" id="heroDot" role="img" aria-label="Backend status"></span>
+                    <span id="heroStatus">checking status…</span>
+                  </span>
+                </div>
+              </div>
+              <span class="hero-badge mono" id="modelBadge">model</span>
+            </div>
+
+            <!-- the composer form relocates here (welcome) or to the bottom dock (thread) -->
+            <div class="hero-slot" id="heroSlot"></div>
+
+            <div class="quick">
+              <p class="quick-label">Quick actions</p>
+              <div class="quick-row">
+                <button class="qa example" type="button"
+                        data-fill="An AI agent that audits Shopify stores and fixes conversion problems">
+                  <span class="qa-ico qa-ico--violet" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 16 16" focusable="false">
+                      <path d="M8 1.5l1.7 4.3L14 7.5l-4.3 1.7L8 13.5l-1.7-4.3L2 7.5l4.3-1.7z"
+                            fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="qa-text">
+                    <span class="qa-title">CRO audit</span>
+                    <span class="qa-sub">Shopify stores</span>
+                  </span>
+                </button>
+                <button class="qa example" type="button" data-fill="Usage-based billing analytics for B2B SaaS">
+                  <span class="qa-ico qa-ico--blue" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 16 16" focusable="false">
+                      <path d="M2.5 13.5v-5m4 5v-9m4 9v-6m3 6H1" fill="none" stroke="currentColor"
+                            stroke-width="1.6" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="qa-text">
+                    <span class="qa-title">Usage billing</span>
+                    <span class="qa-sub">B2B SaaS</span>
+                  </span>
+                </button>
+                <button class="qa example" type="button"
+                        data-fill="A Chrome extension that turns any blog post into a thread">
+                  <span class="qa-ico qa-ico--teal" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 16 16" focusable="false">
+                      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                      <path d="M2 8h12M8 2c-3.5 3.5-3.5 8.5 0 12M8 2c3.5 3.5 3.5 8.5 0 12"
+                            fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    </svg>
+                  </span>
+                  <span class="qa-text">
+                    <span class="qa-title">Blog → thread</span>
+                    <span class="qa-sub">Chrome ext.</span>
+                  </span>
+                </button>
+                <button class="qa example" type="button"
+                        data-fill="Find the market gaps in AI meeting-notes assistants that join calls and write follow-ups">
+                  <span class="qa-ico qa-ico--rose" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 16 16" focusable="false">
+                      <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                      <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="qa-text">
+                    <span class="qa-title">Gap scan</span>
+                    <span class="qa-sub">Find openings</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- messages -->
+      <div class="thread" id="thread" aria-live="polite" hidden></div>
+
+      <!-- bottom dock — the composer parks here once a thread is open -->
+      <div class="dock" id="dock"></div>
+
+      <!-- composer (relocated into .hero-slot on the welcome screen) -->
+      <form class="composer-wrap" id="composer">
+        <div class="composer">
+          <svg class="composer-glass" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <label class="sr-only" for="ideaInput">Your idea</label>
+          <textarea id="ideaInput" rows="1" maxlength="4000" autocomplete="off"
+            placeholder="Describe your idea — one or two sentences…"></textarea>
+          <button class="mic" id="micBtn" type="button" aria-label="Dictate your idea" hidden>
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <rect x="5.75" y="1.5" width="4.5" height="8" rx="2.25" fill="none"
+                    stroke="currentColor" stroke-width="1.5"/>
+              <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" fill="none"
+                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button class="send" id="sendBtn" type="submit" aria-label="Send for analysis">
+            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true" focusable="false">
+              <path d="M7.5 12.5v-10M3 7l4.5-4.5L12 7" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="composer-opts">
+          <label class="opt">
+            <span class="opt-label">Audience</span>
+            <input type="text" id="audienceInput" maxlength="400" autocomplete="off"
+                   placeholder="optional — who pays" />
+          </label>
+          <label class="opt">
+            <span class="opt-label">Rivals</span>
+            <select id="maxCompetitors">
+              <option value="3">3 · fast</option>
+              <option value="5" selected>5 · balanced</option>
+              <option value="8">8 · thorough</option>
+            </select>
+          </label>
+          <span class="hint" id="hint" aria-live="polite"></span>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script src="app.js?v=aurora1"></script>
+</body>
+</html>

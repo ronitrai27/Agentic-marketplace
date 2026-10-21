@@ -1,0 +1,20 @@
+[
+  {
+    "date": "2026-10-21",
+    "macrostructure": "Workbench (app shell)",
+    "theme": "custom",
+    "theme_axes": "deep cool-ink OKLCH dark paper band / Space Grotesk display register / single warm amber accent",
+    "vibe": "instrument panel, restrained, dark",
+    "enrichment": "E4 hand-built SVG charts",
+    "brief": "ChatGPT-style research chat (side-rail + thread + composer); Signal dark re-skin of the CompetitorAgent UI"
+  },
+  {
+    "date": "2026-10-21",
+    "macrostructure": "Workbench (app shell)",
+    "theme": "custom",
+    "theme_axes": "violet aurora wash (fixed radial glows) + translucent glass cards / Space Grotesk display register / single electric-violet accent",
+    "vibe": "soft-glass cosmic assistant panel (user reference: AI-assistant hero card)",
+    "enrichment": "E4 hand-built SVG charts",
+    "brief": "Aurora re-skin: ChatGPT-style thread (user bubble right / agent report left in glass), assistant hero card with status head + quick-action chips, composer relocates hero->dock"
+  }
+]

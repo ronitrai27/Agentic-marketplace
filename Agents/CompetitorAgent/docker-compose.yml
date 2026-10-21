@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: competitor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: competitor_agent
+      POSTGRES_USER: competitor
+      POSTGRES_PASSWORD: competitor_local_password
+    ports:
+      - "5436:5432"
+    volumes:
+      - competitor_postgres_data:/var/lib/postgresql/data
+      - ./database/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U competitor -d competitor_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  competitor_postgres_data:
