@@ -2,6 +2,8 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
+import { createMarketplaceAgent } from "catelog";
 import { evaluateInputGuardrail } from "./guardrail/jev-guard.js";
 import { runResearchAgent } from "./index.js";
 import { tasks } from "@trigger.dev/sdk";
@@ -10,6 +12,72 @@ import { ENV } from "./config/env.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, "../public");
 const PORT = process.env.PORT || 3005;
+
+// 1. Declare Marketplace Schemas with Zod
+const InputSchema = z.object({
+  prompt: z.string().min(2).describe("Research question or topic to investigate"),
+  userId: z.string().optional().describe("Optional user identifier for tracing"),
+  sessionId: z.string().optional().describe("Optional session identifier for grouping conversation turns"),
+});
+
+const OutputSchema = z.object({
+  status: z.enum(["COMPLETED", "GUARDRAIL_BLOCKED", "DIRECT_ANSWER"]).describe("Execution outcome"),
+  prompt: z.string().describe("User prompt"),
+  answer: z.string().describe("Synthesized research report or answer"),
+  sourcesCount: z.number().describe("Number of web sources referenced"),
+  durationSeconds: z.number().describe("Latency in seconds"),
+  metadata: z.record(z.string(), z.any()).optional().describe("Execution metadata and telemetry"),
+});
+
+type AgentInput = {
+  prompt: string;
+  userId?: string;
+  sessionId?: string;
+};
+
+type AgentOutput = {
+  status: "COMPLETED" | "GUARDRAIL_BLOCKED" | "DIRECT_ANSWER";
+  prompt: string;
+  answer: string;
+  sourcesCount: number;
+  durationSeconds: number;
+  metadata?: Record<string, any>;
+};
+
+// 2. Wrap LangGraph Research Agent with Catelog Marketplace SDK
+export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
+  name: "LangGraph Deep Research Agent",
+  version: "1.0.0",
+  description: "Autonomous multi-node LangGraph deep research agent with TypeSafe JEV guardrails, Tavily search, and Langfuse tracing",
+  secret: process.env.MARKETPLACE_SECRET || "rox-marketplace-secret-2026",
+  inputSchema: InputSchema as any,
+  outputSchema: OutputSchema as any,
+
+  async execute({ input, stream, signal }) {
+    stream.step("Initializing LangGraph research workflow...");
+
+    if (signal.aborted) {
+      throw new Error("EXECUTION_TIMEOUT");
+    }
+
+    const result = await runResearchAgent(input.prompt, {
+      userId: input.userId,
+      sessionId: input.sessionId,
+      onProgress: (step: string) => {
+        stream.step(step);
+      },
+    });
+
+    return {
+      output: result,
+      telemetry: {
+        model_used: ENV.JEV_MODEL || "gpt-4.1-mini",
+        execution_status: result.status,
+        sources_count: result.sourcesCount,
+      },
+    };
+  },
+});
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -22,9 +90,14 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
-  // 1. Handle Real-time SSE Chat API
+  // Route 0: Handle Marketplace Protocol Endpoints via Catelog SDK (/health, /schema, /execute)
+  if (["/health", "/schema", "/execute"].includes(url.pathname)) {
+    return agent.handleRequest(req, res);
+  }
+
+  // 1. Handle Real-time SSE Chat API (Web UI)
   if (url.pathname === "/api/chat-sse" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => {
@@ -146,7 +219,12 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n======================================================`);
-  console.log(`🚀 Research Agent UI running at: http://localhost:${PORT}`);
-  console.log(`Realtime SSE Endpoint: http://localhost:${PORT}/api/chat-sse`);
+  console.log(`🚀 LangGraph Research Agent running at: http://localhost:${PORT}`);
+  console.log(`📡 Marketplace Protocol (Catelog SDK):`);
+  console.log(`   - Ping / Liveness: http://localhost:${PORT}/health`);
+  console.log(`   - Schema Manifest: http://localhost:${PORT}/schema`);
+  console.log(`   - Secure Execute:  http://localhost:${PORT}/execute`);
+  console.log(`💬 Web UI:            http://localhost:${PORT}`);
+  console.log(`   - Realtime SSE:    http://localhost:${PORT}/api/chat-sse`);
   console.log(`======================================================\n`);
 });
