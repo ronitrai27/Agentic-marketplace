@@ -370,7 +370,7 @@ await client.registerAgent({
                   <button
                     type="button"
                     onClick={() => setPythonDropdownOpen(!pythonDropdownOpen)}
-                    className="flex items-center gap-1.5 px-2 py-1 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 px-2 py-1 text-white! transition-colors cursor-pointer"
                     title="Select package manager"
                   >
                     {renderPythonPmLogo(selectedPythonPm)}
@@ -391,7 +391,7 @@ await client.registerAgent({
                       )
                     }
                     title={`Copy: ${pythonCommands[selectedPythonPm].cmd}`}
-                    className="p-1 px-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800/60 rounded-r-md transition-colors cursor-pointer"
+                    className="p-1 px-1.5 text-white! hover:bg-neutral-800/60 rounded-r-md transition-colors cursor-pointer"
                   >
                     {copiedPythonCmd ? (
                       <Check className="size-3 text-emerald-400" />
@@ -492,15 +492,12 @@ await client.registerAgent({
               </div>
 
               {/* Package manager dropdown & copy */}
-              <div
-                className="relative flex items-center"
-                ref={tsDropdownRef}
-              >
+              <div className="relative flex items-center" ref={tsDropdownRef}>
                 <div className="flex items-center rounded-md border border-neutral-700/80 bg-neutral-900/90 hover:border-neutral-600 transition-colors">
                   <button
                     type="button"
                     onClick={() => setTsDropdownOpen(!tsDropdownOpen)}
-                    className="flex items-center gap-1.5 px-2 py-1 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 px-2 py-1 text-white! transition-colors cursor-pointer"
                     title="Select package manager"
                   >
                     {renderTsPmLogo(selectedTsPm)}
@@ -521,7 +518,7 @@ await client.registerAgent({
                       )
                     }
                     title={`Copy: ${tsCommands[selectedTsPm].cmd}`}
-                    className="p-1 px-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800/60 rounded-r-md transition-colors cursor-pointer"
+                    className="p-1 px-1.5 text-white! hover:bg-neutral-800/60 rounded-r-md transition-colors cursor-pointer"
                   >
                     {copiedTsCmd ? (
                       <Check className="size-3 text-emerald-400" />
@@ -615,7 +612,7 @@ await client.registerAgent({
           </div>
 
           {/* Right side small box: Docs link, Demo & Key Features */}
-          <div className="lg:col-span-3 flex flex-col justify-between rounded-xl border border-neutral-200/90 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/40 p-4 shadow-2xs">
+          <div className="lg:col-span-3 flex flex-col justify-between rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/40 p-4 shadow-2xs">
             <div className="space-y-3.5">
               <div className="flex items-start gap-2.5">
                 <Box className="size-4 text-neutral-600 dark:text-neutral-300 shrink-0 mt-0.5" />
@@ -702,6 +699,50 @@ await client.registerAgent({
         </div>
       </div>
 
+      {/* Works with 10+ agent frameworks */}
+      <div className="space-y-3.5 pt-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">
+              Works with 10+ agent frameworks
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Use Catelog SDK with your existing stack. Framework agnostic.
+            </p>
+          </div>
+          <Link
+            href="/docs"
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium cursor-pointer"
+          >
+            <span>View all integrations</span>
+            <ArrowRight className="size-3" />
+          </Link>
+        </div>
+
+        {/* 10 Available Framework SVGs in public */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+          {frameworks.map((fw) => (
+            <div
+              key={fw.name}
+              className="flex flex-col items-center justify-center p-3.5 rounded-md border border-neutral-200/80 dark:border-neutral-800/80 bg-white dark:bg-neutral-900/60 hover:bg-neutral-50 dark:hover:bg-neutral-800/70 hover:border-neutral-300 dark:hover:border-neutral-700 transition-all shadow-2xs gap-2.5 group cursor-pointer"
+            >
+              <div className="h-6 flex items-center justify-center">
+                <Image
+                  src={fw.src}
+                  alt={fw.name}
+                  width={32}
+                  height={32}
+                  className={fw.className}
+                />
+              </div>
+              <span className="text-xs font-medium text-foreground text-center truncate w-full">
+                {fw.name}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Publish your agent in 3 steps */}
       <div className="space-y-3.5 pt-2">
         <div className="flex items-center justify-between">
@@ -784,50 +825,6 @@ await client.registerAgent({
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Works with 10+ agent frameworks */}
-      <div className="space-y-3.5 pt-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">
-              Works with 10+ agent frameworks
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Use Catelog SDK with your existing stack. Framework agnostic.
-            </p>
-          </div>
-          <Link
-            href="/docs"
-            className="text-xs text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium cursor-pointer"
-          >
-            <span>View all integrations</span>
-            <ArrowRight className="size-3" />
-          </Link>
-        </div>
-
-        {/* 10 Available Framework SVGs in public */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {frameworks.map((fw) => (
-            <div
-              key={fw.name}
-              className="flex flex-col items-center justify-center p-3.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800/80 bg-white dark:bg-neutral-900/60 hover:bg-neutral-50 dark:hover:bg-neutral-800/70 hover:border-neutral-300 dark:hover:border-neutral-700 transition-all shadow-2xs gap-2.5 group cursor-pointer"
-            >
-              <div className="h-6 flex items-center justify-center">
-                <Image
-                  src={fw.src}
-                  alt={fw.name}
-                  width={22}
-                  height={22}
-                  className={fw.className}
-                />
-              </div>
-              <span className="text-xs font-medium text-foreground text-center truncate w-full">
-                {fw.name}
-              </span>
-            </div>
-          ))}
         </div>
       </div>
 

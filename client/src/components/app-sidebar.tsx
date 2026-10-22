@@ -20,17 +20,40 @@ import { CardDitherBackground } from "@/components/ui/card-dither-background";
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { data: session } = authClient.useSession();
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+
+  React.useEffect(() => {
+    const checkGuest = () => {
+      try {
+        setIsGuest(localStorage.getItem("catelxg_guest_mode") === "true");
+      } catch {
+        setIsGuest(false);
+      }
+    };
+    checkGuest();
+    window.addEventListener("storage", checkGuest);
+    window.addEventListener("catelxg-guest-change", checkGuest);
+    return () => {
+      window.removeEventListener("storage", checkGuest);
+      window.removeEventListener("catelxg-guest-change", checkGuest);
+    };
+  }, []);
 
   const user = session?.user;
-  const name = user?.name || user?.email?.split("@")[0] || "User";
-  const email = user?.email || "";
-  const avatarImage = user?.image || undefined;
-  const initials = name
-    .split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const isGuestActive = isGuest || !user;
+  const name = isGuestActive
+    ? "Guest"
+    : user?.name || user?.email?.split("@")[0] || "User";
+  const email = isGuestActive ? "Guest Mode" : user?.email || "";
+  const avatarImage = isGuestActive ? undefined : user?.image || undefined;
+  const initials = isGuestActive
+    ? "G"
+    : name
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
 
   return (
     <>
@@ -118,8 +141,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <button
               type="button"
               onClick={() => setLogoutOpen(true)}
-              title="Log out"
-              aria-label="Log out"
+              title={isGuestActive ? "Exit Guest Mode" : "Log out"}
+              aria-label={isGuestActive ? "Exit Guest Mode" : "Log out"}
               className="size-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 group-data-[collapsible=icon]:hidden cursor-pointer"
             >
               <LogOut className="size-3.5" />

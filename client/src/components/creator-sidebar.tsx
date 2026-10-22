@@ -58,7 +58,7 @@ export function CreatorSidebar({
           <SidebarTrigger className="text-foreground hover:bg-black/5 dark:hover:bg-white/10 shrink-0" />
         </SidebarHeader>
 
-        <SidebarContent className="p-2">
+        <SidebarContent className="p-2 mt-5">
           <SidebarGroup className="p-0">
             <SidebarMenu>
               <SidebarMenuItem>
@@ -68,7 +68,10 @@ export function CreatorSidebar({
                   tooltip="Overview"
                   className="bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
                 >
-                  <Link href="/space/creator" className="flex items-center gap-3">
+                  <Link
+                    href="/space/creator"
+                    className="flex items-center gap-3"
+                  >
                     <LayoutDashboard className="size-4 shrink-0" />
                     <span className="truncate group-data-[collapsible=icon]:hidden">
                       Overview

@@ -11,9 +11,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   LogOut,
+  LogIn,
   User,
   Settings,
   Sun,
@@ -24,20 +26,44 @@ import { useTheme } from "next-themes";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 
 export function HeaderUserMenu() {
+  const router = useRouter();
   const { data: session } = authClient.useSession();
   const { theme, setTheme } = useTheme();
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+
+  React.useEffect(() => {
+    const checkGuest = () => {
+      try {
+        setIsGuest(localStorage.getItem("catelxg_guest_mode") === "true");
+      } catch {
+        setIsGuest(false);
+      }
+    };
+    checkGuest();
+    window.addEventListener("storage", checkGuest);
+    window.addEventListener("catelxg-guest-change", checkGuest);
+    return () => {
+      window.removeEventListener("storage", checkGuest);
+      window.removeEventListener("catelxg-guest-change", checkGuest);
+    };
+  }, []);
 
   const user = session?.user;
-  const name = user?.name || user?.email?.split("@")[0] || "User";
-  const email = user?.email || "";
-  const avatarImage = user?.image || undefined;
-  const initials = name
-    .split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const isGuestActive = isGuest || !user;
+  const name = isGuestActive
+    ? "Guest"
+    : user?.name || user?.email?.split("@")[0] || "User";
+  const email = isGuestActive ? "Guest Mode" : user?.email || "";
+  const avatarImage = isGuestActive ? undefined : user?.image || undefined;
+  const initials = isGuestActive
+    ? "G"
+    : name
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
 
   return (
     <>
@@ -58,7 +84,7 @@ export function HeaderUserMenu() {
           </Avatar>
 
           <span className="text-xs font-medium text-foreground max-w-[100px] truncate hidden sm:inline-block">
-            {email || name}
+            {isGuestActive ? "Guest" : email || name}
           </span>
 
           <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
@@ -67,27 +93,51 @@ export function HeaderUserMenu() {
         <DropdownMenuContent align="end" className="w-56 p-1.5">
           {/* User info */}
           <DropdownMenuLabel className="flex flex-col gap-0.5 px-2 py-1.5">
-            <span className="text-xs font-semibold text-foreground truncate">
-              {name}
-            </span>
-            <span className="text-[11px] text-muted-foreground truncate">
-              {email}
-            </span>
+            {isGuestActive ? (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-foreground truncate">
+                    Guest
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="text-xs font-semibold text-foreground truncate">
+                  {name}
+                </span>
+                <span className="text-[11px] text-muted-foreground truncate">
+                  {email}
+                </span>
+              </>
+            )}
           </DropdownMenuLabel>
 
           <DropdownMenuSeparator />
 
-          {/* User Profile */}
-          <DropdownMenuItem className="flex items-center gap-2.5 px-2 py-1.5 text-xs cursor-pointer">
-            <User className="size-4 text-muted-foreground" />
-            <span>Profile</span>
-          </DropdownMenuItem>
+          {isGuestActive ? (
+            <DropdownMenuItem
+              onClick={() => router.push("/auth")}
+              className="flex items-center gap-2.5 px-2 py-1.5 text-xs font-medium text-primary hover:text-primary cursor-pointer"
+            >
+              <LogIn className="size-4" />
+              <span>Sign In / Register</span>
+            </DropdownMenuItem>
+          ) : (
+            <>
+              {/* User Profile */}
+              <DropdownMenuItem className="flex items-center gap-2.5 px-2 py-1.5 text-xs cursor-pointer">
+                <User className="size-4 text-muted-foreground" />
+                <span>Profile</span>
+              </DropdownMenuItem>
 
-          {/* Settings */}
-          <DropdownMenuItem className="flex items-center gap-2.5 px-2 py-1.5 text-xs cursor-pointer">
-            <Settings className="size-4 text-muted-foreground" />
-            <span>Settings</span>
-          </DropdownMenuItem>
+              {/* Settings */}
+              <DropdownMenuItem className="flex items-center gap-2.5 px-2 py-1.5 text-xs cursor-pointer">
+                <Settings className="size-4 text-muted-foreground" />
+                <span>Settings</span>
+              </DropdownMenuItem>
+            </>
+          )}
 
           {/* Theme Section */}
           <DropdownMenuSeparator />
@@ -135,14 +185,14 @@ export function HeaderUserMenu() {
 
           <DropdownMenuSeparator />
 
-          {/* Logout */}
+          {/* Logout / Exit Guest Mode */}
           <DropdownMenuItem
             onClick={() => setLogoutOpen(true)}
             variant="default"
             className="flex items-center gap-2.5 px-2 py-1.5 text-xs cursor-pointer"
           >
             <LogOut className="size-4" />
-            <span>Log out</span>
+            <span>{isGuestActive ? "Exit Guest Mode" : "Log out"}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

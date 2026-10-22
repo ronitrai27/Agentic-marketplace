@@ -23,22 +23,34 @@ interface LogoutDialogProps {
 export function LogoutDialog({ open, onOpenChange }: LogoutDialogProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+
+  React.useEffect(() => {
+    try {
+      setIsGuest(localStorage.getItem("catelxg_guest_mode") === "true");
+    } catch {
+      setIsGuest(false);
+    }
+  }, [open]);
 
   const handleLogout = async () => {
     setIsLoading(true);
-    const toastId = toast.loading("Logging out...");
+    const toastId = toast.loading(isGuest ? "Exiting guest mode..." : "Logging out...");
 
     try {
+      localStorage.removeItem("catelxg_guest_mode");
+      window.dispatchEvent(new Event("catelxg-guest-change"));
       await authClient.signOut();
+    } catch (err: any) {
+      console.warn("Logout note:", err);
+    } finally {
+      localStorage.removeItem("catelxg_guest_mode");
+      window.dispatchEvent(new Event("catelxg-guest-change"));
       toast.dismiss(toastId);
-      toast.success("Logged out successfully");
+      toast.success(isGuest ? "Exited Guest Mode" : "Logged out successfully");
+      setIsLoading(false);
       onOpenChange(false);
       router.replace("/auth");
-    } catch (err: any) {
-      console.error("Logout error:", err);
-      toast.dismiss(toastId);
-      toast.error(err?.message || "Failed to log out");
-      setIsLoading(false);
     }
   };
 
@@ -51,9 +63,13 @@ export function LogoutDialog({ open, onOpenChange }: LogoutDialogProps) {
               <LogOut className="size-5" />
             </div>
             <div className="space-y-1">
-              <DialogTitle>Confirm Logout</DialogTitle>
+              <DialogTitle>
+                {isGuest ? "Exit Guest Mode" : "Confirm Logout"}
+              </DialogTitle>
               <DialogDescription>
-                Are you sure you want to log out of your account?
+                {isGuest
+                  ? "Are you sure you want to exit Guest Mode and return to the sign-in screen?"
+                  : "Are you sure you want to log out of your account?"}
               </DialogDescription>
             </div>
           </div>
