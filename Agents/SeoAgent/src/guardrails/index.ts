@@ -90,7 +90,7 @@ export async function evaluateGuardrails(rawPrompt: string): Promise<GuardrailRe
   const semanticDecision = await evaluateSemanticGuard(cleanPrompt, {
     heuristicSignals: jailbreakResult.triggeredRules,
     heuristicScore: jailbreakResult.score,
-    timeoutMs: 1500,
+    timeoutMs: 3000,
   });
 
   const totalDurationMs = Math.round(performance.now() - globalStart);

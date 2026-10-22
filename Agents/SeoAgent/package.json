@@ -12,6 +12,7 @@
     "test:guardrails": "tsx src/guardrails/test-guardrails.ts",
     "test:phases": "tsx src/test-phases.ts",
     "test:pillars": "tsx src/test-pillars.ts",
+    "test:chat": "tsx src/test-chat.ts",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -19,6 +20,7 @@
     "@browserbasehq/sdk": "^2.22.0",
     "@langchain/core": "^1.2.20",
     "@langchain/langgraph": "^1.5.2",
+    "@langchain/openai": "^1.6.3",
     "@temporalio/activity": "^1.24.0",
     "@temporalio/client": "^1.24.0",
     "@temporalio/worker": "^1.24.0",

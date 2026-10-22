@@ -12,4 +12,6 @@ export * from "./guardrails/index.js";
 export * from "./jev/escalation-gate.js";
 
 console.log("🚀 SeoAgent Core Initialized");
-console.log(`Environment: ${env.NODE_ENV} | Temporal Queue: ${env.TEMPORAL_TASK_QUEUE}`);
+console.log(
+  `Environment: ${env.NODE_ENV} | Temporal Queue: ${env.TEMPORAL_TASK_QUEUE}`,
+);

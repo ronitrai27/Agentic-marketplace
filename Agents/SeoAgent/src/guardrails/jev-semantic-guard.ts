@@ -104,6 +104,20 @@ export async function evaluateSemanticGuard(
       source: "openrouter-jev",
       durationMs: Math.round(performance.now() - startTime),
     };
+  } catch (err: any) {
+    const isAborted = err.name === "AbortError" || controller.signal.aborted;
+    const isDeterministicBlocked = (options?.heuristicScore ?? 0) >= 0.85;
+
+    return {
+      isAllowed: !isDeterministicBlocked,
+      toxicityScore: 0.0,
+      injectionScore: options?.heuristicScore ?? 0.0,
+      rejectionReason: isDeterministicBlocked
+        ? `Blocked by deterministic heuristic signals: ${options?.heuristicSignals?.join(", ") || "suspicious pattern"}`
+        : undefined,
+      source: (isAborted ? "deterministic-timeout-fallback" : "deterministic-fallback") as any,
+      durationMs: Math.round(performance.now() - startTime),
+    };
   } finally {
     clearTimeout(timer);
   }

@@ -30,6 +30,10 @@ const rawEnv = {
   GOOGLE_PAGESPEED_KEY: process.env.GOOGLE_PAGESPEED_KEY,
 };
 
+if (!process.env.OPENAI_API_KEY && rawEnv.OPENAI_API_KEY) {
+  process.env.OPENAI_API_KEY = rawEnv.OPENAI_API_KEY;
+}
+
 const parsedEnv = envSchema.safeParse(rawEnv);
 
 if (!parsedEnv.success) {
