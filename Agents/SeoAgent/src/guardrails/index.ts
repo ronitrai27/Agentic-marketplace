@@ -78,18 +78,42 @@ export async function evaluateGuardrails(rawPrompt: string): Promise<GuardrailRe
   const piiResult = analyzeAndRedactPii(rawPrompt);
   const cleanPrompt = piiResult.redactedText;
 
-  // 3. Jailbreak & Heuristic Injection Scanner
+  // 3. Jailbreak & Heuristic Injection Scanner (Deterministic Signals)
   const jailbreakResult = analyzeJailbreakHeuristics(cleanPrompt);
-  if (jailbreakResult.isJailbreak) {
-    const duration = Math.round(performance.now() - globalStart);
+
+  const inMemoryDurationMs = Math.round(performance.now() - inMemoryStart);
+
+  // ----------------------------------------------------
+  // Phase 2: Semantic AI Tier (JEV Decisions API for Jailbreaks & Safety)
+  // ----------------------------------------------------
+  // JEV receives both the prompt and the deterministic heuristic signals
+  const semanticDecision = await evaluateSemanticGuard(cleanPrompt, {
+    heuristicSignals: jailbreakResult.triggeredRules,
+    heuristicScore: jailbreakResult.score,
+    timeoutMs: 1500,
+  });
+
+  const totalDurationMs = Math.round(performance.now() - globalStart);
+
+  // If deterministic score is severe (>= 0.85) OR JEV flagged it, block
+  const isJailbreakDetected =
+    jailbreakResult.score >= 0.85 ||
+    semanticDecision.injectionScore >= 0.60 ||
+    !semanticDecision.isAllowed;
+
+  if (isJailbreakDetected) {
+    const rejectionReason =
+      semanticDecision.rejectionReason ||
+      `Blocked by JEV Jailbreak Guard: detected adversarial pattern [${jailbreakResult.triggeredRules.join(", ")}]`;
+
     return {
       isAllowed: false,
       sanitizedPrompt: cleanPrompt,
-      rejectionReason: `Blocked by Jailbreak Guard: detected adversarial pattern [${jailbreakResult.triggeredRules.join(", ")}]`,
-      totalDurationMs: duration,
+      rejectionReason,
+      totalDurationMs,
       breakdown: {
-        inMemoryDurationMs: duration,
-        semanticDurationMs: 0,
+        inMemoryDurationMs,
+        semanticDurationMs: semanticDecision.durationMs,
       },
       flags: {
         bannedWords: [],
@@ -97,20 +121,12 @@ export async function evaluateGuardrails(rawPrompt: string): Promise<GuardrailRe
         piiFindingsCount: piiResult.findings.length,
         jailbreakDetected: true,
         jailbreakRules: jailbreakResult.triggeredRules,
-        toxicityScore: 0.0,
-        injectionScore: jailbreakResult.score,
-        evaluationSource: "in-memory-jailbreak-heuristics",
+        toxicityScore: semanticDecision.toxicityScore,
+        injectionScore: Math.max(jailbreakResult.score, semanticDecision.injectionScore),
+        evaluationSource: semanticDecision.source,
       },
     };
   }
-
-  const inMemoryDurationMs = Math.round(performance.now() - inMemoryStart);
-
-  // ----------------------------------------------------
-  // Phase 2: Semantic AI Tier (JEV / Groq Fast Guardrail)
-  // ----------------------------------------------------
-  const semanticDecision = await evaluateSemanticGuard(cleanPrompt, 450);
-  const totalDurationMs = Math.round(performance.now() - globalStart);
 
   return {
     isAllowed: semanticDecision.isAllowed,
