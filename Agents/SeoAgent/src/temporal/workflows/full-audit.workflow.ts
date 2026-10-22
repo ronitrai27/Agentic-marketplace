@@ -22,6 +22,7 @@ const {
 export interface FullAuditWorkflowInput {
   url: string;
   companyName?: string;
+  forceBrowser?: boolean;
 }
 
 export interface FullAuditWorkflowResult {
@@ -61,9 +62,9 @@ export async function fullAuditWorkflow(
   // Step 2: JEV Hydration & Escalation Gate
   const escalationDecision = await escalationGateActivity(staticResult);
 
-  // Step 3: Run Browserbase Cloud Session only if JEV flags browser requirement
+  // Step 3: Run Browserbase Cloud Session if JEV flags browser requirement OR user forced browser session
   let browserEvidence;
-  if (escalationDecision.requiresBrowser) {
+  if (input.forceBrowser || escalationDecision.requiresBrowser) {
     browserEvidence = await collectBrowserEvidenceActivity({ staticResult });
   }
 

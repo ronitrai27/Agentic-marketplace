@@ -255,10 +255,12 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
           const safeHost = new URL(targetUrl).hostname.replace(/[^a-zA-Z0-9]/g, "-");
           const workflowId = `audit-${safeHost}-${Date.now()}`;
 
-          console.log(`🚀 [Temporal Cloud] Starting durable workflow: ${workflowId} for ${targetUrl}`);
+          const forceBrowser = /browser|browserbase|screenshot|visual|diff|render|proof/i.test(query);
+
+          console.log(`🚀 [Temporal Cloud] Starting durable workflow: ${workflowId} for ${targetUrl} (ForceBrowser: ${forceBrowser})`);
 
           const handle = await client.workflow.start(fullAuditWorkflow, {
-            args: [{ url: targetUrl, companyName: resolved.companyName }],
+            args: [{ url: targetUrl, companyName: resolved.companyName, forceBrowser }],
             taskQueue: env.TEMPORAL_TASK_QUEUE,
             workflowId,
           });
@@ -366,4 +368,20 @@ server.listen(PORT, () => {
   console.log(`🌐 Enterprise SEO Platform Web Chat running live at: http://localhost:${PORT}`);
   console.log(`⚡ Connected to Temporal Cloud Namespace: ${env.TEMPORAL_NAMESPACE}`);
   console.log("================================================================================");
+});
+
+// Graceful cleanup on Ctrl+C to guarantee Port 3000 is immediately freed
+function shutdown() {
+  server.close(() => {
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 1000).unref();
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+process.on("exit", () => {
+  try {
+    server.close();
+  } catch {}
 });

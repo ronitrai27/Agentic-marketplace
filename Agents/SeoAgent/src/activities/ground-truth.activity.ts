@@ -52,7 +52,7 @@ export async function groundTruthActivity(input: {
         input.url
       )}&key=${env.GOOGLE_PAGESPEED_KEY}&strategy=mobile`;
 
-      const res = await fetch(endpoint, { signal: AbortSignal.timeout(15000) });
+      const res = await fetch(endpoint, { signal: AbortSignal.timeout(25000) });
       if (res.ok) {
         const data = (await res.json()) as any;
         const lighthouse = data.lighthouseResult;
@@ -68,10 +68,14 @@ export async function groundTruthActivity(input: {
           },
         };
       } else {
-        result.pageSpeed = { error: `PageSpeed API status ${res.status}` };
+        const errorText = await res.text().catch(() => "");
+        result.pageSpeed = { error: `PageSpeed API status ${res.status}: ${errorText.slice(0, 120)}` };
       }
     } catch (err: any) {
       result.pageSpeed = { error: err?.message || "PageSpeed request timeout" };
+    }
+    if (result.pageSpeed?.error) {
+      console.warn(`📊 [Temporal Activity: Ground Truth] ⚠️ PageSpeed note: ${result.pageSpeed.error}`);
     }
   }
 

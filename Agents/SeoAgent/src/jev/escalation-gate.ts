@@ -26,7 +26,18 @@ export function evaluateDeterministicEscalation(
   const reasons: string[] = [];
   const { spaIndicators, metadata, statusCode } = staticResult;
 
-  // Don't escalate non-200 or redirect responses (static crawl already recorded the final state)
+  // 1. Cloudflare / WAF / Anti-bot challenges (403 Forbidden / 503 Service Unavailable on raw fetch)
+  if (statusCode === 403 || statusCode === 401 || statusCode === 503) {
+    return {
+      shouldEscalate: true,
+      confidence: 0.98,
+      reasons: [
+        `HTTP ${statusCode} WAF / bot-protection encountered on raw fetch. Escalate to Browserbase for stealth browser rendering.`,
+      ],
+    };
+  }
+
+  // Don't escalate redirects or standard client/server dead-ends (404 Not Found, 410 Gone)
   if (statusCode >= 300 && statusCode < 400) {
     return { shouldEscalate: false, confidence: 1.0, reasons: ["Redirect response handled statically"] };
   }
