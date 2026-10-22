@@ -14,6 +14,7 @@ const envSchema = z.object({
   OPENROUTER_JEV: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   JEV_MODEL: z.string().default("typesafe/jev-1.14"),
+  BROWSERBASE_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

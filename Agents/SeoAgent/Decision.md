@@ -226,10 +226,49 @@ Agents/SeoAgent/
 
 ---
 
-## Next Planned Steps (When Ready to Continue)
-1. **Step 3 (JEV Escalation Router Gate):** Heuristic policy evaluator deciding whether static crawl is sufficient or if browser escalation is required.
-2. **Step 4 (Pillar 2 Browser Escalation & Evidence Engine):** Headless Playwright activity capturing DOM diffs and visual bounding-box screenshots.
-3. **Step 5 (LangGraph Harness Integration):** Wiring nodes into the cognitive inspection loop.
+## Update 5 — [2026-10-22 22:30:00 IST]: JEV Hydration Gate & Browserbase Cloud Evidence Engine
+
+### 1. JEV Hydration & Escalation Gate (`src/jev/escalation-gate.ts`)
+- **What Was Done:**
+  - Implemented dual-layer escalation router:
+    - **Deterministic Tier (< 1ms):** Checks for hard client SPA indicators (`#root`, `#app`, `#__next` with empty server text), missing titles/descriptions, and missing `<h1>` tags on 200 OK responses.
+    - **JEV Policy Tier:** Queries OpenRouter JEV `typesafe/jev-1.14` with `requires_browser_rendering` to evaluate whether client-side JavaScript hydration is necessary.
+- **Why:**
+  - Prevents launching expensive cloud browser sessions on 90% of pages that are already static or fully server-rendered.
+
+### 2. Pillar 2: Browserbase Cloud Evidence Engine & DOM Differ (`src/activities/browser-evidence.activity.ts`)
+- **What Was Done:**
+  - Integrated Browserbase cloud fleet via direct REST session creation and Playwright CDP connection (`chromium.connectOverCDP`), backed by a local headless Playwright Chromium fallback.
+  - Built **Raw vs. Rendered DOM Differ** comparing server HTML against client DOM to catch:
+    - Client-side JavaScript overriding canonical URLs or meta robots tags.
+    - Tags dropped or mutated during hydration (H1, title, OpenGraph).
+  - Built **Visual Bounding-Box Proof Engine**:
+    - Calculates coordinates (`x, y, width, height, selector`) for offending nodes.
+    - Injects CSS/SVG dashed highlight overlays and captures full-resolution screenshots.
+    - Encapsulates content SHA-256, URL, timestamp, diff report, and screenshot into an immutable `EvidencePackage`.
+
+### 3. Dual-Tier Crawl Temporal Workflow (`src/temporal/workflows/dual-tier-crawl.workflow.ts`)
+- **What Was Done:**
+  - Created durable workflow chaining: Fast Static Ingestion $\rightarrow$ JEV Gate $\rightarrow$ Browserbase Evidence Collector.
+  - Verified live on Browserbase Cloud (Session ID: `776c6377-d2f8-47d1-8c44-23ed0c2a7481` and `1d663a4c-883d-4f67-bd04-afc692b4cd73`).
+
+---
+
+## What is Left to Complete the Entire Platform
+1. **Pillar 3: Search Engine Ground-Truth Layer:**
+   - Google Search Console (GSC) URL Inspection API
+   - CrUX field data API
+   - SERP ranking / intent API (DataForSEO / SerpApi)
+2. **Pillar 4: GEO & Semantic Cannibalization:**
+   - AI citation tracking (Perplexity, ChatGPT Search, Gemini)
+   - Vector embeddings for topical cannibalization & content gap detection
+3. **Pillar 5: Internal Link Graph & PageRank Engine:**
+   - Graphology / in-memory graph over canonical links to compute orphan pages, crawl depth (>3 clicks), and link equity leaks.
+4. **Pillar 6: Actionable Remediation (Code Patch & PR Generator):**
+   - Next.js App Router metadata generators, JSON-LD Schema.org generators, and GitHub PR / Linear exporter.
+5. **LangGraph State Machine Harness:**
+   - Wiring all nodes into the cyclical cognitive loop (`Crawl -> Inspect -> Validate -> Enrich -> Prioritize -> Remediate`).
+
 
 
 

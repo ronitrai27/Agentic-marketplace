@@ -9,6 +9,7 @@ export * from "./activities/index.js";
 export * from "./temporal/connection.js";
 export * from "./temporal/workflows/index.js";
 export * from "./guardrails/index.js";
+export * from "./jev/escalation-gate.js";
 
 console.log("🚀 SeoAgent Core Initialized");
 console.log(`Environment: ${env.NODE_ENV} | Temporal Queue: ${env.TEMPORAL_TASK_QUEUE}`);

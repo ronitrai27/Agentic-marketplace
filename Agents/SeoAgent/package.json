@@ -10,10 +10,12 @@
     "worker": "tsx src/temporal/worker.ts",
     "test:temporal": "tsx src/temporal/run-test.ts",
     "test:guardrails": "tsx src/guardrails/test-guardrails.ts",
+    "test:phases": "tsx src/test-phases.ts",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@browserbasehq/sdk": "^2.22.0",
     "@langchain/core": "^1.2.20",
     "@langchain/langgraph": "^1.5.2",
     "@temporalio/activity": "^1.24.0",
@@ -22,6 +24,7 @@
     "@temporalio/workflow": "^1.24.0",
     "cheerio": "^1.2.0",
     "dotenv": "^18.0.8",
+    "playwright": "^1.64.1",
     "undici": "^8.12.3",
     "zod": "^4.6.7"
   },
