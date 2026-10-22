@@ -119,5 +119,9 @@ export async function groundTruthActivity(input: {
     }
   }
 
+  console.log(
+    `📊 [Temporal Activity: Ground Truth] ✅ PageSpeed: ${result.pageSpeed?.performanceScore ?? "N/A"}/100 (LCP: ${result.pageSpeed?.coreWebVitals?.lcpMs ?? "N/A"}ms) | SERP Rank: #${result.serp?.position ?? "Unranked"}`
+  );
+
   return result;
 }

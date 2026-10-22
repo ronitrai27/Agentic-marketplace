@@ -32,6 +32,7 @@ export async function firecrawlScrapeActivity(
     };
   }
 
+  console.log(`🔥 [Temporal Activity: Firecrawl] Scraping deep markdown for: ${input.url}...`);
   try {
     const response = await fetch("https://api.firecrawl.dev/v2/scrape", {
       method: "POST",
@@ -52,6 +53,7 @@ export async function firecrawlScrapeActivity(
 
     if (!response.ok) {
       const errText = await response.text();
+      console.log(`⚠️ [Temporal Activity: Firecrawl] Scrape returned HTTP ${response.status}`);
       return {
         success: false,
         statusCode: response.status,
@@ -63,6 +65,12 @@ export async function firecrawlScrapeActivity(
     const data = (await response.json()) as any;
     const markdown = data?.data?.markdown || data?.markdown || "";
     const metadata = data?.data?.metadata || data?.metadata || {};
+
+    const preview = markdown.replace(/\s+/g, " ").slice(0, 150);
+    console.log(
+      `🔥 [Temporal Activity: Firecrawl] ✅ Scraped ${markdown.length} chars in ${durationMs}ms | Title: "${metadata.title || "N/A"}"`
+    );
+    console.log(`   Preview: "${preview}..."`);
 
     return {
       success: true,

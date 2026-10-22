@@ -227,7 +227,7 @@ export async function staticCrawlActivity(input: StaticCrawlInput): Promise<Stat
   const parseDurationMs = Math.round(parseEndTime - parseStart);
   const totalDurationMs = Math.round(parseEndTime - startTime);
 
-  return {
+  const result: StaticCrawlResult = {
     url: input.url,
     finalUrl: currentUrl,
     statusCode: finalResponse.statusCode,
@@ -264,4 +264,10 @@ export async function staticCrawlActivity(input: StaticCrawlInput): Promise<Stat
       isPotentialClientOnlySpa,
     },
   };
+
+  console.log(
+    `🔍 [Temporal Activity: Static Crawl] ✅ HTTP ${result.statusCode} in ${result.timing.totalDurationMs}ms | Title: "${title || "None"}" | Canonical: "${declaredCanonical || "None"}" | SPA Root: ${hasRootContainer}`
+  );
+
+  return result;
 }

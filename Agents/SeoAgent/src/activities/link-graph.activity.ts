@@ -107,6 +107,10 @@ export async function linkGraphActivity(input: {
     formattedRanks[url] = parseFloat(score.toFixed(4));
   }
 
+  console.log(
+    `📊 [Temporal Activity: Link Graph] ✅ Scanned: ${N} pages | Orphan Pages: ${orphanPages.length} | Deep Pages (>3): ${deepPages.length}`
+  );
+
   return {
     totalPages: N,
     orphanPages,

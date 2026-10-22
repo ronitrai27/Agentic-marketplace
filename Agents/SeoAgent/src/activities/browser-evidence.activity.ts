@@ -94,6 +94,7 @@ export async function collectBrowserEvidenceActivity(
   const url = staticResult.finalUrl || staticResult.url;
 
   const { browser, sessionId, provider } = await acquireBrowser();
+  console.log(`🌐 [Temporal Activity: Browserbase] Connected via ${provider} | Session ID: ${sessionId || "local-chromium"}`);
   const context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -244,6 +245,11 @@ export async function collectBrowserEvidenceActivity(
       });
     }
 
+    const durationMs = Math.round(performance.now() - startTime);
+    console.log(
+      `🌐 [Temporal Activity: Browserbase] ✅ Browser evidence captured in ${durationMs}ms | DOM Discrepancies: ${discrepancies.length} | Screenshot base64: ${Boolean(screenshotBase64)}`
+    );
+
     return {
       url,
       sessionId,
@@ -257,7 +263,7 @@ export async function collectBrowserEvidenceActivity(
       domDiff,
       evidencePackage,
       detectedIssues,
-      durationMs: Math.round(performance.now() - startTime),
+      durationMs,
     };
   } finally {
     await context.close().catch(() => {});

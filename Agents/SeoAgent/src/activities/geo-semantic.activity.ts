@@ -109,5 +109,9 @@ export async function geoSemanticActivity(input: {
     }
   }
 
+  console.log(
+    `🌐 [Temporal Activity: GEO Citations] ✅ Domain Cited in AI Engines: ${result.geoCitation?.isDomainCited ?? false} | Cannibalization Alerts: ${result.cannibalizationIssues.length}`
+  );
+
   return result;
 }
