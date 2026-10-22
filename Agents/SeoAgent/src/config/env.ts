@@ -11,6 +11,9 @@ const envSchema = z.object({
   TEMPORAL_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
+  OPENROUTER_JEV: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().optional(),
+  JEV_MODEL: z.string().default("typesafe/jev-1.14"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -19,6 +22,7 @@ const rawEnv = {
   ...process.env,
   TEMPORAL_API_KEY: process.env.TEMPORAL_API_KEY || process.env.TEMPORAL_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || process.env.OPENAPI_KEY,
+  OPENROUTER_JEV: process.env.OPENROUTER_JEV || process.env.OPENROUTER_API_KEY,
 };
 
 const parsedEnv = envSchema.safeParse(rawEnv);
