@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "temporal-developer": {
+      "source": "temporalio/skill-temporal-developer",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "3b3dc6a2e2dd27901733a5ab10102faaf5240fe38ecbfd9f65aa696f56f42907"
+    }
+  }
+}
