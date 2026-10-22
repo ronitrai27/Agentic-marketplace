@@ -2,6 +2,7 @@ import { StateGraph, START, END, MemorySaver } from "@langchain/langgraph";
 import { SeoAgentState, type SeoAgentStateType } from "./state.js";
 import { guardrailNode, routeAfterGuardrail } from "./nodes/guardrail.node.js";
 import { supervisorNode, routeAfterSupervisor } from "./nodes/supervisor.node.js";
+import { firecrawlNode } from "./nodes/firecrawl.node.js";
 import {
   scoutNode,
   routeAfterScout,
@@ -15,9 +16,10 @@ import {
  */
 export function createSeoAgentGraph() {
   const workflow = new StateGraph(SeoAgentState)
-    // 1. Add all nodes: guardrail, supervisor & audit pipeline
+    // 1. Add all nodes: guardrail, supervisor, scraper & audit pipeline
     .addNode("guardrail", guardrailNode)
     .addNode("supervisor", supervisorNode)
+    .addNode("firecrawlNode", firecrawlNode)
     .addNode("scoutNode", scoutNode)
     .addNode("evidenceNode", evidenceNode)
     .addNode("auditNode", auditNode)
@@ -32,9 +34,10 @@ export function createSeoAgentGraph() {
       __end__: END,
     })
 
-    // 4. Wire routing after supervisor
+    // 4. Wire parallel routing after supervisor: runs both Scout audit and Firecrawl scraper concurrently!
     .addConditionalEdges("supervisor", routeAfterSupervisor, {
       scoutNode: "scoutNode",
+      firecrawlNode: "firecrawlNode",
       __end__: END,
     })
 
@@ -44,9 +47,10 @@ export function createSeoAgentGraph() {
       auditNode: "auditNode",
     })
 
-    // 6. Connect pipeline completion
+    // 6. Connect pipeline completion (both branches join at summaryNode)
     .addEdge("evidenceNode", "auditNode")
     .addEdge("auditNode", "summaryNode")
+    .addEdge("firecrawlNode", "summaryNode")
     .addEdge("summaryNode", END);
 
   // Enable conversational memory checkpointer across turns

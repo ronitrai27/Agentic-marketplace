@@ -4,3 +4,4 @@ export * from "./escalation-gate.activity.js";
 export * from "./ground-truth.activity.js";
 export * from "./geo-semantic.activity.js";
 export * from "./link-graph.activity.js";
+export * from "./firecrawl-scrape.activity.js";

@@ -276,6 +276,42 @@ Agents/SeoAgent/
     - **Power-Iteration PageRank:** Runs 20 rounds of PageRank ($d = 0.85$) to distribute link equity scores.
   - Verified live: Correctly flagged orphan articles and deep pages at depth 4.
 
+---
+
+## Update 7 — [2026-10-22 23:15:00 IST]: Guardrail-First Architecture & Conversational Memory
+
+### 1. Guardrail-First Topology
+- **What Was Done:**
+  - Enforced `START -> guardrailNode` as the mandatory first edge in the LangGraph workflow (`src/graph/index.ts`).
+  - Every incoming user turn passes through:
+    1. In-memory fuzzy ban list (sub-millisecond regex + Levenshtein distance).
+    2. Presidio-grade PII sanitizer (Luhn card checks, SSN, API keys).
+    3. Heuristic prompt injection and DAN/jailbreak pattern scanners.
+    4. TypeSafe JEV Semantic Decisions via OpenRouter.
+  - **Deterministic Fast Rejection:** If an adversarial pattern is detected (e.g., `drop database`, `DAN unrestricted`), the agent short-circuits directly to `END` without invoking expensive LLMs or exposing the supervisor.
+
+### 2. Conversational Memory & Ground-Truth Context Caching
+- **What Was Done:**
+  - Integrated LangGraph `MemorySaver` checkpointer keyed by `thread_id`.
+  - Once a domain audit is performed, all 5-pillar findings (CWV metrics, SERP rankings, DOM diffs, GEO citations, link graph) are stored in thread state.
+  - Subsequent conversational follow-up turns are routed to the supervisor to answer directly from state memory without re-triggering costly crawls.
+
+---
+
+## Update 8 — [2026-10-22 23:25:00 IST]: Interactive CLI & Node Observability Pipeline
+
+### 1. Granular Node-by-Node Observability
+- **What Was Done:**
+  - Added clean, standardized console prefixes across the pipeline:
+    - `🛡️ [Guardrail]`: Execution latency, PII redaction status, and JEV scores (`inj` / `tox`).
+    - `🎯 / 💬 / 👋 [Supervisor]`: State transition indicator (Audit trigger, memory answering, or greeting).
+    - `🔍 [Scout]`: Crawl latency, HTTP status code, and extracted `<title>`.
+    - `⚡ [JEV Gate]`: Classification decision (`STATIC_COMPLETE` vs `ESCALATE_TO_BROWSER`), confidence, and reasoning.
+    - `🌐 [Evidence]`: Browserbase cloud session status, DOM discrepancy count, and screenshots.
+    - `📊 [Audit]`: Parallel execution status for PageSpeed, SerpApi, GEO citations, and link graph.
+    - `📝 / ✅ [Summary]`: Synthesis progress and report generation.
+
+
 
 
 

@@ -17,6 +17,7 @@ const envSchema = z.object({
   BROWSERBASE_API_KEY: z.string().optional(),
   SERPAPI_KEY: z.string().optional(),
   GOOGLE_PAGESPEED_KEY: z.string().optional(),
+  FIRECRAWL_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -28,6 +29,7 @@ const rawEnv = {
   OPENROUTER_JEV: process.env.OPENROUTER_JEV || process.env.OPENROUTER_API_KEY,
   SERPAPI_KEY: process.env.SERPAPI_KEY,
   GOOGLE_PAGESPEED_KEY: process.env.GOOGLE_PAGESPEED_KEY,
+  FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEYS || "fc-f1db0e5309674aa2824f22a84514f8ad",
 };
 
 if (!process.env.OPENAI_API_KEY && rawEnv.OPENAI_API_KEY) {

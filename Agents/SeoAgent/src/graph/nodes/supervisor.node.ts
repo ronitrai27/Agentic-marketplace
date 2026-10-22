@@ -42,8 +42,10 @@ Here is the Ground Truth & Technical Data from the audit memory:
 - SerpApi Ground Truth: Rank=${state.groundTruth?.serp?.position ?? "Unranked"}, Competitors=${state.groundTruth?.serp?.topCompetitors.join(", ") ?? "None"}
 - GEO & Semantic Cannibalization: Domain Cited=${state.geoData?.geoCitation?.isDomainCited ?? false}, Engine=${state.geoData?.geoCitation?.aiEngine ?? "None"}, Cannibalization Pairs=${state.geoData?.cannibalizationIssues.length ?? 0}
 - Link Graph: Total Pages=${state.linkGraphData?.totalPages ?? 0}, Orphan Pages=${state.linkGraphData?.orphanPages.length ?? 0}, Deep Pages (>3)=${state.linkGraphData?.deepPages.length ?? 0}
+- Scraped Page Content (Firecrawl Markdown Extract):
+${state.scrapedContent?.markdown ? state.scrapedContent.markdown.slice(0, 3000) : "None"}
 
-Answer the user's inquiry thoroughly, authoritatively, and concisely. DO NOT re-crawl or make up fake metrics. Reference the exact audit memory above.`;
+Answer the user's inquiry thoroughly, authoritatively, and concisely. DO NOT re-crawl or make up fake metrics. Reference the exact audit memory and scraped page content above.`;
 
     try {
       const response = await model.invoke([
@@ -70,6 +72,7 @@ You assist users by auditing websites across 5 core pillars:
 3. Google PageSpeed (CWV) & SerpApi Rank
 4. GEO Engine Citations & Semantic Cannibalization
 5. Internal Link Graph & PageRank
+Plus parallel Firecrawl scraping for deep page content understanding.
 
 Invite the user to share a URL they'd like audited, or answer any general SEO/GEO questions. Keep it brief and professional.`;
 
@@ -90,11 +93,13 @@ Invite the user to share a URL they'd like audited, or answer any general SEO/GE
 }
 
 /**
- * Conditional router: Decide whether to enter audit pipeline or stay in conversational chat
+ * Conditional router: Decide whether to enter audit & scraping pipeline or stay in conversational chat
  */
-export function routeAfterSupervisor(state: SeoAgentStateType): "scoutNode" | "__end__" {
+export function routeAfterSupervisor(
+  state: SeoAgentStateType
+): ("scoutNode" | "firecrawlNode")[] | "__end__" {
   if (state.currentUrl && !state.auditComplete) {
-    return "scoutNode";
+    return ["scoutNode", "firecrawlNode"];
   }
   return "__end__";
 }

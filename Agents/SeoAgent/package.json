@@ -13,6 +13,8 @@
     "test:phases": "tsx src/test-phases.ts",
     "test:pillars": "tsx src/test-pillars.ts",
     "test:chat": "tsx src/test-chat.ts",
+    "chat": "tsx src/cli.ts",
+    "web": "tsx src/server.ts",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit"
   },

@@ -5,6 +5,7 @@ import type { BrowserEvidenceResult } from "../activities/browser-evidence.activ
 import type { GroundTruthResult } from "../activities/ground-truth.activity.js";
 import type { GeoSemanticResult } from "../activities/geo-semantic.activity.js";
 import type { LinkGraphResult } from "../activities/link-graph.activity.js";
+import type { FirecrawlScrapeResult } from "../activities/firecrawl-scrape.activity.js";
 
 export const SeoAgentState = Annotation.Root({
   // Chat history with messages state reducer
@@ -15,6 +16,12 @@ export const SeoAgentState = Annotation.Root({
 
   // Target audit URL
   currentUrl: Annotation<string | null>({
+    reducer: (_, next) => next,
+    default: () => null,
+  }),
+
+  // Parallel Scraper: Full main-content Markdown via Firecrawl v2
+  scrapedContent: Annotation<FirecrawlScrapeResult | null>({
     reducer: (_, next) => next,
     default: () => null,
   }),
