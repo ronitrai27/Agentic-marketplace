@@ -120,7 +120,30 @@ Agents/SeoAgent/
 
 ---
 
+## Update 2 — [2026-10-22 20:11:00 IST]
+
+### 1. Official Temporal Developer Agent Skill Integration
+- **Action:** Installed `temporalio/skill-temporal-developer` via `npx skills add` at both the **workspace root** (`/.agents/skills/temporal-developer`) and the **agent workspace** (`/Agents/SeoAgent/.agents/skills/temporal-developer`).
+- **Rationale:** Equips coding subagents and developers with authoritative patterns for Temporal SDK determinism rules, non-blocking asynchronous timers, activity heartbeats, exponential retry policies, and workflow versioning without manual context reloading.
+
+### 2. Temporal Cloud Production Target Configured
+- **Action:** Upgraded connection targets from local development stub (`localhost:7233`) to official Temporal Cloud cluster:
+  - **Address:** `quickstart-rox-seoagent-1212.odwdl.tmprl.cloud:7233`
+  - **Namespace:** `quickstart-rox-seoagent-1212.odwdl`
+  - **Authentication:** `TEMPORAL_API_KEY` with TLS / mTLS capability.
+- **Rationale:** Connects the agent directly to enterprise-grade cloud execution infrastructure capable of distributed multi-worker orchestration with 99.99% workflow durability SLA.
+
+### 3. Resilient Multi-Key Environment Mapping
+- **Action:** Updated `src/config/env.ts` and `.env.example` with fallback compatibility:
+  - Supports both `TEMPORAL_API_KEY` and legacy `TEMPORAL_KEY`.
+  - Supports both `OPENAI_API_KEY` and `OPENAPI_KEY`.
+- **Rationale:** Prevents runtime startup crashes caused by variable naming mismatches across CI/CD and developer machine configurations.
+
+---
+
 ## Next Planned Steps (When Ready to Implement Agents)
-1. **Pillar 1 Ingestion Activity:** Temporal Activity for Dual-Tier Ingestion (`undici` static pass + JEV browser gate).
-2. **Pillar 2 Evidence Collector:** Headless Playwright DOM differ and screenshot bounding-box generator.
-3. **LangGraph Graph Assembly:** Wiring node transitions and state checkpoints.
+1. **Temporal Cloud Client & Worker Bootstrap:** Build `src/temporal/client.ts` and `src/temporal/worker.ts` with secure TLS connection to Temporal Cloud.
+2. **Pillar 1 Ingestion Activity:** Temporal Activity for Dual-Tier Ingestion (`undici` static pass + JEV browser gate).
+3. **Pillar 2 Evidence Collector:** Headless Playwright DOM differ and screenshot bounding-box generator.
+4. **LangGraph Graph Assembly:** Wiring node transitions and state checkpoints.
+

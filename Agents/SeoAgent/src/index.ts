@@ -5,6 +5,9 @@ import type { SeoIssue, EvidencePackage } from "./core/types.js";
 export * from "./core/types.js";
 export * from "./core/state.js";
 export * from "./config/env.js";
+export * from "./activities/index.js";
+export * from "./temporal/connection.js";
+export * from "./temporal/workflows/index.js";
 
 console.log("🚀 SeoAgent Core Initialized");
 console.log(`Environment: ${env.NODE_ENV} | Temporal Queue: ${env.TEMPORAL_TASK_QUEUE}`);

@@ -7,6 +7,8 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
+    "worker": "tsx src/temporal/worker.ts",
+    "test:temporal": "tsx src/temporal/run-test.ts",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -17,7 +19,9 @@
     "@temporalio/client": "^1.24.0",
     "@temporalio/worker": "^1.24.0",
     "@temporalio/workflow": "^1.24.0",
+    "cheerio": "^1.2.0",
     "dotenv": "^18.0.8",
+    "undici": "^8.12.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
