@@ -15,6 +15,8 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().optional(),
   JEV_MODEL: z.string().default("typesafe/jev-1.14"),
   BROWSERBASE_API_KEY: z.string().optional(),
+  SERPAPI_KEY: z.string().optional(),
+  GOOGLE_PAGESPEED_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -24,6 +26,8 @@ const rawEnv = {
   TEMPORAL_API_KEY: process.env.TEMPORAL_API_KEY || process.env.TEMPORAL_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || process.env.OPENAPI_KEY,
   OPENROUTER_JEV: process.env.OPENROUTER_JEV || process.env.OPENROUTER_API_KEY,
+  SERPAPI_KEY: process.env.SERPAPI_KEY,
+  GOOGLE_PAGESPEED_KEY: process.env.GOOGLE_PAGESPEED_KEY,
 };
 
 const parsedEnv = envSchema.safeParse(rawEnv);

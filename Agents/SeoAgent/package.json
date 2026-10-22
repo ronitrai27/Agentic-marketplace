@@ -11,6 +11,7 @@
     "test:temporal": "tsx src/temporal/run-test.ts",
     "test:guardrails": "tsx src/guardrails/test-guardrails.ts",
     "test:phases": "tsx src/test-phases.ts",
+    "test:pillars": "tsx src/test-pillars.ts",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit"
   },
