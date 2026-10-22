@@ -311,8 +311,32 @@ Agents/SeoAgent/
     - `📊 [Audit]`: Parallel execution status for PageSpeed, SerpApi, GEO citations, and link graph.
     - `📝 / ✅ [Summary]`: Synthesis progress and report generation.
 
+---
 
+## Update 9 — [2026-10-23 00:25:00 IST]: True Autonomous Agent Architecture (No Regex, Temporal Push, Anti-Hallucination)
 
+### 1. Zero-Regex Dual-Tier Entity & Brand Resolver (`src/core/target-resolver.ts`)
+- **What Was Done:**
+  - Replaced brittle URL regex with dual-tier target resolution:
+    - **Tier 1:** Universal domain pattern matching (`www.wekraft.xyz/web`, `wekraft.xyz`, `https://example.com/foo`).
+    - **Tier 2:** Natural language intent recognition + SerpApi ground-truth discovery for raw brand queries (e.g., *"go to wekraft - a project management platform and tell about that"* $\rightarrow$ resolves official domain via Google search).
 
+### 2. Full Durable Temporal Cloud Workflow (`src/temporal/workflows/full-audit.workflow.ts`)
+- **What Was Done:**
+  - Built unified `fullAuditWorkflow` orchestrating all 5 pillars and Firecrawl scraping as durable activities:
+    - Step 1: Concurrent Fast Static Crawl + Firecrawl v2 Scrape
+    - Step 2: JEV Hydration & Escalation Gate
+    - Step 3: Browserbase Cloud session (if client-rendered dynamic SPA)
+    - Step 4: Google PageSpeed (CWV), SerpApi Rank, GEO Citations, and Link Graph in parallel
+  - Runs with 99.99% durability on Temporal Cloud (`quickstart-rox-seoagent-1212.odwdl.tmprl.cloud:7233`).
 
+### 3. Server-Sent Events (SSE) Auto-Push (No User Polling)
+- **What Was Done:**
+  - Wired `/api/events` in `src/server.ts` and `src/public/index.html`.
+  - The agent immediately acknowledges background workflow dispatch.
+  - When the Temporal Cloud worker completes all activities, the server automatically pushes the final verified report into the user's chat window via SSE without requiring user input or polling.
 
+### 4. Zero-Tolerance Anti-Hallucination Data Gate
+- **What Was Done:**
+  - If an audit is in progress, the model is strictly forbidden from guessing metrics.
+  - All company descriptions and domain analyses strictly originate from Firecrawl's real scraped markdown (`state.scrapedContent.markdown`), completely eliminating fabricated scores or false business classifications.

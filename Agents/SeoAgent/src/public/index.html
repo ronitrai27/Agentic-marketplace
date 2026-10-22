@@ -294,6 +294,20 @@
     const temporalBadge = document.getElementById('temporalBadge');
     const temporalStatusText = document.getElementById('temporalStatusText');
 
+    // Establish persistent Server-Sent Events (SSE) connection
+    // Auto-receives audit results pushed from Temporal Cloud without user polling
+    const sse = new EventSource('/api/events?threadId=' + threadId);
+    sse.addEventListener('audit_complete', (e) => {
+      const data = JSON.parse(e.data);
+      appendMessage('agent', data.report);
+      pollTemporalStatus();
+    });
+    sse.addEventListener('audit_error', (e) => {
+      const data = JSON.parse(e.data);
+      appendMessage('agent', '❌ **Workflow Error**: ' + data.error);
+      pollTemporalStatus();
+    });
+
     promptInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();

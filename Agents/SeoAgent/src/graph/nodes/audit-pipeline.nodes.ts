@@ -176,7 +176,16 @@ AUDIT FINDINGS:
    - Orphan Pages: ${state.linkGraphData?.orphanPages.length ?? 0}
    - Deep Pages (>3 clicks): ${state.linkGraphData?.deepPages.length ?? 0}
 
-Provide an ultra-crisp, executive summary with:
+6. Firecrawl Deep Content Extraction:
+   - Scrape Success: ${state.scrapedContent?.success ?? false}
+   - Page Title: "${state.scrapedContent?.title || state.scoutData?.metadata.title || "N/A"}"
+   - Page Description: "${state.scrapedContent?.description || state.scoutData?.metadata.metaDescription || "N/A"}"
+   - Scraped Content Markdown:
+${state.scrapedContent?.markdown ? state.scrapedContent.markdown.slice(0, 2500) : "No markdown available"}
+
+INSTRUCTIONS:
+- First, clearly state what the website and product/company actually do based STRICTLY on the Firecrawl Scraped Content above. DO NOT guess or invent fake service categories.
+- Provide an ultra-crisp, executive summary with:
 - 🟢 Highlights (what's great)
 - ⚠️ Critical Technical Risks
 - 🎯 Actionable Fixes (Code & Strategy)

@@ -1,33 +1,46 @@
 import { AIMessage, SystemMessage } from "@langchain/core/messages";
 import type { SeoAgentStateType } from "../state.js";
 import { getChatModel } from "../model.js";
-
-const URL_REGEX = /https?:\/\/[^\s/$.?#].[^\s]*/i;
+import { resolveAuditTarget } from "../../core/target-resolver.js";
 
 export async function supervisorNode(state: SeoAgentStateType): Promise<Partial<SeoAgentStateType>> {
   const lastMessage = state.messages[state.messages.length - 1];
   const query = typeof lastMessage?.content === "string" ? lastMessage.content : "";
 
-  // 1. Detect if the user provided a URL to audit
-  const match = query.match(URL_REGEX);
-  const detectedUrl = match ? match[0].replace(/[),.;]+$/, "") : null;
+  // 1. Resolve Audit Target via dual-tier entity recognition (Direct domains, www, brands, or natural queries)
+  const resolved = await resolveAuditTarget(query);
 
-  if (detectedUrl && detectedUrl !== state.currentUrl) {
-    console.log(`🎯 [Supervisor] Target URL detected: ${detectedUrl} -> Starting Audit Pipeline`);
+  if (resolved.isAuditIntent && resolved.targetUrl && resolved.targetUrl !== state.currentUrl) {
+    console.log(
+      `🎯 [Supervisor] Target resolved: ${resolved.targetUrl} (Brand: ${resolved.companyName || "N/A"}) [${resolved.reason}] -> Starting Audit Pipeline`
+    );
     // New URL requested -> start audit pipeline
     return {
-      currentUrl: detectedUrl,
+      currentUrl: resolved.targetUrl,
       auditComplete: false,
       scoutData: null,
       evidenceData: null,
       groundTruth: null,
       geoData: null,
       linkGraphData: null,
+      scrapedContent: null,
       lastError: null,
     };
   }
 
-  // 2. If no new URL, but we have prior audit memory -> Answer from memory using gpt-4.1-mini
+  // 2. Strict Anti-Hallucination Gate: If an audit is currently in progress, DO NOT guess or hallucinate metrics
+  if (state.currentUrl && !state.auditComplete) {
+    console.log(`⏳ [Supervisor] Audit currently in progress for ${state.currentUrl} — blocking ungrounded answers`);
+    return {
+      messages: [
+        new AIMessage(
+          `⏳ The technical audit and Firecrawl content scrape for **${state.currentUrl}** are currently executing in the background.\n\nNo estimated or fabricated findings will be provided. Please wait a moment—the verified findings will be delivered as soon as all activities finish!`
+        ),
+      ],
+    };
+  }
+
+  // 3. If no new URL, but we have completed prior audit memory -> Answer from memory using gpt-4.1-mini
   const model = getChatModel();
 
   if (state.auditComplete && state.currentUrl) {
