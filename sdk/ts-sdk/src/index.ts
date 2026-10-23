@@ -46,6 +46,7 @@ export {
 export {
   pipeAiSdkStream,
   pipeOpenAiStream,
+  pipeOpenAiResponsesStream,
   pipeLangGraphStream,
   pipeAsyncIterableStream,
 } from "./adapters.js";

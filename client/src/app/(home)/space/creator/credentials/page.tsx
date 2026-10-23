@@ -26,9 +26,13 @@ export default function CreatorCredentialsPage() {
   // Live Convex Query
   const apiKeysData = useQuery(api.apiKeys.getApiKeys);
   // getOrCreatePublicKey is now an action (server-side crypto)
-  const getOrCreatePublicKey = useAction(api.apiKeysActions.getOrCreatePublicKey);
+  const getOrCreatePublicKey = useAction(
+    api.apiKeysActions.getOrCreatePublicKey,
+  );
   // generateSecretKey is an action — key is generated + hashed server-side
-  const generateSecretKeyAction = useAction(api.apiKeysActions.generateSecretKey);
+  const generateSecretKeyAction = useAction(
+    api.apiKeysActions.generateSecretKey,
+  );
   // rotateSecretKey is also an action now
   const rotateSecretKeyAction = useAction(api.apiKeysActions.rotateSecretKey);
   const deleteSecretKeyMutation = useMutation(api.apiKeys.deleteSecretKey);
@@ -190,7 +194,7 @@ export default function CreatorCredentialsPage() {
           {/* Animated Pixel Dither at right end */}
           <div
             aria-hidden="true"
-            className="absolute right-0 top-0 w-96 pointer-events-none overflow-hidden"
+            className="absolute right-0 top-0 -bottom-5 w-1/2 pointer-events-none overflow-hidden"
             style={{
               maskImage:
                 "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.6) 45%, black 100%)",

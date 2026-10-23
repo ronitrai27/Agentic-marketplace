@@ -5,11 +5,11 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import { z } from "zod";
-import { createMarketplaceAgent } from "catelog";
+import { createMarketplaceAgent, pipeOpenAiResponsesStream } from "catelog";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Load environment variables
+// Load environment variables — agent-local .env first, then parent Agents/.env
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
@@ -23,10 +23,16 @@ const client = new OpenAI({ apiKey: apiKey || "" });
 const PUBLIC_DIR = path.resolve(__dirname, "../public");
 const PORT = Number(process.env.PORT) || 3001;
 
-// 1. Declare Marketplace Schemas with Zod
+// ─────────────────────────────────────────────────────────────────────────────
+//  1. Marketplace Schemas
+// ─────────────────────────────────────────────────────────────────────────────
+
 const InputSchema = z.object({
   prompt: z.string().min(2).describe("Research question or topic to investigate"),
-  mode: z.enum(["fast", "deep"]).default("fast").describe("Research mode: 'fast' (realtime web search) or 'deep' (background reasoning)"),
+  mode: z
+    .enum(["fast", "deep"])
+    .default("fast")
+    .describe("Research mode: 'fast' (realtime web search) or 'deep' (background reasoning)"),
 });
 
 const OutputSchema = z.object({
@@ -48,18 +54,29 @@ type AgentOutput = {
   duration_seconds: number;
 };
 
-// 2. Wrap Agent Logic with Catelog Marketplace SDK
+// ─────────────────────────────────────────────────────────────────────────────
+//  2. Catelog Agent — wires the marketplace protocol, streaming + telemetry
+//     Keys are auto-discovered from env CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
   name: "Universal Research Agent 2",
   version: "1.0.0",
-  description: "Dual-mode research agent utilizing OpenAI Responses API and live Web Search (fast & deep reasoning)",
-  secret: process.env.MARKETPLACE_SECRET || "rox-marketplace-secret-2026",
+  description:
+    "Dual-mode research agent using OpenAI Responses API + live Web Search (fast & deep reasoning)",
+
+  // Keys are read automatically from CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY env vars.
+  // Explicit overrides kept as fallback for local development without .env.
+  secretKey: process.env.CATELOG_SECRET_KEY,
+  publicKey: process.env.CATELOG_PUBLIC_KEY,
+
   inputSchema: InputSchema as any,
   outputSchema: OutputSchema as any,
 
   async execute({ input, stream, signal }) {
     const startTime = Date.now();
 
+    // ── Fast Mode: synchronous web-search response ──
     if (input.mode === "fast" || !input.mode) {
       stream.step("Running web search with gpt-6-luna...");
 
@@ -69,6 +86,8 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
         tools: [{ type: "web_search" }],
       });
 
+      // Pipe response → SSE activity events + telemetry via the new adapter
+      const adapterResult = await pipeOpenAiResponsesStream(response, stream);
       const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
       const answer = response.output_text || "No response generated.";
 
@@ -80,18 +99,13 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
           duration_seconds: durationSeconds,
         },
         telemetry: {
-          model_used: "gpt-6-luna",
-          llm_tokens: {
-            total: response.usage?.total_tokens || 350,
-            prompt: response.usage?.input_tokens || 200,
-            completion: response.usage?.output_tokens || 150,
-          },
-          cost_usd: 0.0015,
+          ...adapterResult.telemetry,
+          duration_ms: Date.now() - startTime,
         },
       };
     }
 
-    // Deep Mode: Background Reasoning
+    // ── Deep Mode: background reasoning + polling ──
     stream.step("Dispatching background deep reasoning task (gpt-5.4-mini)...");
 
     let response: any = await client.responses.create({
@@ -102,26 +116,38 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       tools: [{ type: "web_search" }],
     });
 
-    stream.step(`Task queued [${response.id}], awaiting reasoning steps...`);
+    stream.activity("background_task", {
+      taskId: response.id,
+      status: response.status,
+      model: "gpt-5.4-mini",
+    });
 
-    // Poll until complete or aborted
+    // Polling loop — emit structured activity events on each tick
     while (response.status === "queued" || response.status === "in_progress") {
       if (signal.aborted) {
         throw new Error("EXECUTION_TIMEOUT");
       }
 
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      stream.step(`Reasoning & web search in progress (${elapsed}s elapsed, status: ${response.status})...`);
+      stream.activity("polling", {
+        taskId: response.id,
+        status: response.status,
+        elapsed_seconds: elapsed,
+      });
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      response = (await client.responses.retrieve(response.id)) as any;
+      response = await client.responses.retrieve(response.id) as any;
     }
-
-    const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
 
     if (response.status !== "completed") {
-      throw new Error(`Background reasoning ended with unexpected status: ${response.status}`);
+      throw new Error(
+        `Background reasoning ended with unexpected status: ${response.status}`
+      );
     }
+
+    // Pipe final response → SSE delta + activity events + telemetry
+    const adapterResult = await pipeOpenAiResponsesStream(response, stream);
+    const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
 
     return {
       output: {
@@ -131,17 +157,16 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
         duration_seconds: durationSeconds,
       },
       telemetry: {
-        model_used: "gpt-5.4-mini",
-        llm_tokens: {
-          total: response.usage?.total_tokens || 1200,
-          prompt: response.usage?.input_tokens || 400,
-          completion: response.usage?.output_tokens || 800,
-        },
-        cost_usd: 0.0045,
+        ...adapterResult.telemetry,
+        duration_ms: Date.now() - startTime,
       },
     };
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  3. MIME types for static file serving
+// ─────────────────────────────────────────────────────────────────────────────
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -153,16 +178,22 @@ const MIME_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
-// 3. HTTP Server: Serves Marketplace Protocol + Web UI
+// ─────────────────────────────────────────────────────────────────────────────
+//  4. HTTP Server: Marketplace Protocol + Web UI
+// ─────────────────────────────────────────────────────────────────────────────
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
-  // Route 1: Marketplace Endpoints handled directly by Catelog SDK
+  // Route 1: Marketplace endpoints handled by Catelog SDK
+  // /health  → liveness probe + capabilities
+  // /schema  → agent manifest (input/output JSON schemas)
+  // /execute → authenticated execution (Bearer cat_sec_... or HMAC from gateway)
   if (["/health", "/schema", "/execute"].includes(url.pathname)) {
     return agent.handleRequest(req, res);
   }
 
-  // CORS headers for UI
+  // CORS for the web UI
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -173,12 +204,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Route 2: Web UI Chat Endpoint
+  // Route 2: Web UI Chat endpoint (custom SSE — NOT the marketplace /execute route)
   if (url.pathname === "/api/chat" && req.method === "POST") {
     let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
+    req.on("data", (chunk) => { body += chunk; });
 
     req.on("end", async () => {
       let prompt = "";
@@ -204,6 +233,7 @@ const server = http.createServer(async (req, res) => {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
       });
 
       const sendEvent = (event: string, data: any) => {
@@ -224,7 +254,18 @@ const server = http.createServer(async (req, res) => {
             model: "gpt-6-luna",
             input: prompt,
             tools: [{ type: "web_search" }],
-          });
+          }) as any;
+
+          // Emit web_search activity if present in output items
+          for (const item of response?.output ?? []) {
+            if (item?.type === "web_search_call" || item?.type === "search") {
+              sendEvent("activity", {
+                type: "web_search",
+                query: item?.action?.query ?? item?.query,
+                status: item?.status ?? "completed",
+              });
+            }
+          }
 
           const durationMs = Date.now() - startTime;
           sendEvent("done", {
@@ -232,6 +273,13 @@ const server = http.createServer(async (req, res) => {
             model: "gpt-6-luna",
             mode: "fast",
             durationMs,
+            telemetry: {
+              llm_tokens: {
+                prompt: response.usage?.input_tokens,
+                completion: response.usage?.output_tokens,
+                total: response.usage?.total_tokens,
+              },
+            },
           });
           res.end();
         } else {
@@ -247,14 +295,14 @@ const server = http.createServer(async (req, res) => {
             background: true,
             reasoning: { effort: "medium" },
             tools: [{ type: "web_search" }],
-          });
+          }) as any;
 
           sendEvent("status", {
             phase: "dispatched",
             taskId: response.id,
             status: response.status,
             model: "gpt-5.4-mini",
-            message: `Background task started [${response.id}] with status: ${response.status}`,
+            message: `Background task started [${response.id}] — status: ${response.status}`,
           });
 
           while (response.status === "queued" || response.status === "in_progress") {
@@ -264,21 +312,49 @@ const server = http.createServer(async (req, res) => {
               taskId: response.id,
               status: response.status,
               elapsedSeconds: elapsed,
-              message: `Deep reasoning & searching in background... (${elapsed}s elapsed, status: ${response.status})`,
+              message: `Deep reasoning & searching in background... (${elapsed}s, status: ${response.status})`,
             });
 
             await new Promise((resolve) => setTimeout(resolve, 2000));
-            response = await client.responses.retrieve(response.id);
+            response = await client.responses.retrieve(response.id) as any;
           }
 
           const durationMs = Date.now() - startTime;
+
           if (response.status === "completed") {
+            // Emit activity events for search/reasoning steps
+            for (const item of response?.output ?? []) {
+              if (item?.type === "web_search_call" || item?.type === "search") {
+                sendEvent("activity", {
+                  type: "web_search",
+                  query: item?.action?.query ?? item?.query,
+                  status: item?.status ?? "completed",
+                });
+              }
+              if (item?.type === "reasoning") {
+                const summary = item?.summary?.map((s: any) => s?.text).join(" ") ?? "";
+                if (summary) {
+                  sendEvent("activity", {
+                    type: "reasoning",
+                    summary: summary.slice(0, 300),
+                  });
+                }
+              }
+            }
+
             sendEvent("done", {
               output: response.output_text,
               model: "gpt-5.4-mini",
               mode: "deep",
               taskId: response.id,
               durationMs,
+              telemetry: {
+                llm_tokens: {
+                  prompt: response.usage?.input_tokens,
+                  completion: response.usage?.output_tokens,
+                  total: response.usage?.total_tokens,
+                },
+              },
             });
           } else {
             sendEvent("error", {
@@ -299,7 +375,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Route 3: Serve static web UI files from public/
+  // Route 3: Serve static web UI from public/
   let filePath = path.join(PUBLIC_DIR, url.pathname === "/" ? "index.html" : url.pathname);
 
   if (!filePath.startsWith(PUBLIC_DIR)) {
@@ -329,12 +405,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
+  const keyMode = process.env.CATELOG_SECRET_KEY ? "🔐 Authenticated" : "⚠️  Dev mode (no key)";
   console.log(`\n======================================================`);
   console.log(`🚀 Research Agent 2 running at: http://localhost:${PORT}`);
+  console.log(`🔑 Auth mode: ${keyMode}`);
   console.log(`📡 Marketplace Protocol:`);
-  console.log(`   - Ping / Liveness: http://localhost:${PORT}/health`);
-  console.log(`   - Schema Manifest: http://localhost:${PORT}/schema`);
-  console.log(`   - Secure Execute:  http://localhost:${PORT}/execute`);
-  console.log(`💬 Web UI:            http://localhost:${PORT}`);
+  console.log(`   - Liveness:  http://localhost:${PORT}/health`);
+  console.log(`   - Schema:    http://localhost:${PORT}/schema`);
+  console.log(`   - Execute:   http://localhost:${PORT}/execute  (Bearer cat_sec_... or HMAC)`);
+  console.log(`💬 Web UI:      http://localhost:${PORT}`);
   console.log(`======================================================\n`);
 });

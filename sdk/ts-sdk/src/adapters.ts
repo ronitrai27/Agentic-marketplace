@@ -308,3 +308,92 @@ export async function pipeAsyncIterableStream(
 
   return { output: { text: fullText } as any, telemetry };
 }
+
+// ─────────────────────────────────────────────────
+//  OpenAI Responses API Adapter (client.responses.create)
+// ─────────────────────────────────────────────────
+
+/**
+ * Pipes an OpenAI Responses API result into Catelog streaming events.
+ * Supports:
+ *   - Non-streaming: pass the resolved response object directly
+ *   - Background polling: pass the polling loop as an async iterable via pollFn
+ *
+ * Emits:
+ *   - stream.delta() for each text chunk / output_text
+ *   - stream.activity("web_search") for search tool calls
+ *   - stream.activity("reasoning") for reasoning steps
+ *   - Real token telemetry from response.usage
+ *
+ * @example — Fast (non-streaming):
+ * ```ts
+ * const response = await client.responses.create({ model: "gpt-6-luna", input, tools: [{ type: "web_search" }] });
+ * return pipeOpenAiResponsesStream(response, stream);
+ * ```
+ *
+ * @example — Deep/background with polling:
+ * ```ts
+ * let res = await client.responses.create({ model: "gpt-5.4-mini", input, background: true });
+ * while (res.status === "queued" || res.status === "in_progress") {
+ *   stream.activity("polling", { status: res.status, taskId: res.id });
+ *   await sleep(2000);
+ *   res = await client.responses.retrieve(res.id);
+ * }
+ * return pipeOpenAiResponsesStream(res, stream);
+ * ```
+ */
+export async function pipeOpenAiResponsesStream(
+  response: any,
+  stream: AgentStream,
+): Promise<AgentExecutionResult> {
+  const telemetry: TelemetryData = { framework: { adapter: "openai-responses" } };
+
+  // ── Emit tool/activity events from output items ──
+  const outputItems: any[] = response?.output ?? [];
+  for (const item of outputItems) {
+    if (item?.type === "web_search_call" || item?.type === "search") {
+      stream.activity("web_search", {
+        query: item?.action?.query ?? item?.query ?? undefined,
+        status: item?.status ?? "completed",
+      });
+    }
+    if (item?.type === "reasoning") {
+      const reasoningText = item?.summary?.map((s: any) => s?.text).join(" ") ?? "";
+      if (reasoningText) {
+        stream.activity("reasoning", { summary: reasoningText.slice(0, 200) });
+      }
+    }
+  }
+
+  // ── Extract the final answer text ──
+  const fullText: string = response?.output_text ?? "";
+  if (fullText) {
+    stream.delta(fullText);
+  }
+
+  // ── Real token telemetry ──
+  if (response?.usage) {
+    telemetry.llm_tokens = {
+      prompt: response.usage.input_tokens ?? response.usage.prompt_tokens,
+      completion: response.usage.output_tokens ?? response.usage.completion_tokens,
+      total: response.usage.total_tokens ??
+        ((response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0)),
+    };
+    // Cost estimation (adjust per model pricing)
+    const promptTokens = telemetry.llm_tokens.prompt ?? 0;
+    const completionTokens = telemetry.llm_tokens.completion ?? 0;
+    const modelName: string = response.model ?? "";
+    if (modelName.includes("gpt-5") || modelName.includes("mini")) {
+      telemetry.cost_usd = parseFloat(((promptTokens * 0.00000015) + (completionTokens * 0.0000006)).toFixed(6));
+    } else {
+      telemetry.cost_usd = parseFloat(((promptTokens * 0.000005) + (completionTokens * 0.000015)).toFixed(6));
+    }
+    telemetry.model_used = modelName;
+  }
+
+  return {
+    output: { text: fullText } as any,
+    telemetry,
+  };
+}
+
