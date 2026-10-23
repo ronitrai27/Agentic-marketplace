@@ -1001,13 +1001,25 @@
             let data = {};
             try { data = JSON.parse(matchData[1]); } catch (e) { continue; }
 
-            if (eventType === "status") {
+            if (eventType === "temporal") {
+              if (data.status === "running") {
+                progressStatusText.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#8b5cf6; box-shadow:0 0 8px #8b5cf6;"></span> Temporal Workflow Running</span>`;
+                progressSubtext.textContent = `Workflow: ${data.workflowId} • Queue: ${data.taskQueue || 'research-agent-queue'}`;
+              } else if (data.status === "completed") {
+                progressStatusText.innerHTML = `<span style="color:#10a37f; font-weight:600;">✓ Temporal Workflow Completed</span>`;
+                progressSubtext.textContent = `Durable execution finished in ${data.durationSeconds || ''}s [${data.workflowId}]`;
+              }
+              scrollToBottom();
+            } else if (eventType === "status") {
               if (data.phase === "searching") {
                 progressStatusText.textContent = "Web searching & synthesizing...";
                 progressSubtext.textContent = "Querying live sources via OpenAI Responses API";
               } else if (data.phase === "dispatching") {
                 progressStatusText.textContent = "Dispatching background reasoning task...";
-                progressSubtext.textContent = "Model: gpt-5.4-mini (reasoning effort: medium)";
+                progressSubtext.textContent = data.message || "Model: gpt-5.4-mini (reasoning effort: medium)";
+              } else if (data.phase === "temporal_running") {
+                progressStatusText.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#8b5cf6; box-shadow:0 0 8px #8b5cf6;"></span> Temporal Workflow Running</span>`;
+                progressSubtext.textContent = `Cloud Queue: ${data.workflowId} • Durable background execution`;
               } else if (data.phase === "dispatched" || data.phase === "polling") {
                 progressStatusText.textContent = `Deep reasoning (${data.status})...`;
                 progressSubtext.textContent = `Task ID: ${data.taskId || 'resp_active'} • Background Polling`;
@@ -1025,7 +1037,10 @@
               assistantContent.innerHTML = rawHtml;
 
               const timeTag = assistantRow.querySelector(".time-tag");
-              if (timeTag) timeTag.textContent = `${durationSec}s`;
+              if (timeTag) {
+                const badge = data.temporal ? `⚡ Temporal Cloud • ${durationSec}s` : `${durationSec}s`;
+                timeTag.textContent = badge;
+              }
               scrollToBottom();
             } else if (eventType === "error") {
               clearInterval(timerInterval);

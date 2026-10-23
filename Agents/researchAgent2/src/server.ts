@@ -353,23 +353,65 @@ const server = http.createServer(async (req, res) => {
               "Dispatching deep reasoning to Temporal Cloud Task Queue...",
           });
 
-          let workflowId = `deep-research-${Date.now()}`;
+          let workflowId = `deep-research-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          let resultText = "";
+          let finalTaskId = "";
+          let temporalExecuted = false;
+
           try {
             const temporalClient = await createTemporalClient();
-            await temporalClient.workflow.start(deepResearchWorkflow, {
+            sendEvent("temporal", {
+              status: "running",
+              workflowId,
+              taskQueue: TEMPORAL_CONFIG.taskQueue,
+              namespace: TEMPORAL_CONFIG.namespace,
+              message: `Temporal durable workflow started on queue: ${TEMPORAL_CONFIG.taskQueue}`,
+            });
+
+            sendEvent("status", {
+              phase: "temporal_running",
+              workflowId,
+              model: "gpt-5.4-mini",
+              message: `Temporal Workflow [${workflowId}] actively running on cloud queue...`,
+            });
+
+            const handle = await temporalClient.workflow.start(deepResearchWorkflow, {
               taskQueue: TEMPORAL_CONFIG.taskQueue,
               workflowId,
               args: [{ prompt }],
             });
-            sendEvent("activity", {
-              type: "temporal_workflow",
+
+            const workflowResult = await handle.result();
+            resultText = workflowResult.answer;
+            finalTaskId = workflowResult.taskId || workflowId;
+            temporalExecuted = true;
+
+            sendEvent("temporal", {
+              status: "completed",
               workflowId,
-              taskQueue: TEMPORAL_CONFIG.taskQueue,
-              namespace: TEMPORAL_CONFIG.namespace,
-              message: `Temporal durable workflow ${workflowId} running on cloud`,
+              durationSeconds: workflowResult.duration_seconds,
+              message: `Temporal durable workflow [${workflowId}] completed successfully!`,
             });
-          } catch (e: any) {
-            console.log("Temporal Cloud dispatch note:", e?.message);
+
+            const durationMs = Date.now() - startTime;
+            sendEvent("done", {
+              output: resultText,
+              model: "gpt-5.4-mini",
+              mode: "deep",
+              taskId: finalTaskId,
+              workflowId,
+              temporal: true,
+              durationMs,
+            });
+            res.end();
+            return;
+          } catch (temporalErr: any) {
+            console.warn("⚠️ Temporal execution fallback:", temporalErr?.message);
+            sendEvent("status", {
+              phase: "dispatching",
+              model: "gpt-5.4-mini",
+              message: "Temporal fallback: executing local OpenAI background reasoning...",
+            });
           }
 
           let response = (await client.responses.create({
