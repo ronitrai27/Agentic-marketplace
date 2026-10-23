@@ -21,8 +21,8 @@ importers:
         specifier: ^1.24.0
         version: 1.24.0
       catelog:
-        specifier: ^1.0.4
-        version: 1.0.4
+        specifier: ^1.0.5
+        version: 1.0.5
       dotenv:
         specifier: ^18.0.8
         version: 18.0.8
@@ -724,8 +724,8 @@ packages:
   caniuse-lite@1.0.30001819:
     resolution: {integrity: sha512-LFUqIIAwpzsIuevnKnsR9qnStBcgzPShTX61lBwN9uFkkf8o8zLiebEjbW8AYtZiF+1YKDWfdt/pWDtMuG8Xwg==}
 
-  catelog@1.0.4:
-    resolution: {integrity: sha512-D65/mPdSWN9TstUB03vACLfi6MJUd8f7wvOkLPic6YjCBnhkT7m2QJwlI/jKeXrd51eT6dOdb4a0YlAJLuyZjQ==}
+  catelog@1.0.5:
+    resolution: {integrity: sha512-r3idJ8n1IPcxI2qrYY2wXOvEO36g3DSdMvRghIe99hRMkpapwMiaCWTzQYFnvdunwdYIU9ae1r/AjporvUPDQw==}
     hasBin: true
 
   chrome-trace-event@1.0.4:
@@ -1710,7 +1710,7 @@ snapshots:
 
   caniuse-lite@1.0.30001819: {}
 
-  catelog@1.0.4:
+  catelog@1.0.5:
     dependencies:
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)

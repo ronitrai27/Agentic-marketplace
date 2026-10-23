@@ -513,7 +513,9 @@ export class CatelogAgent<TInput = any, TOutput = any> {
         chunks_streamed: sseWriter.chunksStreamed,
       });
 
-      res.setHeader("X-Catelog-Duration-Ms", String(durationMs));
+      if (!res.headersSent) {
+        res.setHeader("X-Catelog-Duration-Ms", String(durationMs));
+      }
       sseWriter.sendTaskCompleted(result.output, durationMs, telemetry);
       this.reportTelemetry(runId, "completed", telemetry, durationMs);
     } catch (err) {

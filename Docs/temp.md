@@ -21,3 +21,10 @@ convex/
 3	Reachability — Dev's server is behind a firewall?	Require public URL. Optionally offer a tunnel service (like ngrok but yours)
 4	Key provisioning — How does the agent authenticate marketplace calls?	On registration, marketplace generates cat_sec_* + cat_pub_* → displays them ONCE → dev puts in their .env
 5	Health monitoring — Agent goes down mid-rental	Marketplace pings /health every 60s. If fails → suspend rentals → notify dev
+
+
+=============================================
+
+## live agent  - resarch2
+https://researchagent2-ufhs.onrender.com/health
+{"status":"ready","protocol_version":"1.0.0","uptime_seconds":90,"environment_ready":true,"capabilities":{"streaming":true,"delta_stream":true,"max_timeout_seconds":300,"execution_modes":["sync"]}}
