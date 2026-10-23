@@ -1,9 +1,8 @@
 import {
   query,
   mutation,
-  action,
+  internalQuery,
   internalMutation,
-  internalAction,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
@@ -79,41 +78,11 @@ export const getApiKeys = query({
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Fix 1 + 2: Public key generation moved server-side into an ACTION.
-//  Actions run in Node.js and have access to crypto.randomBytes.
-//  The raw public key bytes never leave the server — only the key string
-//  (which is intentionally public) is returned to the client.
-// ─────────────────────────────────────────────────────────────────────────────
+// getOrCreatePublicKey, generateSecretKey, rotateSecretKey
+// have been moved to apiKeysActions.ts ("use node" file)
+// because they require node:crypto.
 
-export const getOrCreatePublicKey = action({
-  args: {},
-  handler: async (ctx): Promise<string> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-
-    // Check for existing via internal query
-    const existing: string | null = await ctx.runQuery(
-      internal.apiKeys._getPublicKey,
-      { userId: identity.subject }
-    );
-    if (existing) return existing;
-
-    // Generate cryptographically secure public key server-side (Fix 1)
-    const { randomBytes } = await import("node:crypto");
-    const hex = randomBytes(18).toString("hex"); // 36 hex chars
-    const newPublicKey = `cat_pub_live_${hex}`;
-
-    await ctx.runMutation(internal.apiKeys._storePublicKey, {
-      userId: identity.subject,
-      publicKey: newPublicKey,
-    });
-
-    return newPublicKey;
-  },
-});
-
-export const _getPublicKey = internalMutation({
+export const _getPublicKey = internalQuery({
   args: { userId: v.string() },
   handler: async (ctx, { userId }): Promise<string | null> => {
     const row = await ctx.db
@@ -142,57 +111,6 @@ export const _storePublicKey = internalMutation({
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Fix 1 + 2: Secret key GENERATION is now a Convex ACTION.
-//
-//  Previous: browser called Math.random() + Web Crypto SHA-256,
-//            then sent the hash to a public mutation.
-//  Now:      browser calls this action with only config (expiry, regions, ips,
-//            rate limit). The action generates the key with crypto.randomBytes
-//            and SHA-256-hashes it — all server-side. The hash is stored via
-//            an internalMutation the client can NEVER call directly.
-//            The raw key is returned ONCE to the caller.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const generateSecretKey = action({
-  args: {
-    expiresAt: v.optional(v.number()),
-    allowedRegions: v.array(v.string()),
-    allowedIps: v.array(v.string()),
-    rateLimitPerMin: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<{ rawKey: string; previewKey: string }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-
-    // ── Fix 1: Cryptographically secure random bytes ──
-    const { randomBytes, createHash } = await import("node:crypto");
-
-    // 32 bytes = 64 hex chars — 256 bits of entropy
-    const rawSuffix = randomBytes(32).toString("hex");
-    const rawKey = `cat_sec_live_${rawSuffix}`;
-
-    // Preview: show prefix + last 4 hex chars only
-    const previewKey = `cat_sec_live_••••••••${rawSuffix.slice(-4)}`;
-
-    // ── Fix 2: Hash computed server-side, never by the browser ──
-    const keyHash = createHash("sha256").update(rawKey).digest("hex");
-
-    // ── Fix 3: Store via internalMutation — client can never call this directly ──
-    await ctx.runMutation(internal.apiKeys._insertSecretKey, {
-      userId: identity.subject,
-      keyHash,
-      previewKey,
-      expiresAt: args.expiresAt,
-      allowedRegions: args.allowedRegions.length > 0 ? args.allowedRegions : ["all"],
-      allowedIps: args.allowedIps,
-      rateLimitPerMin: args.rateLimitPerMin ?? 10,
-    });
-
-    // Raw key returned ONCE to the client — never stored, never logged
-    return { rawKey, previewKey };
-  },
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Fix 3: internalMutation — only callable from actions / http handler,
@@ -224,34 +142,6 @@ export const _insertSecretKey = internalMutation({
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Rotate — also an action so new key is generated server-side (Fix 1 + 2)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const rotateSecretKey = action({
-  args: {
-    keyId: v.id("creator_api_keys"),
-  },
-  handler: async (ctx, args): Promise<{ rawKey: string; previewKey: string }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-
-    const { randomBytes, createHash } = await import("node:crypto");
-    const rawSuffix = randomBytes(32).toString("hex");
-    const rawKey = `cat_sec_live_${rawSuffix}`;
-    const previewKey = `cat_sec_live_••••••••${rawSuffix.slice(-4)}`;
-    const keyHash = createHash("sha256").update(rawKey).digest("hex");
-
-    await ctx.runMutation(internal.apiKeys._applyRotation, {
-      keyId: args.keyId,
-      userId: identity.subject,
-      newKeyHash: keyHash,
-      newPreviewKey: previewKey,
-    });
-
-    return { rawKey, previewKey };
-  },
-});
 
 export const _applyRotation = internalMutation({
   args: {

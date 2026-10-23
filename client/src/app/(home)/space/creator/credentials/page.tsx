@@ -26,11 +26,11 @@ export default function CreatorCredentialsPage() {
   // Live Convex Query
   const apiKeysData = useQuery(api.apiKeys.getApiKeys);
   // getOrCreatePublicKey is now an action (server-side crypto)
-  const getOrCreatePublicKey = useAction(api.apiKeys.getOrCreatePublicKey);
+  const getOrCreatePublicKey = useAction(api.apiKeysActions.getOrCreatePublicKey);
   // generateSecretKey is an action — key is generated + hashed server-side
-  const generateSecretKeyAction = useAction(api.apiKeys.generateSecretKey);
+  const generateSecretKeyAction = useAction(api.apiKeysActions.generateSecretKey);
   // rotateSecretKey is also an action now
-  const rotateSecretKeyAction = useAction(api.apiKeys.rotateSecretKey);
+  const rotateSecretKeyAction = useAction(api.apiKeysActions.rotateSecretKey);
   const deleteSecretKeyMutation = useMutation(api.apiKeys.deleteSecretKey);
 
   // Modals state
