@@ -16,13 +16,15 @@ import {
   SidebarGroup,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, LayoutDashboard } from "lucide-react";
+import { LogOut, LayoutDashboard, Key } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
+import { usePathname } from "next/navigation";
 
 export function CreatorSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname();
   const { data: session } = authClient.useSession();
   const [logoutOpen, setLogoutOpen] = useState(false);
 
@@ -63,20 +65,37 @@ export function CreatorSidebar({
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  asChild
-                  isActive={true}
+                  render={<Link href="/space/creator" />}
+                  isActive={pathname === "/space/creator"}
                   tooltip="Overview"
-                  className="bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
+                  className={
+                    pathname === "/space/creator"
+                      ? "bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
+                      : "text-muted-foreground hover:text-foreground py-2 px-3 rounded-lg"
+                  }
                 >
-                  <Link
-                    href="/space/creator"
-                    className="flex items-center gap-3"
-                  >
-                    <LayoutDashboard className="size-4 shrink-0" />
-                    <span className="truncate group-data-[collapsible=icon]:hidden">
-                      Overview
-                    </span>
-                  </Link>
+                  <LayoutDashboard className="size-4 shrink-0" />
+                  <span className="truncate group-data-[collapsible=icon]:hidden">
+                    Overview
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  render={<Link href="/space/creator/credentials" />}
+                  isActive={pathname.startsWith("/space/creator/credentials")}
+                  tooltip="Credentials"
+                  className={
+                    pathname.startsWith("/space/creator/credentials")
+                      ? "bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
+                      : "text-muted-foreground hover:text-foreground py-2 px-3 rounded-lg"
+                  }
+                >
+                  <Key className="size-4 shrink-0" />
+                  <span className="truncate group-data-[collapsible=icon]:hidden">
+                    Credentials
+                  </span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

@@ -278,17 +278,13 @@ await client.registerAgent({
               <Upload className="size-3.5" />
               <span>Publish an agent</span>
             </Link>
-            <button
-              type="button"
-              onClick={() => {
-                const el = document.getElementById("dev-credentials");
-                el?.scrollIntoView({ behavior: "smooth" });
-              }}
+            <Link
+              href="/space/creator/credentials"
               className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-medium bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-foreground hover:bg-neutral-50 dark:hover:bg-neutral-800/80 shadow-2xs transition-all cursor-pointer"
             >
               <Key className="size-3.5" />
               <span>Get API key</span>
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -874,7 +870,7 @@ await client.registerAgent({
             </div>
           </div>
           <Link
-            href="/space/creator"
+            href="/space/creator/credentials"
             className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-foreground shadow-2xs transition-colors cursor-pointer"
           >
             Manage API keys
