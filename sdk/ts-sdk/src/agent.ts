@@ -1,57 +1,154 @@
-import { SecurityManager } from "./security.js";
-import { SSEWriter } from "./sse.js";
+import { randomUUID } from "node:crypto";
+import { SecurityManager, SecurityVerificationError } from "./security.js";
+import { SSEWriter, NoopStream } from "./sse.js";
 import { toJsonSchema, validateSchemaData, type SchemaLike } from "./schema.js";
+import { buildExecutionContext } from "./context.js";
+import { TelemetryReporter } from "./telemetry.js";
+import {
+  pipeAiSdkStream,
+  pipeOpenAiStream,
+  pipeLangGraphStream,
+  pipeAsyncIterableStream,
+} from "./adapters.js";
 import {
   PROTOCOL_VERSION,
+  NEED_INPUT_SYMBOL,
   type AgentCapabilities,
   type AgentExecutionContext,
   type AgentExecutionResult,
   type AgentManifest,
   type ExecuteRequest,
   type ExecuteResponse,
+  type ExecutionMode,
   type HealthCheckResponse,
+  type NeedInputResult,
   type StructuredError,
+  type TelemetryData,
 } from "./types.js";
 import { startAgentServer, type ServerOptions } from "./server.js";
 import type { IncomingMessage, ServerResponse, Server } from "node:http";
 
-export interface MarketplaceAgentConfig<TInput = Record<string, unknown>, TOutput = Record<string, unknown>> {
+// ─────────────────────────────────────────────────
+//  CatelogAgent Config
+// ─────────────────────────────────────────────────
+
+export interface CatelogAgentConfig<TInput = any, TOutput = any> {
+  /** Unique slug ID (auto-generated from name if omitted) */
   id?: string;
+  /** Human-readable agent name */
   name: string;
+  /** Semantic version (default: "1.0.0") */
   version?: string;
+  /** Short description for marketplace listing */
   description?: string;
-  secret?: string;
+  /**
+   * Secret key for HMAC / Bearer auth.
+   * Auto-reads CATELOG_SECRET_KEY from env if omitted.
+   */
+  secretKey?: string;
+  /**
+   * Publishable key for public endpoints.
+   * Auto-reads CATELOG_PUBLIC_KEY from env if omitted.
+   */
+  publicKey?: string;
+  /**
+   * Execution mode:
+   * - "sync" (default): Direct HTTP/SSE stream, resolves in same connection.
+   * - "async": Returns 202 immediately, polled via GET /tasks/:id.
+   * - "conversational": Supports ctx.needInput() for HITL multi-turn.
+   */
+  mode?: ExecutionMode;
+  /** Partial capabilities overrides */
   capabilities?: Partial<AgentCapabilities>;
-  inputSchema: SchemaLike;
-  outputSchema: SchemaLike;
-  execute: (ctx: AgentExecutionContext<TInput>) => Promise<AgentExecutionResult<TOutput>>;
+  /**
+   * Input schema (Zod or JSON Schema). OPTIONAL — if omitted, accepts any JSON.
+   */
+  inputSchema?: SchemaLike;
+  /**
+   * Output schema (Zod or JSON Schema). OPTIONAL — if omitted, no output validation.
+   */
+  outputSchema?: SchemaLike;
+  /**
+   * The core execution function. This is the ONLY thing the developer MUST provide.
+   *
+   * - Return a value → task completes automatically
+   * - Throw an error → task fails automatically
+   * - Use ctx.needInput() → task suspends for human input
+   * - Use stream.delta() / stream.progress() → real-time events to marketplace
+   */
+  execute: (ctx: AgentExecutionContext<TInput>) => Promise<AgentExecutionResult<TOutput> | NeedInputResult | TOutput>;
+  /** Optional telemetry reporting config */
+  telemetry?: {
+    endpoint?: string;
+    disabled?: boolean;
+  };
 }
 
-export class MarketplaceAgent<TInput = Record<string, unknown>, TOutput = Record<string, unknown>> {
+// ─────────────────────────────────────────────────
+//  Async Job Store (for mode: "async")
+// ─────────────────────────────────────────────────
+
+interface AsyncJob<TOutput = any> {
+  runId: string;
+  status: "working" | "completed" | "failed";
+  output?: TOutput;
+  error?: StructuredError;
+  telemetry?: TelemetryData;
+  durationMs?: number;
+  createdAt: number;
+}
+
+const asyncJobs = new Map<string, AsyncJob>();
+
+// Clean up old jobs periodically (keep for 1 hour)
+setInterval(() => {
+  const cutoff = Date.now() - 3_600_000;
+  for (const [id, job] of asyncJobs) {
+    if (job.createdAt < cutoff) asyncJobs.delete(id);
+  }
+}, 300_000).unref();
+
+// ─────────────────────────────────────────────────
+//  CatelogAgent Class
+// ─────────────────────────────────────────────────
+
+export class CatelogAgent<TInput = any, TOutput = any> {
   public readonly id: string;
   public readonly name: string;
   public readonly version: string;
   public readonly description: string;
+  public readonly mode: ExecutionMode;
   public readonly capabilities: AgentCapabilities;
   public readonly security: SecurityManager;
-  private readonly config: MarketplaceAgentConfig<TInput, TOutput>;
+  private readonly config: CatelogAgentConfig<TInput, TOutput>;
   private readonly startTime: number;
+  private readonly telemetryReporter: TelemetryReporter;
 
-  constructor(config: MarketplaceAgentConfig<TInput, TOutput>) {
+  constructor(config: CatelogAgentConfig<TInput, TOutput>) {
     this.config = config;
     this.name = config.name;
     this.id = config.id || slugify(config.name);
     this.version = config.version || "1.0.0";
-    this.description = config.description || `Agent for ${this.name}`;
+    this.description = config.description || `Agent: ${this.name}`;
+    this.mode = config.mode || "sync";
     this.capabilities = {
       streaming: true,
-      delta_stream: false,
+      delta_stream: true,
       max_timeout_seconds: 300,
+      execution_modes: [this.mode],
       ...config.capabilities,
     };
-    this.security = new SecurityManager({ secret: config.secret });
+    this.security = new SecurityManager({
+      secret: config.secretKey,
+      publicKey: config.publicKey,
+    });
     this.startTime = Date.now();
+    this.telemetryReporter = new TelemetryReporter(config.telemetry);
   }
+
+  // ─────────────────────────────────────────────
+  //  GET /health — Ping probe for registration
+  // ─────────────────────────────────────────────
 
   public getHealth(): HealthCheckResponse {
     return {
@@ -59,8 +156,13 @@ export class MarketplaceAgent<TInput = Record<string, unknown>, TOutput = Record
       protocol_version: PROTOCOL_VERSION,
       uptime_seconds: Math.floor((Date.now() - this.startTime) / 1000),
       environment_ready: true,
+      capabilities: this.capabilities,
     };
   }
+
+  // ─────────────────────────────────────────────
+  //  GET /schema — Agent Manifest
+  // ─────────────────────────────────────────────
 
   public getManifest(): AgentManifest {
     return {
@@ -70,27 +172,46 @@ export class MarketplaceAgent<TInput = Record<string, unknown>, TOutput = Record
       description: this.description,
       protocol_version: PROTOCOL_VERSION,
       capabilities: this.capabilities,
-      input_schema: toJsonSchema(this.config.inputSchema, "InputSchema"),
-      output_schema: toJsonSchema(this.config.outputSchema, "OutputSchema"),
+      input_schema: this.config.inputSchema
+        ? toJsonSchema(this.config.inputSchema, "InputSchema")
+        : { type: "object", additionalProperties: true },
+      output_schema: this.config.outputSchema
+        ? toJsonSchema(this.config.outputSchema, "OutputSchema")
+        : { type: "object", additionalProperties: true },
     };
   }
 
-  public serve(portOrOptions?: number | ServerOptions): Server {
+  // ─────────────────────────────────────────────
+  //  .listen(port) — Start the agent server
+  // ─────────────────────────────────────────────
+
+  public listen(portOrOptions?: number | ServerOptions): Server {
     const opts = typeof portOrOptions === "number" ? { port: portOrOptions } : portOrOptions;
     return startAgentServer(this, opts);
   }
+
+  /** Alias for backward compat */
+  public serve(portOrOptions?: number | ServerOptions): Server {
+    return this.listen(portOrOptions);
+  }
+
+  // ─────────────────────────────────────────────
+  //  Request Router
+  // ─────────────────────────────────────────────
 
   public async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method?.toUpperCase() || "GET";
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const pathname = url.pathname;
 
-    // Enable CORS for testing & browser callers
+    // CORS
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Accept, X-Marketplace-Protocol, X-Marketplace-Timestamp, X-Marketplace-Nonce, X-Marketplace-Run-Id, X-Marketplace-Signature"
+      "Content-Type, Accept, Authorization, " +
+      "X-Marketplace-Protocol, X-Marketplace-Timestamp, X-Marketplace-Nonce, " +
+      "X-Marketplace-Run-Id, X-Marketplace-Signature"
     );
 
     if (method === "OPTIONS") {
@@ -100,106 +221,184 @@ export class MarketplaceAgent<TInput = Record<string, unknown>, TOutput = Record
     }
 
     try {
+      // Health probe
       if (pathname === "/health" && method === "GET") {
-        this.writeJsonResponse(res, 200, this.getHealth());
+        this.writeJson(res, 200, this.getHealth());
         return;
       }
 
+      // Schema manifest
       if (pathname === "/schema" && method === "GET") {
-        this.writeJsonResponse(res, 200, this.getManifest());
+        this.writeJson(res, 200, this.getManifest());
         return;
       }
 
+      // Execute
       if (pathname === "/execute" && method === "POST") {
         await this.handleExecute(req, res);
         return;
       }
 
-      this.writeJsonResponse(res, 404, {
-        error: {
-          code: "NOT_FOUND",
-          message: `Endpoint ${method} ${pathname} not found`,
-          retryable: false,
-        },
+      // Async job polling: GET /tasks/:id
+      if (pathname.startsWith("/tasks/") && method === "GET") {
+        const jobId = pathname.slice(7); // Remove "/tasks/"
+        this.handleTaskPoll(res, jobId);
+        return;
+      }
+
+      this.writeJson(res, 404, {
+        error: { code: "NOT_FOUND", message: `${method} ${pathname} not found`, retryable: false },
       });
     } catch (err) {
       const error = normalizeError(err);
-      this.writeJsonResponse(res, 500, {
-        error,
-      });
+      this.writeJson(res, 500, { error });
     }
   }
 
+  // ─────────────────────────────────────────────
+  //  POST /execute — Core Execution Handler
+  // ─────────────────────────────────────────────
+
   private async handleExecute(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const rawBody = await readBody(req);
-    const headers = req.headers;
+    const headers = req.headers as Record<string, string | string[] | undefined>;
     const path = req.url || "/execute";
     const method = req.method || "POST";
 
-    // 1. Security & Signature verification
-    let authInfo: { runId: string; nonce: string; timestamp: number };
+    // ── Authentication (Dual-Mode: Bearer / HMAC / Dev) ──
+    let authInfo: { runId: string; nonce: string; timestamp: number; authMode: string };
     try {
-      authInfo = this.security.verifyRequest({
-        method,
-        path,
-        headers,
-        rawBody,
-      });
+      authInfo = this.security.authenticateRequest({ method, path, headers, rawBody });
     } catch (err) {
-      if (err && typeof err === "object" && "code" in err && "statusCode" in err) {
-        const secErr = err as { code: string; message: string; statusCode: number };
-        this.writeJsonResponse(res, secErr.statusCode, {
-          error: {
-            code: secErr.code,
-            message: secErr.message,
-            retryable: false,
-          },
+      if (err instanceof SecurityVerificationError) {
+        this.writeJson(res, err.statusCode, {
+          error: { code: err.code, message: err.message, retryable: false },
         });
         return;
       }
       throw err;
     }
 
-    // Parse request body
+    // ── Parse body ──
     let payload: ExecuteRequest<TInput>;
     try {
-      payload = rawBody.length > 0 ? JSON.parse(rawBody.toString("utf8")) : {};
+      payload = rawBody.length > 0 ? JSON.parse(rawBody.toString("utf8")) : { input: {} };
     } catch {
-      this.writeJsonResponse(res, 400, {
-        error: {
-          code: "INVALID_INPUT",
-          message: "Malformed JSON request body",
-          retryable: false,
-        },
+      this.writeJson(res, 400, {
+        error: { code: "INVALID_INPUT", message: "Malformed JSON body", retryable: false },
       });
       return;
     }
 
     const runId = payload.run_id || authInfo.runId;
-    this.security.markRunStarted(runId);
+    const inputBytes = rawBody.length;
 
-    // 2. Pre-Execution Schema Validation
-    const validation = validateSchemaData<TInput>(this.config.inputSchema, payload.input);
-    if (!validation.success) {
-      this.security.markRunCompleted(runId);
-      this.writeJsonResponse(res, 400, {
-        run_id: runId,
-        status: "failed",
-        duration_ms: 0,
-        error: {
-          code: "INVALID_INPUT",
-          message: `Input validation failed: ${validation.errors.join("; ")}`,
-          retryable: false,
-          details: { validationErrors: validation.errors },
-        },
-      });
-      return;
+    // ── Optional input validation (only if schema provided) ──
+    let validatedInput: TInput;
+    if (this.config.inputSchema) {
+      const validation = validateSchemaData<TInput>(this.config.inputSchema, payload.input);
+      if (!validation.success) {
+        this.writeJson(res, 400, {
+          run_id: runId,
+          status: "failed",
+          duration_ms: 0,
+          error: {
+            code: "INVALID_INPUT",
+            message: `Validation failed: ${validation.errors.join("; ")}`,
+            retryable: false,
+            details: { validationErrors: validation.errors },
+          },
+        });
+        return;
+      }
+      validatedInput = validation.data;
+    } else {
+      // No schema — accept any input
+      validatedInput = (payload.input ?? {}) as TInput;
     }
 
-    const startTimestamp = Date.now();
+    this.security.markRunStarted(runId);
+
+    // ── Execution Mode Dispatch ──
+    if (this.mode === "async") {
+      await this.executeAsync(runId, validatedInput, payload, inputBytes, res);
+    } else {
+      // sync & conversational both stream via SSE or batch JSON
+      await this.executeSyncOrConversational(runId, validatedInput, payload, inputBytes, req, res);
+    }
+  }
+
+  // ── Async Mode: Return 202 immediately, run in background ──
+
+  private async executeAsync(
+    runId: string,
+    input: TInput,
+    payload: ExecuteRequest<TInput>,
+    inputBytes: number,
+    res: ServerResponse,
+  ): Promise<void> {
+    const job: AsyncJob = {
+      runId,
+      status: "working",
+      createdAt: Date.now(),
+    };
+    asyncJobs.set(runId, job);
+
+    // Respond immediately with 202
+    this.writeJson(res, 202, {
+      run_id: runId,
+      status: "working",
+      poll_url: `/tasks/${runId}`,
+    });
+
+    // Execute in background (fire-and-forget from HTTP perspective)
+    const startTs = Date.now();
+    const noopStream = new NoopStream();
+    const abortController = new AbortController();
+
+    try {
+      const { ctx, telemetryCollector } = buildExecutionContext({
+        runId,
+        input,
+        stream: noopStream,
+        signal: abortController.signal,
+        metadata: payload.metadata,
+        deadlineMs: payload.deadline_ms,
+        resumeToken: payload.resume_token,
+        inputBytes,
+      });
+
+      const rawResult = await this.config.execute(ctx);
+      const durationMs = Date.now() - startTs;
+      const result = this.normalizeExecuteResult<TOutput>(rawResult);
+
+      job.status = "completed";
+      job.output = result.output;
+      job.durationMs = durationMs;
+      job.telemetry = telemetryCollector.finalize(result.telemetry);
+    } catch (err) {
+      job.status = "failed";
+      job.error = normalizeError(err);
+      job.durationMs = Date.now() - startTs;
+    } finally {
+      this.security.markRunCompleted(runId);
+    }
+  }
+
+  // ── Sync / Conversational Mode ──
+
+  private async executeSyncOrConversational(
+    runId: string,
+    input: TInput,
+    payload: ExecuteRequest<TInput>,
+    inputBytes: number,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    const startTs = Date.now();
     const acceptsSse = req.headers.accept?.includes("text/event-stream") ?? true;
 
-    // Setup deadline timeout if specified
+    // Abort controller for deadline / disconnect
     const abortController = new AbortController();
     let timeoutTimer: NodeJS.Timeout | undefined;
     if (payload.deadline_ms && payload.deadline_ms > Date.now()) {
@@ -210,91 +409,228 @@ export class MarketplaceAgent<TInput = Record<string, unknown>, TOutput = Record
     }
 
     if (acceptsSse) {
-      // Streaming SSE Response Mode
-      const sseWriter = new SSEWriter(runId, res, {
-        onClientDisconnect: () => {
-          abortController.abort(new Error("CLIENT_DISCONNECTED"));
-        },
-      });
-
-      // Forward abort signal
-      sseWriter.signal.addEventListener("abort", () => {
-        abortController.abort(sseWriter.signal.reason);
-      });
-
-      // Send initial run.started event
-      sseWriter.sendRunStarted();
-
-      try {
-        const result = await this.config.execute({
-          runId,
-          input: validation.data,
-          stream: sseWriter,
-          signal: abortController.signal,
-          metadata: payload.metadata,
-          deadlineMs: payload.deadline_ms,
-        });
-
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        const durationMs = Date.now() - startTimestamp;
-        this.security.markRunCompleted(runId);
-        sseWriter.sendRunSucceeded(result.output, durationMs, result.telemetry);
-      } catch (err) {
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        const durationMs = Date.now() - startTimestamp;
-        this.security.markRunCompleted(runId);
-        const error = normalizeError(err);
-        sseWriter.sendRunFailed(error, durationMs);
-      }
+      await this.executeWithSSE(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
     } else {
-      // Batch JSON Mode
-      try {
-        const noopStream = {
-          step: () => {},
-          delta: () => {},
-          emit: () => {},
-          isClosed: () => false,
-        };
-
-        const result = await this.config.execute({
-          runId,
-          input: validation.data,
-          stream: noopStream,
-          signal: abortController.signal,
-          metadata: payload.metadata,
-          deadlineMs: payload.deadline_ms,
-        });
-
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        const durationMs = Date.now() - startTimestamp;
-        this.security.markRunCompleted(runId);
-
-        const response: ExecuteResponse<TOutput> = {
-          run_id: runId,
-          status: "succeeded",
-          duration_ms: durationMs,
-          output: result.output,
-          telemetry: result.telemetry,
-        };
-        this.writeJsonResponse(res, 200, response);
-      } catch (err) {
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        const durationMs = Date.now() - startTimestamp;
-        this.security.markRunCompleted(runId);
-
-        const error = normalizeError(err);
-        const response: ExecuteResponse<TOutput> = {
-          run_id: runId,
-          status: "failed",
-          duration_ms: durationMs,
-          error,
-        };
-        this.writeJsonResponse(res, 200, response);
-      }
+      await this.executeWithJSON(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
     }
   }
 
-  private writeJsonResponse(res: ServerResponse, status: number, data: unknown): void {
+  // ── SSE Streaming Execution ──
+
+  private async executeWithSSE(
+    runId: string, input: TInput, payload: ExecuteRequest<TInput>,
+    inputBytes: number, startTs: number,
+    res: ServerResponse, abortController: AbortController, timeoutTimer?: NodeJS.Timeout,
+  ): Promise<void> {
+    const sseWriter = new SSEWriter(runId, res, {
+      onClientDisconnect: () => abortController.abort(new Error("CLIENT_DISCONNECTED")),
+    });
+
+    sseWriter.signal.addEventListener("abort", () => {
+      abortController.abort(sseWriter.signal.reason);
+    });
+
+    // Emit initial working status
+    sseWriter.sendTaskStatus("working");
+
+    const { ctx, telemetryCollector } = buildExecutionContext({
+      runId,
+      input,
+      stream: sseWriter,
+      signal: abortController.signal,
+      metadata: payload.metadata,
+      deadlineMs: payload.deadline_ms,
+      resumeToken: payload.resume_token,
+      inputBytes,
+    });
+
+    try {
+      const rawResult = await this.config.execute(ctx);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      const durationMs = Date.now() - startTs;
+
+      // Check if result is a needInput request
+      if (this.isNeedInputResult(rawResult)) {
+        const needInput = rawResult as NeedInputResult;
+        const resumeToken = `resume_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+        sseWriter.sendTaskInputRequired(needInput.prompt, resumeToken, needInput.schema);
+        this.reportTelemetry(runId, "input-required", telemetryCollector.finalize(), durationMs);
+        this.security.markRunCompleted(runId);
+        return;
+      }
+
+      const result = this.normalizeExecuteResult<TOutput>(rawResult);
+      const outputBytes = JSON.stringify(result.output).length;
+      const telemetry = telemetryCollector.finalize({
+        ...result.telemetry,
+        duration_ms: durationMs,
+        output_bytes: outputBytes,
+        chunks_streamed: sseWriter.chunksStreamed,
+      });
+
+      res.setHeader("X-Catelog-Duration-Ms", String(durationMs));
+      sseWriter.sendTaskCompleted(result.output, durationMs, telemetry);
+      this.reportTelemetry(runId, "completed", telemetry, durationMs);
+    } catch (err) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      const durationMs = Date.now() - startTs;
+
+      if (abortController.signal.aborted) {
+        sseWriter.sendTaskCanceled(durationMs);
+        this.reportTelemetry(runId, "canceled", telemetryCollector.finalize({ duration_ms: durationMs }), durationMs);
+      } else {
+        const error = normalizeError(err);
+        sseWriter.sendTaskFailed(error, durationMs);
+        this.reportTelemetry(runId, "failed", telemetryCollector.finalize({ duration_ms: durationMs }), durationMs);
+      }
+    } finally {
+      this.security.markRunCompleted(runId);
+    }
+  }
+
+  // ── Batch JSON Execution ──
+
+  private async executeWithJSON(
+    runId: string, input: TInput, payload: ExecuteRequest<TInput>,
+    inputBytes: number, startTs: number,
+    res: ServerResponse, abortController: AbortController, timeoutTimer?: NodeJS.Timeout,
+  ): Promise<void> {
+    const noopStream = new NoopStream();
+
+    const { ctx, telemetryCollector } = buildExecutionContext({
+      runId,
+      input,
+      stream: noopStream,
+      signal: abortController.signal,
+      metadata: payload.metadata,
+      deadlineMs: payload.deadline_ms,
+      resumeToken: payload.resume_token,
+      inputBytes,
+    });
+
+    try {
+      const rawResult = await this.config.execute(ctx);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      const durationMs = Date.now() - startTs;
+
+      // Check needInput
+      if (this.isNeedInputResult(rawResult)) {
+        const needInput = rawResult as NeedInputResult;
+        const resumeToken = `resume_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+        this.security.markRunCompleted(runId);
+        this.writeJson(res, 200, {
+          run_id: runId,
+          status: "input-required",
+          duration_ms: durationMs,
+          prompt: needInput.prompt,
+          input_schema: needInput.schema,
+          resume_token: resumeToken,
+        });
+        return;
+      }
+
+      const result = this.normalizeExecuteResult<TOutput>(rawResult);
+      const outputBytes = JSON.stringify(result.output).length;
+      const telemetry = telemetryCollector.finalize({
+        ...result.telemetry,
+        duration_ms: durationMs,
+        output_bytes: outputBytes,
+        chunks_streamed: noopStream.chunksStreamed,
+      });
+
+      this.security.markRunCompleted(runId);
+      res.setHeader("X-Catelog-Duration-Ms", String(durationMs));
+      const response: ExecuteResponse<TOutput> = {
+        run_id: runId,
+        status: "completed",
+        duration_ms: durationMs,
+        output: result.output,
+        telemetry,
+      };
+      this.writeJson(res, 200, response);
+      this.reportTelemetry(runId, "completed", telemetry, durationMs);
+    } catch (err) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      const durationMs = Date.now() - startTs;
+      this.security.markRunCompleted(runId);
+
+      const error = normalizeError(err);
+      const response: ExecuteResponse<TOutput> = {
+        run_id: runId,
+        status: abortController.signal.aborted ? "canceled" : "failed",
+        duration_ms: durationMs,
+        error,
+      };
+      this.writeJson(res, 200, response);
+    }
+  }
+
+  // ── Async Job Polling ──
+
+  private handleTaskPoll(res: ServerResponse, jobId: string): void {
+    const job = asyncJobs.get(jobId);
+    if (!job) {
+      this.writeJson(res, 404, {
+        error: { code: "NOT_FOUND", message: `No task found: ${jobId}`, retryable: false },
+      });
+      return;
+    }
+
+    if (job.status === "working") {
+      this.writeJson(res, 200, {
+        run_id: job.runId,
+        status: "working",
+        elapsed_ms: Date.now() - job.createdAt,
+      });
+    } else if (job.status === "completed") {
+      this.writeJson(res, 200, {
+        run_id: job.runId,
+        status: "completed",
+        duration_ms: job.durationMs,
+        output: job.output,
+        telemetry: job.telemetry,
+      });
+    } else {
+      this.writeJson(res, 200, {
+        run_id: job.runId,
+        status: "failed",
+        duration_ms: job.durationMs,
+        error: job.error,
+      });
+    }
+  }
+
+  // ── Helpers ──
+
+  /**
+   * Normalize the developer's return value into our standard result shape.
+   * Supports:
+   * - { output: T, telemetry?: ... } → standard result
+   * - Any other value → treated as the output directly
+   */
+  private normalizeExecuteResult<T>(raw: any): AgentExecutionResult<T> {
+    if (raw && typeof raw === "object" && "output" in raw) {
+      return raw as AgentExecutionResult<T>;
+    }
+    // The developer just returned a plain object — that IS the output
+    return { output: raw as T };
+  }
+
+  private isNeedInputResult(value: any): value is NeedInputResult {
+    return value && typeof value === "object" && value[Symbol.for("catelog.needInput")] === true;
+  }
+
+  private reportTelemetry(runId: string, status: string, telemetry: TelemetryData, durationMs: number): void {
+    this.telemetryReporter.report({
+      agentId: this.id,
+      runId,
+      status,
+      telemetry: { ...telemetry, duration_ms: durationMs },
+      timestamp: Date.now(),
+    });
+  }
+
+  private writeJson(res: ServerResponse, status: number, data: unknown): void {
     if (res.writableEnded) return;
     const body = JSON.stringify(data);
     res.writeHead(status, {
@@ -305,14 +641,31 @@ export class MarketplaceAgent<TInput = Record<string, unknown>, TOutput = Record
   }
 }
 
-/**
- * Convenience builder function for creating a compliant Marketplace Agent
- */
-export function createMarketplaceAgent<TInput = Record<string, unknown>, TOutput = Record<string, unknown>>(
-  config: MarketplaceAgentConfig<TInput, TOutput>
-): MarketplaceAgent<TInput, TOutput> {
-  return new MarketplaceAgent(config);
+// ─────────────────────────────────────────────────
+//  Factory Function
+// ─────────────────────────────────────────────────
+
+/** Create a new CatelogAgent */
+export function createAgent<TInput = any, TOutput = any>(
+  config: CatelogAgentConfig<TInput, TOutput>
+): CatelogAgent<TInput, TOutput> {
+  return new CatelogAgent(config);
 }
+
+/** Legacy alias */
+export function createMarketplaceAgent<TInput = any, TOutput = any>(
+  config: CatelogAgentConfig<TInput, TOutput>
+): CatelogAgent<TInput, TOutput> {
+  return new CatelogAgent(config);
+}
+
+// Backward compat alias
+export { CatelogAgent as MarketplaceAgent };
+export type { CatelogAgentConfig as MarketplaceAgentConfig };
+
+// ─────────────────────────────────────────────────
+//  Utilities
+// ─────────────────────────────────────────────────
 
 function slugify(text: string): string {
   return text
@@ -326,29 +679,18 @@ function slugify(text: string): string {
 function normalizeError(err: unknown, defaultCode = "INTERNAL_CRASH"): StructuredError {
   if (err instanceof Error) {
     if (err.name === "AbortError" || err.message === "EXECUTION_TIMEOUT") {
-      return {
-        code: "EXECUTION_TIMEOUT",
-        message: "Execution exceeded allowed deadline or timeout",
-        retryable: true,
-      };
+      return { code: "EXECUTION_TIMEOUT", message: "Exceeded deadline or timeout", retryable: true };
+    }
+    if (err.message === "CLIENT_DISCONNECTED") {
+      return { code: "TASK_CANCELED", message: "Client disconnected", retryable: false };
     }
 
-    // Check for standard error codes attached to error object
-    const code = (err as unknown as { code?: string }).code || defaultCode;
-    const retryable = (err as unknown as { retryable?: boolean }).retryable ?? false;
-
-    return {
-      code,
-      message: err.message,
-      retryable,
-    };
+    const code = (err as any).code || defaultCode;
+    const retryable = (err as any).retryable ?? false;
+    return { code, message: err.message, retryable };
   }
 
-  return {
-    code: defaultCode,
-    message: String(err),
-    retryable: false,
-  };
+  return { code: defaultCode, message: String(err), retryable: false };
 }
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {

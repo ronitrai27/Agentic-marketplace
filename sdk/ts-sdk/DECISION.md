@@ -1,250 +1,250 @@
-# Architecture & Design Decisions: Catelog TypeScript SDK (`catelog`)
+# Catelog TypeScript SDK — Architecture & Design Decisions
 
-> **Note from Team ROX:**  
-> *“Welcome to the agent economy, where humans and agents rent out intelligence.”*
-
----
-
-## 1. Executive Summary & Vision
-
-As AI agents transition from standalone chat interfaces into autonomous economic actors, developers face a fragmented ecosystem. Agents are built using diverse frameworks—**LangGraph, OpenAI Responses API, CrewAI, LlamaIndex, or custom TypeScript loops**. 
-
-However, when developers want to monetize or publish their agents on a decentralized, Bring-Your-Own-Server (BYOS) marketplace, they are forced to reinvent low-level infrastructure:
-- Raw HTTP server routing and CORS handling.
-- Cryptographic request signing and anti-replay defense.
-- Server-Sent Events (SSE) streaming with heartbeat keep-alives.
-- JSON Schema generation from TypeScript types.
-- Client disconnect / cancellation propagation.
-
-**`catelog` is the official, open-source TypeScript SDK designed to solve this problem.** It acts as a lightweight, framework-agnostic universal adapter that turns any agent logic into a secure, production-ready, protocol-compliant marketplace microservice in **less than 20 lines of code**.
+> **From Team ROX:**  
+> *"Welcome to the agent economy, where humans and agents rent out intelligence."*
 
 ---
 
-## 2. Core Architectural Decisions
+## What Is Catelog?
 
-### Decision 1: Canonical Protocol Specification (MAPS v1.0.0)
-* **Context:** The marketplace requires standardized communication contracts between the Gateway and BYOS agent servers.
-* **Decision:** `catelog` strictly implements the **Marketplace Agent Protocol Specification (MAPS v1.0.0)**.
-* **Endpoints Exposed:**
-  1. `GET /health`: Instantaneous liveness and uptime probe ($< 10\text{ms}$).
-  2. `GET /schema`: Agent Manifest document containing standard JSON Schemas (Draft-07).
-  3. `POST /execute`: Authenticated execution endpoint supporting both SSE streaming (`text/event-stream`) and batch JSON (`application/json`).
+`catelog` is the official TypeScript SDK for the **Catelog Marketplace**. It solves one problem cleanly: turning any AI agent — regardless of the framework, model, or runtime — into a production-ready, marketplace-compliant microservice in **under 20 lines of code**.
 
----
+You bring your agent logic. The SDK handles everything else:
 
-### Decision 2: Zero-Trust Security & Anti-Replay Guard
-* **Context:** Open-network agent servers are targets for denial-of-service, spoofed executions, and credential burn. Without anti-replay mechanisms, an intercepted request can be replayed to drain the creator's LLM credits.
-* **Decision:**
-  - **Canonical HMAC-SHA256 Signing:** All `/execute` calls require a signature calculated over normalized components:
-    $$\text{BodyHash} = \text{HEX}(\text{SHA256}(\text{RawRequestBodyBytes}))$$
-    $$\text{CanonicalString} = \text{METHOD} + "\backslash\text{n}" + \text{PATH} + "\backslash\text{n}" + \text{TIMESTAMP} + "\backslash\text{n}" + \text{NONCE} + "\backslash\text{n}" + \text{RUN\_ID} + "\backslash\text{n}" + \text{BodyHash}$$
-    $$\text{Signature} = \text{HEX}(\text{HMAC-SHA256}(\text{Secret}, \text{CanonicalString}))$$
-  - **5-Minute Clock Drift Enforcement:** Requests with $|\text{CurrentTime} - \text{Timestamp}| > 300{,}000\text{ms}$ are rejected immediately (`AUTH_TIMESTAMP_OUT_OF_BOUNDS`).
-  - **Sliding Nonce Cache:** In-memory LRU cache with 5-minute TTL. Any repeated nonce within the drift window is blocked (`AUTH_REPLAY_DETECTED`).
-  - **Run ID Idempotency:** Duplicate active or completed run IDs cannot be re-executed.
-  - **Constant-Time Comparison:** Uses `crypto.timingSafeEqual` to eliminate side-channel timing attacks.
+- HTTP routing, CORS, and error handling
+- Authentication (Bearer token, HMAC-SHA256, or permissive dev mode)
+- Real-time SSE streaming with heartbeat keep-alives
+- Task lifecycle state management (working → completed / failed / canceled / input-required)
+- Schema validation and manifest generation
+- Background telemetry reporting
 
 ---
 
-### Decision 3: Framework-Agnostic Adapter Pattern
-* **Context:** Forcing developers into a specific LLM library creates friction.
-* **Decision:** `catelog` uses the **Adapter Pattern**. The SDK is completely decoupled from agent orchestration frameworks:
-  - Works with **LangGraph / LangChain**.
-  - Works with **OpenAI SDK** (`client.responses.create`).
-  - Works with **LlamaIndex**, **Vercel AI SDK**, or vanilla TypeScript loops.
-  Developers simply pass an `execute({ input, stream, signal })` async function.
+## Guiding Principle: Progressive Disclosure
 
----
-
-### Decision 4: Native Zod & JSON Schema Support
-* **Context:** The marketplace UI and gateway validation engine require explicit JSON Schemas to generate input forms and enforce pre-execution contracts.
-* **Decision:** Developers can define schemas using standard [Zod](https://zod.dev) or raw JSON Schema objects. `catelog` automatically converts Zod objects into standard JSON Schema Draft-07 for the `GET /schema` endpoint while providing runtime type safety for incoming buyer payloads.
-
----
-
-### Decision 5: Real-Time SSE Streaming with Keep-Alive Heartbeats
-* **Context:** Long-running deep research or multi-agent loops (e.g. 30–120 seconds) frequently get terminated prematurely by intermediate proxies (Cloudflare Error 524, AWS ALB 504 Gateway Timeout).
-* **Decision:**
-  - **Automatic 15s Heartbeats:** The SDK spawns an internal timer emitting `{ event: "heartbeat", timestamp: ... }` every 15 seconds during active runs.
-  - **Clean Disconnect Handling:** If a buyer or gateway closes the socket, the SDK catches the event and trips an `AbortSignal`, allowing developers to abort downstream LLM calls immediately and prevent wasted API costs.
-
----
-
-### Decision 6: Simplified Ping Check (No Dry-Run Invariant)
-* **Context:** Earlier concepts considered simulated "dry-runs" to check third-party balances. However, third-party API keys can run out mid-job, and dry-runs create false confidence while consuming maintenance overhead.
-* **Decision:** Keep `/health` as a pure, lightweight network liveness and uptime probe (`GET /health`). It responds in milliseconds, uses zero credits, and certifies server uptime and protocol readiness.
-
----
-
-## 3. What the SDK Contains
-
-The SDK codebase is modular, clean, and fully typed:
+Senior engineers should never struggle with the SDK. The design follows a **progressive disclosure** model:
 
 ```
-sdk/ts-sdk/
-├── package.json               # Package name: "catelog", ESM, type exports
-├── tsconfig.json              # NodeNext ES2022 compiler configuration
-├── README.md                  # Comprehensive developer documentation
-├── DECISION.md                # This architectural decision document
-├── scripts/
-│   └── postinstall.js         # Zero-dependency install splash for npm/pnpm/yarn/bun
-├── src/
-│   ├── index.ts               # Clean root exports
-│   ├── types.ts               # Protocol interfaces, event contracts & error codes
-│   ├── security.ts            # SecurityManager (HMAC-SHA256, nonce cache, replay guard)
-│   ├── sse.ts                 # SSEWriter (heartbeat timer, stream formatting, abort signal)
-│   ├── schema.ts              # Zod-to-JSON-Schema converter & runtime validator
-│   ├── agent.ts               # MarketplaceAgent class & createMarketplaceAgent() factory
-│   ├── server.ts              # Lightweight native HTTP server runner (.serve(port))
-│   └── banner.ts              # Rich ANSI terminal diagnostics and startup splash
-└── test/
-    └── index.test.ts          # Automated verification test suite
+Level 1 — Zero friction (5 lines, no config)
+Level 2 — Add schemas for validation and marketplace forms
+Level 3 — Add keys for production auth
+Level 4 — Add mode, telemetry, and framework adapters
 ```
 
-### Module Highlights:
-
-| File | Purpose |
-| :--- | :--- |
-| **`src/types.ts`** | Defines `ExecuteRequest`, `ExecuteResponse`, `AgentManifest`, `HealthCheckResponse`, and standard error codes (`AUTH_INVALID_SIGNATURE`, `INVALID_INPUT`, `MODEL_RATE_LIMIT`, `INTERNAL_CRASH`, etc.). |
-| **`src/security.ts`** | Handles canonical string generation, body hashing (SHA-256), HMAC validation, and sliding nonce memory caches. |
-| **`src/sse.ts`** | Handles chunk formatting (`event: ...\ndata: ...\n\n`), sequence numbering for deltas, step reporting, and automatic 15-second heartbeat intervals. |
-| **`src/schema.ts`** | Provides unwrapped JSON Schema generation from Zod schemas and validates user inputs against registered contracts. |
-| **`src/agent.ts`** | Core engine coordinating CORS, routing (`/health`, `/schema`, `/execute`), authentication, timeout deadlines, and error normalization. |
-| **`src/server.ts`** | Zero-dependency Node.js HTTP server supporting standalone execution or mounting into Express/Fastify/Next.js. |
+At every level, the SDK adds features without breaking the previous level.
 
 ---
 
-## 4. How to Use the SDK
+## Core Architectural Decisions
 
-### 1. Installation
-`catelog` is universally compatible with all package managers:
+### Decision 1: Inferred Task Lifecycle (No Manual State Management)
 
-```bash
-# pnpm
-pnpm add catelog zod
+**Problem:** If developers must manually call `task.setStatus("working")`, `task.setStatus("completed")`, etc., they will forget — leaving tasks stuck in a "working" state forever on unhandled exceptions.
 
-# npm
-npm install catelog zod
+**Decision:** The SDK infers the full task state machine from standard async function semantics:
 
-# yarn
-yarn add catelog zod
-
-# bun
-bun add catelog zod
 ```
+execute() starts      → SDK emits task.status = "working"
+stream.delta(...)     → SDK emits task.delta (task stays "working")
+stream.progress(...)  → SDK emits task.progress (task stays "working")
+return value          → SDK emits task.completed automatically
+throw error           → SDK emits task.failed automatically
+client disconnects    → SDK emits task.canceled automatically
+ctx.needInput(...)    → SDK emits task.input_required (HITL suspension)
+```
+
+The developer only writes normal `async/await` code. Task state is never their concern.
 
 ---
 
-### 2. Basic Agent Implementation
-Wrap any agent function with `createMarketplaceAgent`:
+### Decision 2: Dual-Mode Authentication (Not Strict HMAC-Only)
 
-```typescript
-import { createMarketplaceAgent } from "catelog";
-import { z } from "zod";
-import OpenAI from "openai";
+**Problem:** Requiring full HMAC-SHA256 headers for every request means a senior engineer can't test with `curl` or Postman without writing a custom signing script. This kills developer experience.
 
-const client = new OpenAI();
+**Decision:** The SDK detects the best available authentication method from the request:
 
-// 1. Declare contract schemas
-const InputSchema = z.object({
-  query: z.string().describe("Target company or topic"),
-});
+| Priority | Method | How It's Detected | When Used |
+| :---: | :--- | :--- | :--- |
+| 1 | **HMAC-SHA256** | `X-Marketplace-Signature` header present | Marketplace Gateway → Agent |
+| 2 | **Bearer secret** | `Authorization: Bearer cat_sec_live_...` | curl, Postman, internal services |
+| 3 | **Bearer public** | `Authorization: Bearer cat_pub_live_...` | Frontend, schema/health calls |
+| 4 | **Dev mode** | No auth, `NODE_ENV !== "production"` | Local development |
+| 5 | **Rejected** | No auth in production | Security enforcement |
 
-const OutputSchema = z.object({
-  summary: z.string(),
-  sources: z.array(z.string()),
-});
-
-// 2. Wrap the agent
-export const agent = createMarketplaceAgent({
-  name: "B2B Market Research Agent",
-  version: "1.0.0",
-  description: "Autonomous research agent using OpenAI web search",
-  secret: process.env.MARKETPLACE_SECRET, // Provided by the marketplace
-  inputSchema: InputSchema,
-  outputSchema: OutputSchema,
-
-  async execute({ input, stream, signal }) {
-    // Report progress steps live to the buyer UI
-    stream.step("Initiating web discovery...");
-
-    const response = await client.responses.create({
-      model: "gpt-6-luna",
-      input: input.query,
-      tools: [{ type: "web_search" }],
-    });
-
-    stream.step("Formatting structured report...");
-
-    return {
-      output: {
-        summary: response.output_text || "",
-        sources: ["https://example.com/source1"],
-      },
-      telemetry: {
-        model_used: "gpt-6-luna",
-        llm_tokens: {
-          total: response.usage?.total_tokens || 350,
-        },
-        cost_usd: 0.002,
-      },
-    };
-  },
-});
-
-// 3. Start the server (prints the signature CATELOG banner)
-agent.serve(4000);
-```
+Keys are auto-discovered from environment variables (`CATELOG_SECRET_KEY`, `CATELOG_PUBLIC_KEY`). The developer never needs to pass them manually if `.env` is configured.
 
 ---
 
-### 3. Verification & Testing
+### Decision 3: Three Execution Modes
 
-#### Test Ping / Liveness:
-```bash
-curl http://localhost:4000/health
+**Problem:** Agents have fundamentally different execution profiles. A web search agent finishes in 2 seconds. A deep research graph may take 4 minutes. A document assistant may need to ask a clarifying question mid-run.
+
+**Decision:** Three first-class execution modes, selectable with a single config field:
+
 ```
+"sync"           → Direct HTTP/SSE connection, resolves in same request
+"async"          → Returns 202 Accepted + jobId, polled via GET /tasks/:id
+"conversational" → Supports ctx.needInput() for HITL suspension and resume
+```
+
+The developer sets `mode: "async"` and writes normal async code. The SDK handles the 202 response, background execution, job store, and polling endpoint automatically.
+
+---
+
+### Decision 4: Optional Schemas (Not Required)
+
+**Problem:** Forcing `inputSchema` and `outputSchema` as required fields blocks rapid prototyping. A developer testing locally shouldn't need to write a Zod schema just to get a server running.
+
+**Decision:** Both `inputSchema` and `outputSchema` are optional:
+
+- If provided, the SDK validates inputs at the gateway and generates marketplace forms from the schema
+- If omitted, the SDK accepts any valid JSON payload and returns an open `{ type: "object" }` schema
+
+Zod v3, Zod v4, and raw JSON Schema Draft-07 objects are all supported natively.
+
+---
+
+### Decision 5: Two-Layer Non-Blocking Telemetry
+
+**Problem:** Telemetry is valuable but must never break or slow down agent execution. If a telemetry endpoint is unreachable, the buyer's run must still complete normally.
+
+**Decision:** Two independent telemetry layers:
+
+**Layer 1 — Universal Base (automatic, zero developer effort):**
+Collected for every agent regardless of framework: execution duration, input/output byte sizes, chunks streamed, task final state, error codes.
+
+**Layer 2 — Framework-Specific Enrichment (progressive, graceful):**
+When using OpenAI, Vercel AI SDK, or LangGraph adapters, the SDK extracts token counts, tool call counts, and graph node transitions. If extraction fails, it silently falls back to Layer 1.
+
+**Background reporting** is fire-and-forget with a 3-second timeout. Network failures are silently discarded. The agent response is never blocked.
+
+---
+
+### Decision 6: Framework Adapters (One-Line Integration)
+
+**Problem:** Developers using OpenAI streams, LangGraph runnables, or Vercel AI SDK results must manually loop over chunks and call `stream.delta()` for every piece. This is repetitive glue code.
+
+**Decision:** Native adapter functions that pipe framework-specific outputs directly into Catelog's task event stream:
+
+```ts
+// Before (verbose glue):
+for await (const chunk of openaiStream) {
+  if (chunk.choices[0].delta.content) {
+    stream.delta(chunk.choices[0].delta.content);
+  }
+}
+
+// After (one line):
+return pipeOpenAiStream(openaiStream, stream);
+```
+
+Adapters handle streaming, telemetry extraction, tool call events, and graceful error recovery — all in a single call.
+
+---
+
+### Decision 7: Health Check as Registration Probe
+
+**Problem:** When a creator registers their agent server on the marketplace, the platform needs to verify the server is reachable, running the right protocol version, and capable of the declared features — before accepting the listing.
+
+**Decision:** `GET /health` returns a rich response with capabilities, used for one-click registration verification:
+
 ```json
 {
   "status": "ready",
   "protocol_version": "1.0.0",
-  "uptime_seconds": 42,
-  "environment_ready": true
+  "uptime_seconds": 1284,
+  "environment_ready": true,
+  "capabilities": {
+    "streaming": true,
+    "delta_stream": true,
+    "execution_modes": ["async"]
+  }
 }
 ```
 
-#### Test Manifest Document:
-```bash
-curl http://localhost:4000/schema
+The marketplace fires `/health` then `/schema` in sequence. The creator sees their agent's name, input fields, and capabilities auto-populated on the listing page — no manual configuration.
+
+---
+
+## Source File Map
+
 ```
-Returns the agent manifest with complete JSON Schemas ready for marketplace listing.
-
-#### Test Execution with Signature:
-Clients sign requests using HMAC-SHA256 headers:
-- `X-Marketplace-Protocol: 1.0.0`
-- `X-Marketplace-Timestamp: <timestamp>`
-- `X-Marketplace-Nonce: <uuid>`
-- `X-Marketplace-Run-Id: <run_id>`
-- `X-Marketplace-Signature: <hex_hmac>`
-
-The SDK streams live Server-Sent Events directly to the client:
+sdk/ts-sdk/src/
+├── index.ts        Clean root exports for everything below
+├── types.ts        Protocol types, task states, SSE events, error codes
+├── agent.ts        CatelogAgent class — the core engine
+├── security.ts     Dual-mode auth: Bearer, HMAC-SHA256, public key, dev
+├── sse.ts          SSEWriter — task lifecycle events, heartbeat, disconnect
+├── context.ts      AgentExecutionContext — session, needInput(), log, metric
+├── telemetry.ts    2-layer telemetry collector + background reporter
+├── adapters.ts     Framework adapters: OpenAI, Vercel AI SDK, LangGraph
+├── schema.ts       Zod-to-JSON-Schema + runtime input validation
+├── server.ts       Lightweight native Node.js HTTP server
+└── banner.ts       ANSI terminal startup splash
 ```
-event: run.started
-data: {"event":"run.started","run_id":"run_123","timestamp":1729410000000}
 
-event: step.started
-data: {"event":"step.started","run_id":"run_123","step_index":1,"label":"Initiating web discovery..."}
+| File | Responsibility |
+| :--- | :--- |
+| `agent.ts` | Routes `/health`, `/schema`, `/execute`, `/tasks/:id`. Dispatches execution modes. Normalizes results and errors. |
+| `security.ts` | Detects auth method, verifies Bearer tokens, validates HMAC-SHA256 signatures, manages nonce replay cache. |
+| `sse.ts` | Writes canonical SSE frames, emits 8 task lifecycle event types, manages heartbeat timer and client disconnect detection. |
+| `context.ts` | Builds the `ctx` object passed to `execute()`. Manages session store for conversational agents. |
+| `telemetry.ts` | Collects base metrics, provides structured logger, fires background telemetry reports with silent failure. |
+| `adapters.ts` | Translates OpenAI, Vercel AI SDK, LangGraph, and generic async iterable outputs into Catelog stream events. |
 
-event: run.succeeded
-data: {"event":"run.succeeded","run_id":"run_123","duration_ms":3410,"output":{...},"telemetry":{...}}
+---
+
+## The SSE Event Protocol (What the Marketplace Receives)
+
+Every streaming execution produces this sequence of events:
+
+```
+event: task.status
+data: {"event":"task.status","run_id":"run_abc","status":"working","timestamp":1729410000000}
+
+event: task.progress                         ← from stream.progress(40, "Searching...")
+data: {"event":"task.progress","run_id":"run_abc","percent":40,"message":"Searching...","step":1}
+
+event: task.delta                            ← from stream.delta("Found 3 results...")
+data: {"event":"task.delta","run_id":"run_abc","index":0,"delta_type":"text","content":"Found 3 results..."}
+
+event: task.activity                         ← from stream.activity("tool_call", {...})
+data: {"event":"task.activity","run_id":"run_abc","activity_type":"tool_call","data":{...}}
+
+event: heartbeat                             ← automatic every 15 seconds
+data: {"event":"heartbeat","timestamp":1729410015000}
+
+event: task.completed                        ← from return result
+data: {"event":"task.completed","run_id":"run_abc","duration_ms":3412,"output":{...},"telemetry":{...}}
+```
+
+For `input-required` agents:
+```
+event: task.input_required                   ← from ctx.needInput({...})
+data: {"event":"task.input_required","run_id":"run_abc","prompt":"...","resume_token":"resume_abc123","input_schema":{...}}
+```
+
+For failed agents:
+```
+event: task.failed                           ← from throw new Error(...)
+data: {"event":"task.failed","run_id":"run_abc","duration_ms":812,"error":{"code":"INTERNAL_CRASH","message":"...","retryable":false}}
 ```
 
 ---
 
-## 5. Why Developers Love `catelog`
+## API Keys: Public vs Secret
 
-1. **5-Minute Onboarding:** Turn existing scripts or notebooks into a monetizable microservice in $< 5$ minutes.
-2. **Zero Framework Lock-in:** Use LangGraph, OpenAI, CrewAI, Anthropic, or pure JavaScript.
-3. **Built-in Production Hardening:** Replay attacks, clock drifts, malformed payloads, and reverse proxy timeouts are solved out of the box.
-4. **Autonomous Economy Ready:** Seamlessly hooks into PayPal Authorize & Capture and multi-agent escrow networks.
+| Key | Format | Where It Lives | Used For |
+| :--- | :--- | :--- | :--- |
+| **Publishable** | `cat_pub_live_...` | Frontend, client apps | `/health`, `/schema` calls, analytics |
+| **Secret** | `cat_sec_live_...` | Server `.env` only | `/execute` auth, agent registration, webhooks |
 
+The secret key is revealed **once** at creation. It is stored in the database as a SHA-256 hash. The preview characters shown in the UI (`cat_sec_live_...xxxx`) are for identification only.
+
+On the agent server, set the secret key in `.env`:
+```
+CATELOG_SECRET_KEY=cat_sec_live_your_key_here
+CATELOG_PUBLIC_KEY=cat_pub_live_your_key_here
+```
+
+The SDK auto-reads both from `process.env`. No manual passing required.

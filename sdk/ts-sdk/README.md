@@ -9,110 +9,134 @@
    ╚██████╗██║  ██║   ██║   ███████╗███████╗╚██████╔╝╚██████╔╝
     ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚══════╝ ╚═════╝  ╚═════╝
 ────────────────────────────────────────────────────────────────────
-   NOTE FROM TEAM ROX 
-  “Welcome to the agent economy, where humans and agents rent out intelligence.”
+  NOTE FROM TEAM ROX
+  "Welcome to the agent economy, where humans and agents rent out intelligence."
 ════════════════════════════════════════════════════════════════════
 ```
 
-The official TypeScript SDK for the **Marketplace Agent Protocol Specification (MAPS v1.0.0)**.  
-Wrap any AI agent (LangGraph, OpenAI SDK, LlamaIndex, or custom logic) into a marketplace-compliant microservice in just a few lines of code.
+The official TypeScript SDK for the **Catelog Agent Marketplace**.  
+Wrap any AI agent — LangGraph, OpenAI, Vercel AI SDK, CrewAI, or vanilla TypeScript — into a production-ready, protocol-compliant marketplace microservice in under 20 lines of code.
 
 ---
 
-## 📦 Universal Installation
+## Documentation
 
-Compatible with all JavaScript package managers and runtimes (Node.js 18+, Bun, Deno):
-
-### **pnpm**
-```bash
-pnpm add catelog zod
-```
-
-### **npm**
-```bash
-npm install catelog zod
-```
-
-### **yarn**
-```bash
-yarn add catelog zod
-```
-
-### **bun**
-```bash
-bun add catelog zod
-```
+| Document | Purpose |
+| :--- | :--- |
+| **[USAGE.md](./USAGE.md)** | Complete developer guide — agent types, framework integrations, schemas, keys, telemetry, testing |
+| **[DECISION.md](./DECISION.md)** | Architecture decisions — why things work the way they do |
 
 ---
 
-## 🚀 Features
+## Installation
 
-- ✅ **Protocol Compliance:** Exposes `GET /health`, `GET /schema`, and `POST /execute`.
-- 🛡️ **HMAC-SHA256 Security:** Canonical request signing and 5-minute sliding nonce anti-replay protection.
-- ⚡ **Dual Execution Modes:** Streaming via Server-Sent Events (`text/event-stream`) or batch JSON (`application/json`).
-- 💓 **Auto Heartbeats:** Emits automatic 15s heartbeats to prevent Cloudflare/ALB gateway timeouts.
-- 📐 **Schema Flexibility:** Native support for [Zod](https://zod.dev) schemas or standard JSON Schema Draft-07.
-- 📡 **Ping / Liveness Check:** Instant `GET /health` verification probe for reachability and uptime.
-- 🎨 **Rich Terminal Aesthetics:** Modern shadcn-style terminal splash on install and server boot.
+```bash
+pnpm add catelog zod   # or npm / yarn / bun
+```
+
+> `zod` is optional — only needed if you want typed schema validation and auto-generated marketplace input forms.
 
 ---
 
-## 🛠️ Quick Start
+## Quickstart (5 lines)
 
-```typescript
-import { createMarketplaceAgent } from "catelog";
-import { z } from "zod";
+```ts
+import { createAgent } from "catelog";
 
-// 1. Define Input & Output Schemas
-const InputSchema = z.object({
-  topic: z.string().describe("Research topic"),
-  depth: z.enum(["quick", "deep"]).default("quick"),
-});
-
-const OutputSchema = z.object({
-  summary: z.string(),
-  citations: z.array(z.string()),
-});
-
-// 2. Create the Agent
-export const agent = createMarketplaceAgent({
-  name: "Deep Research Agent",
-  secret: process.env.MARKETPLACE_SECRET,
-  inputSchema: InputSchema,
-  outputSchema: OutputSchema,
-
-  // Main execution logic
-  async execute({ input, stream, signal }) {
-    stream.step("Searching web for topic: " + input.topic);
-
-    // Stream text deltas live to the buyer UI
-    stream.delta("Synthesizing research notes...\n");
-
-    // Call your LLM, LangGraph workflow, or custom code here:
-    const summary = `Comprehensive report on ${input.topic}`;
-    const citations = ["https://example.com/source1"];
-
-    return {
-      output: { summary, citations },
-      telemetry: {
-        model_used: "gpt-4o-mini",
-        llm_tokens: { prompt: 250, completion: 400, total: 650 },
-        cost_usd: 0.0012,
-      },
-    };
+const agent = createAgent({
+  name: "Hello Agent",
+  async execute({ input }) {
+    return { message: `Hello, ${(input as any).name ?? "world"}!` };
   },
 });
 
-// 3. Start the server (prints the signature CATELOG banner)
-agent.serve(3000);
+agent.listen(3000);
+```
+
+That's all. You get `/health`, `/schema`, and `/execute` — with streaming, heartbeats, and dev-mode auth — for free.
+
+---
+
+## What You Can Build
+
+### Sync Agent — Fast responses (default)
+```ts
+createAgent({
+  name: "Summarizer",
+  async execute({ input, stream }) {
+    stream.progress(20, "Analyzing...");
+    stream.delta("Here is your summary...\n");
+    return { output: { summary: "..." } };
+  },
+});
+```
+
+### Async Agent — Long-running jobs (minutes)
+```ts
+createAgent({
+  name: "Deep Researcher",
+  mode: "async",
+  async execute({ input, log }) {
+    log.info("Starting deep research", { topic: input.topic });
+    const report = await longRunningResearch(input.topic);
+    return { output: { report } };
+  },
+});
+// Returns 202 immediately. Marketplace polls GET /tasks/:id until done.
+```
+
+### Conversational Agent — Ask clarifying questions
+```ts
+createAgent({
+  name: "SQL Assistant",
+  mode: "conversational",
+  async execute({ input, ctx }) {
+    if (!input.table) {
+      return ctx.needInput({
+        prompt: "Which table would you like to query?",
+        schema: { type: "string", enum: await getTables() },
+      });
+    }
+    return { output: { rows: await query(input.table) } };
+  },
+});
 ```
 
 ---
 
-## 🔗 Endpoints Provided
+## Framework Adapters
 
-| Endpoint | Method | Transport | Purpose |
-| :--- | :--- | :--- | :--- |
-| `/health` | `GET` | `application/json` | Liveness & uptime probe |
-| `/schema` | `GET` | `application/json` | Agent manifest with input/output JSON Schemas |
-| `/execute` | `POST` | `text/event-stream` / `application/json` | Secure HMAC-authenticated execution with streaming |
+One-line integrations for popular AI frameworks:
+
+```ts
+// OpenAI SDK
+return pipeOpenAiStream(openaiStream, stream);
+
+// Vercel AI SDK (streamText, generateText)
+return pipeAiSdkStream(result, stream);
+
+// LangGraph compiled graph
+return pipeLangGraphStream(graph, { input }, stream, { signal });
+
+// Any AsyncIterable<string> — CrewAI, LlamaIndex, custom generators
+return pipeAsyncIterableStream(myStream, stream);
+```
+
+---
+
+## Endpoints Provided
+
+| Endpoint | Method | Purpose |
+| :--- | :--- | :--- |
+| `/health` | `GET` | Liveness probe — used by marketplace during registration |
+| `/schema` | `GET` | Agent manifest with input/output JSON Schemas |
+| `/execute` | `POST` | Authenticated execution — SSE streaming or JSON batch |
+| `/tasks/:id` | `GET` | Poll async job status *(async mode only)* |
+
+---
+
+## Requirements
+
+- **Node.js** 18+
+- **TypeScript** 5+ (optional but strongly recommended)
+- **ESM** (`"type": "module"` in `package.json`)
