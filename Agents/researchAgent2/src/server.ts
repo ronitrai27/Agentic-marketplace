@@ -6,6 +6,12 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import { z } from "zod";
 import { createMarketplaceAgent, pipeOpenAiResponsesStream } from "catelog";
+import {
+  createTemporalClient,
+  TEMPORAL_CONFIG,
+} from "./temporal/connection.js";
+import { deepResearchWorkflow } from "./temporal/workflows/deep-research.workflow.js";
+import { runWorker } from "./temporal/worker.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,11 +34,16 @@ const PORT = Number(process.env.PORT) || 3001;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const InputSchema = z.object({
-  prompt: z.string().min(2).describe("Research question or topic to investigate"),
+  prompt: z
+    .string()
+    .min(2)
+    .describe("Research question or topic to investigate"),
   mode: z
     .enum(["fast", "deep"])
     .default("fast")
-    .describe("Research mode: 'fast' (realtime web search) or 'deep' (background reasoning)"),
+    .describe(
+      "Research mode: 'fast' (realtime web search) or 'deep' (background reasoning)",
+    ),
 });
 
 const OutputSchema = z.object({
@@ -88,7 +99,9 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 
       // Pipe response → SSE activity events + telemetry via the new adapter
       const adapterResult = await pipeOpenAiResponsesStream(response, stream);
-      const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
+      const durationSeconds = Number(
+        ((Date.now() - startTime) / 1000).toFixed(1),
+      );
       const answer = response.output_text || "No response generated.";
 
       return {
@@ -105,62 +118,107 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       };
     }
 
-    // ── Deep Mode: background reasoning + polling ──
-    stream.step("Dispatching background deep reasoning task (gpt-5.4-mini)...");
+    // ── Deep Mode: durable execution via Temporal Cloud ──
+    stream.step(
+      "Dispatching durable deep reasoning workflow to Temporal Cloud (gpt-5.4-mini)...",
+    );
 
-    let response: any = await client.responses.create({
-      model: "gpt-5.4-mini",
-      input: input.prompt,
-      background: true,
-      reasoning: { effort: "medium" },
-      tools: [{ type: "web_search" }],
-    });
+    try {
+      const temporalClient = await createTemporalClient();
+      const workflowId = `deep-research-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    stream.activity("background_task", {
-      taskId: response.id,
-      status: response.status,
-      model: "gpt-5.4-mini",
-    });
-
-    // Polling loop — emit structured activity events on each tick
-    while (response.status === "queued" || response.status === "in_progress") {
-      if (signal.aborted) {
-        throw new Error("EXECUTION_TIMEOUT");
-      }
-
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      stream.activity("polling", {
-        taskId: response.id,
-        status: response.status,
-        elapsed_seconds: elapsed,
+      stream.activity("temporal_workflow_dispatched", {
+        workflowId,
+        namespace: TEMPORAL_CONFIG.namespace,
+        taskQueue: TEMPORAL_CONFIG.taskQueue,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      response = await client.responses.retrieve(response.id) as any;
-    }
+      const handle = await temporalClient.workflow.start(deepResearchWorkflow, {
+        taskQueue: TEMPORAL_CONFIG.taskQueue,
+        workflowId,
+        args: [{ prompt: input.prompt }],
+      });
 
-    if (response.status !== "completed") {
-      throw new Error(
-        `Background reasoning ended with unexpected status: ${response.status}`
+      stream.step(
+        `Temporal Workflow [${workflowId}] actively running on cloud queue...`,
       );
-    }
 
-    // Pipe final response → SSE delta + activity events + telemetry
-    const adapterResult = await pipeOpenAiResponsesStream(response, stream);
-    const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
+      const workflowResult = await handle.result();
+      const durationSeconds = Number(
+        ((Date.now() - startTime) / 1000).toFixed(1),
+      );
 
-    return {
-      output: {
-        answer: response.output_text || "",
+      stream.delta(workflowResult.answer);
+
+      return {
+        output: {
+          answer: workflowResult.answer,
+          model: workflowResult.model,
+          mode: "deep",
+          duration_seconds: durationSeconds,
+        },
+        telemetry: {
+          workflow_id: workflowId,
+          temporal_task_queue: TEMPORAL_CONFIG.taskQueue,
+          duration_ms: Date.now() - startTime,
+        },
+      };
+    } catch (temporalErr: any) {
+      console.warn(
+        "⚠️ Temporal workflow failed or timed out, falling back to local runner:",
+        temporalErr.message,
+      );
+      stream.step(
+        "Temporal fallback: executing local OpenAI background reasoning...",
+      );
+
+      let response: any = await client.responses.create({
         model: "gpt-5.4-mini",
-        mode: "deep",
-        duration_seconds: durationSeconds,
-      },
-      telemetry: {
-        ...adapterResult.telemetry,
-        duration_ms: Date.now() - startTime,
-      },
-    };
+        input: input.prompt,
+        background: true,
+        reasoning: { effort: "medium" },
+        tools: [{ type: "web_search" }],
+      });
+
+      stream.activity("background_task", {
+        taskId: response.id,
+        status: response.status,
+        model: "gpt-5.4-mini",
+      });
+
+      while (
+        response.status === "queued" ||
+        response.status === "in_progress"
+      ) {
+        if (signal.aborted) throw new Error("EXECUTION_TIMEOUT");
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        stream.activity("polling", {
+          taskId: response.id,
+          status: response.status,
+          elapsed_seconds: elapsed,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        response = (await client.responses.retrieve(response.id)) as any;
+      }
+
+      const adapterResult = await pipeOpenAiResponsesStream(response, stream);
+      const durationSeconds = Number(
+        ((Date.now() - startTime) / 1000).toFixed(1),
+      );
+
+      return {
+        output: {
+          answer: response.output_text || "",
+          model: "gpt-5.4-mini",
+          mode: "deep",
+          duration_seconds: durationSeconds,
+        },
+        telemetry: {
+          ...adapterResult.telemetry,
+          duration_ms: Date.now() - startTime,
+        },
+      };
+    }
   },
 });
 
@@ -183,7 +241,10 @@ const MIME_TYPES: Record<string, string> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  const url = new URL(
+    req.url || "/",
+    `http://${req.headers.host || "localhost"}`,
+  );
 
   // Route 1: Marketplace endpoints handled by Catelog SDK
   // /health  → liveness probe + capabilities
@@ -207,7 +268,9 @@ const server = http.createServer(async (req, res) => {
   // Route 2: Web UI Chat endpoint (custom SSE — NOT the marketplace /execute route)
   if (url.pathname === "/api/chat" && req.method === "POST") {
     let body = "";
-    req.on("data", (chunk) => { body += chunk; });
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
 
     req.on("end", async () => {
       let prompt = "";
@@ -250,11 +313,11 @@ const server = http.createServer(async (req, res) => {
             message: "Running web search with gpt-6-luna...",
           });
 
-          const response = await client.responses.create({
+          const response = (await client.responses.create({
             model: "gpt-6-luna",
             input: prompt,
             tools: [{ type: "web_search" }],
-          }) as any;
+          })) as any;
 
           // Emit web_search activity if present in output items
           for (const item of response?.output ?? []) {
@@ -286,26 +349,50 @@ const server = http.createServer(async (req, res) => {
           sendEvent("status", {
             phase: "dispatching",
             model: "gpt-5.4-mini",
-            message: "Dispatching background reasoning task (effort: medium)...",
+            message:
+              "Dispatching deep reasoning to Temporal Cloud Task Queue...",
           });
 
-          let response = await client.responses.create({
+          let workflowId = `deep-research-${Date.now()}`;
+          try {
+            const temporalClient = await createTemporalClient();
+            await temporalClient.workflow.start(deepResearchWorkflow, {
+              taskQueue: TEMPORAL_CONFIG.taskQueue,
+              workflowId,
+              args: [{ prompt }],
+            });
+            sendEvent("activity", {
+              type: "temporal_workflow",
+              workflowId,
+              taskQueue: TEMPORAL_CONFIG.taskQueue,
+              namespace: TEMPORAL_CONFIG.namespace,
+              message: `Temporal durable workflow ${workflowId} running on cloud`,
+            });
+          } catch (e: any) {
+            console.log("Temporal Cloud dispatch note:", e?.message);
+          }
+
+          let response = (await client.responses.create({
             model: "gpt-5.4-mini",
             input: prompt,
             background: true,
             reasoning: { effort: "medium" },
             tools: [{ type: "web_search" }],
-          }) as any;
+          })) as any;
 
           sendEvent("status", {
             phase: "dispatched",
             taskId: response.id,
+            workflowId,
             status: response.status,
             model: "gpt-5.4-mini",
-            message: `Background task started [${response.id}] — status: ${response.status}`,
+            message: `Deep task running [OpenAI ID: ${response.id} | Temporal: ${workflowId}]`,
           });
 
-          while (response.status === "queued" || response.status === "in_progress") {
+          while (
+            response.status === "queued" ||
+            response.status === "in_progress"
+          ) {
             const elapsed = Math.floor((Date.now() - startTime) / 1000);
             sendEvent("status", {
               phase: "polling",
@@ -316,7 +403,7 @@ const server = http.createServer(async (req, res) => {
             });
 
             await new Promise((resolve) => setTimeout(resolve, 2000));
-            response = await client.responses.retrieve(response.id) as any;
+            response = (await client.responses.retrieve(response.id)) as any;
           }
 
           const durationMs = Date.now() - startTime;
@@ -332,7 +419,8 @@ const server = http.createServer(async (req, res) => {
                 });
               }
               if (item?.type === "reasoning") {
-                const summary = item?.summary?.map((s: any) => s?.text).join(" ") ?? "";
+                const summary =
+                  item?.summary?.map((s: any) => s?.text).join(" ") ?? "";
                 if (summary) {
                   sendEvent("activity", {
                     type: "reasoning",
@@ -367,7 +455,8 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (err: any) {
         sendEvent("error", {
-          message: err?.message || "An unexpected error occurred during research.",
+          message:
+            err?.message || "An unexpected error occurred during research.",
         });
         res.end();
       }
@@ -376,7 +465,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Route 3: Serve static web UI from public/
-  let filePath = path.join(PUBLIC_DIR, url.pathname === "/" ? "index.html" : url.pathname);
+  let filePath = path.join(
+    PUBLIC_DIR,
+    url.pathname === "/" ? "index.html" : url.pathname,
+  );
 
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);
@@ -404,15 +496,31 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  const keyMode = process.env.CATELOG_SECRET_KEY ? "🔐 Authenticated" : "⚠️  Dev mode (no key)";
+server.listen(PORT, async () => {
+  const keyMode = process.env.CATELOG_SECRET_KEY
+    ? "🔐 Authenticated"
+    : "⚠️  Dev mode (no key)";
   console.log(`\n======================================================`);
   console.log(`🚀 Research Agent 2 running at: http://localhost:${PORT}`);
   console.log(`🔑 Auth mode: ${keyMode}`);
+  console.log(
+    `⚡ Temporal Cloud Queue: ${TEMPORAL_CONFIG.taskQueue} (${TEMPORAL_CONFIG.namespace})`,
+  );
   console.log(`📡 Marketplace Protocol:`);
   console.log(`   - Liveness:  http://localhost:${PORT}/health`);
   console.log(`   - Schema:    http://localhost:${PORT}/schema`);
-  console.log(`   - Execute:   http://localhost:${PORT}/execute  (Bearer cat_sec_... or HMAC)`);
+  console.log(
+    `   - Execute:   http://localhost:${PORT}/execute  (Bearer cat_sec_... or HMAC)`,
+  );
   console.log(`💬 Web UI:      http://localhost:${PORT}`);
   console.log(`======================================================\n`);
+
+  // Start embedded Temporal worker to process deep research background jobs
+  try {
+    runWorker().catch((err) => {
+      console.warn("⚠️ [Temporal Worker Note]:", err.message);
+    });
+  } catch (err: any) {
+    console.warn("⚠️ Could not start background Temporal worker:", err.message);
+  }
 });

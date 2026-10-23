@@ -7,10 +7,15 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "ui": "tsx src/server.ts"
+    "ui": "tsx src/server.ts",
+    "worker": "tsx src/temporal/worker.ts"
   },
   "dependencies": {
-    "catelog": "^1.0.0",
+    "@temporalio/activity": "^1.24.0",
+    "@temporalio/client": "^1.24.0",
+    "@temporalio/worker": "^1.24.0",
+    "@temporalio/workflow": "^1.24.0",
+    "catelog": "^1.0.4",
     "dotenv": "^18.0.8",
     "openai": "^7.39.0",
     "zod": "^4.6.7"

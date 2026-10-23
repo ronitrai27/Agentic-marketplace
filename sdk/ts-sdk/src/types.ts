@@ -242,19 +242,97 @@ export type SSEProtocolEvent =
 // ─────────────────────────────────────────────────
 
 export interface AgentStream {
-  /** Emit a progress tick (0-100). Does NOT complete the task. */
+  /**
+   * Emit an incremental progress percentage (0 to 100) and an optional human-readable status message.
+   * Sends a `task.progress` SSE event to the client. Does NOT complete the task.
+   * 
+   * @param percent Progress percentage from 0 to 100
+   * @param message Optional short status description (e.g. "Scraping web sources...")
+   * 
+   * @example
+   * stream.progress(25, "Searching Google...");
+   */
   progress: (percent: number, message?: string) => void;
-  /** Stream a text/token delta. Does NOT complete the task. */
+
+  /**
+   * Stream a text or JSON patch delta/token chunk to the client.
+   * Sends a `task.delta` SSE event. Does NOT complete the task.
+   * 
+   * @param content The text chunk or JSON patch delta to emit
+   * @param type Delta type: `"text"` for normal LLM tokens, `"json_patch"` for structured objects (defaults to `"text"`)
+   * 
+   * @example
+   * stream.delta("Hello ");
+   * stream.delta("world!");
+   */
   delta: (content: string, type?: "text" | "json_patch") => void;
-  /** Emit a named activity event (tool_call, search, etc.) */
-  activity: (type: string, data?: Record<string, unknown>) => void;
-  /** Legacy step label (maps to progress internally) */
-  step: (label: string) => void;
-  /** Raw event emitter */
-  emit: (event: string, data: unknown) => void;
-  /** Write arbitrary text to the stream (convenience alias for delta) */
+
+  /**
+   * Stream a chunk of text. Convenience alias for `stream.delta(chunk)` / `stream.write(chunk)`.
+   * Allows developers familiar with standard streams to emit text chunks seamlessly.
+   * 
+   * @param chunk The text string to send
+   * 
+   * @example
+   * stream.chunk("Here is the completed research response...");
+   */
+  chunk: (chunk: string) => void;
+
+  /**
+   * Write arbitrary text to the stream. Convenience alias for `stream.delta(text)`.
+   * 
+   * @param text The text string to send
+   * 
+   * @example
+   * stream.write("Generating summary...");
+   */
   write: (text: string) => void;
-  /** Is the connection still open? */
+
+  /**
+   * Emit a named activity event (e.g., tool calls, database lookups, background tasks, web search).
+   * Sends a `task.activity` SSE event with arbitrary payload data.
+   * 
+   * @param type Type/identifier for this activity (e.g. `"web_search"`, `"tool_call"`, `"sql_query"`)
+   * @param data Optional metadata payload describing the activity
+   * 
+   * @example
+   * stream.activity("web_search", { query: "Quantum computing 2026", results: 5 });
+   */
+  activity: (type: string, data?: Record<string, unknown>) => void;
+
+  /**
+   * Emit a progress step message. Convenience alias for `stream.progress(0, label)`.
+   * 
+   * @param label Short description of the step currently being executed
+   * 
+   * @example
+   * stream.step("Initializing OpenAI client...");
+   */
+  step: (label: string) => void;
+
+  /**
+   * Emit a custom raw SSE event with arbitrary name and JSON-serializable data.
+   * 
+   * @param event The SSE event name (e.g. `"custom_metric"`)
+   * @param data Payload data object
+   * 
+   * @example
+   * stream.emit("custom_event", { timestamp: Date.now(), alert: "high_load" });
+   */
+  emit: (event: string, data: unknown) => void;
+
+  /**
+   * Check whether the SSE connection was aborted or closed by the client.
+   * Use this to break early out of long-running loops or background jobs.
+   * 
+   * @returns `true` if client disconnected, `false` otherwise
+   * 
+   * @example
+   * if (stream.isClosed()) {
+   *   console.log("Client cancelled request, terminating workflow...");
+   *   return;
+   * }
+   */
   isClosed: () => boolean;
 }
 
@@ -292,23 +370,105 @@ export interface NeedInputResult {
 //  Execution Context
 // ─────────────────────────────────────────────────
 
+/**
+ * Execution context supplied to the agent's `execute({ input, stream, ... })` handler.
+ * Provides all operational handles for streaming, logging, metrics, multi-turn sessions, and abort signals.
+ */
 export interface AgentExecutionContext<TInput = Record<string, unknown>> {
+  /**
+   * Unique execution ID generated for this task run.
+   * Useful for correlation with external logs, database records, and Temporal workflows.
+   */
   runId: string;
+
+  /**
+   * Validated input payload parsed against `inputSchema` (if provided), or raw parsed JSON body.
+   */
   input: TInput;
+
+  /**
+   * Real-time SSE streaming interface. Use this to stream deltas, progress, activities, and custom events.
+   * 
+   * @example
+   * stream.progress(50, "Synthesizing answer...");
+   * stream.delta("Thinking complete. Result is: ...");
+   */
   stream: AgentStream;
+
+  /**
+   * Standard `AbortSignal` triggered if the client disconnects or if the request times out.
+   * Listen to this or pass it to `fetch` / OpenAI SDK calls to cancel operations immediately.
+   * 
+   * @example
+   * signal.addEventListener("abort", () => {
+   *   console.log("Task aborted");
+   * });
+   */
   signal: AbortSignal;
+
+  /**
+   * Structured contextual logger. Logs are tagged with `runId` and sent to stderr/stdout or marketplace telemetry.
+   * 
+   * @example
+   * log.info("Research initiated", { topic: input.prompt });
+   * log.error("Failed to fetch page", { url });
+   */
   log: AgentLogger;
+
+  /**
+   * Telemetry metrics collector for counters, gauges, and latency timings.
+   * Automatically batched and reported with task completion.
+   * 
+   * @example
+   * metric.count("cache_hits", 1);
+   * metric.timing("llm_duration", 1450);
+   */
   metric: AgentMetric;
+
+  /**
+   * Optional metadata passed by the marketplace caller (e.g., caller user ID, organization, request trace IDs).
+   */
   metadata?: Record<string, unknown>;
+
+  /**
+   * Absolute deadline in epoch milliseconds when this execution will time out.
+   */
   deadlineMs?: number;
-  /** Resume token when continuing a conversation */
+
+  /**
+   * Continuation/resume token when continuing an existing conversational multi-turn session.
+   */
   resumeToken?: string;
-  /** Suspend execution and ask for human/caller input */
+
+  /**
+   * Suspend task execution and request input from the human user or calling system.
+   * Yields a `task.input_required` SSE event.
+   * 
+   * @param opts Configuration containing prompt message and optional schema for expected input
+   * 
+   * @example
+   * if (!input.confirmation) {
+   *   return needInput({
+   *     prompt: "Do you want to proceed with executing the trade?",
+   *     schema: { type: "object", properties: { confirmation: { type: "boolean" } } }
+   *   });
+   * }
+   */
   needInput: (opts: { prompt: string; schema?: Record<string, unknown>; continuation?: boolean }) => NeedInputResult;
-  /** Session state for multi-turn conversations */
+
+  /**
+   * State management store for multi-turn conversational agents across `needInput` rounds.
+   * 
+   * @example
+   * session.set("stage", "confirmed");
+   * const stage = session.get<string>("stage");
+   */
   session: {
+    /** Get a value from session store */
     get: <T = unknown>(key: string) => T | undefined;
+    /** Set a value in session store */
     set: (key: string, value: unknown) => void;
+    /** Retrieve all key-value pairs stored in this session */
     getAll: () => Record<string, unknown>;
   };
 }

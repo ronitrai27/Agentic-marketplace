@@ -150,6 +150,11 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   //  GET /health — Ping probe for registration
   // ─────────────────────────────────────────────
 
+  /**
+   * Generates the health check payload for `GET /health`.
+   * Used by the marketplace engine to verify agent liveness, check protocol compatibility,
+   * and introspect supported capabilities before routing calls.
+   */
   public getHealth(): HealthCheckResponse {
     return {
       status: "ready",
@@ -164,6 +169,11 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   //  GET /schema — Agent Manifest
   // ─────────────────────────────────────────────
 
+  /**
+   * Generates the agent manifest payload for `GET /schema`.
+   * Converts Zod or JSON Schema schemas into the standard MAPS agent manifest
+   * containing identification, capabilities, and input/output contracts.
+   */
   public getManifest(): AgentManifest {
     return {
       id: this.id,
@@ -185,12 +195,31 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   //  .listen(port) — Start the agent server
   // ─────────────────────────────────────────────
 
+  /**
+   * Starts a standalone Node HTTP server running the Catelog MAPS protocol endpoints:
+   * - `GET  /health` - Liveness probe & capabilities
+   * - `GET  /schema` - Manifest & input/output schemas
+   * - `POST /execute` - Synchronous or SSE streaming execution
+   * - `GET  /tasks/:id` - Async polling status
+   *
+   * @param portOrOptions Port number (e.g., 3000) or server options object
+   * @returns Running Node.js `http.Server` instance
+   *
+   * @example
+   * ```ts
+   * agent.listen(3000);
+   * ```
+   */
   public listen(portOrOptions?: number | ServerOptions): Server {
     const opts = typeof portOrOptions === "number" ? { port: portOrOptions } : portOrOptions;
     return startAgentServer(this, opts);
   }
 
-  /** Alias for backward compat */
+  /**
+   * Alias for `.listen(port)`. Starts the agent HTTP server.
+   *
+   * @param portOrOptions Port number or server options
+   */
   public serve(portOrOptions?: number | ServerOptions): Server {
     return this.listen(portOrOptions);
   }
@@ -199,6 +228,22 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   //  Request Router
   // ─────────────────────────────────────────────
 
+  /**
+   * Custom request router for mounting Catelog inside an existing server
+   * (e.g. Express, Fastify, Next.js API routes, or native `http.createServer`).
+   *
+   * @param req Incoming Node.js HTTP request
+   * @param res Outgoing Node.js HTTP response
+   *
+   * @example
+   * ```ts
+   * const server = http.createServer((req, res) => {
+   *   if (req.url.startsWith("/marketplace")) {
+   *     agent.handleRequest(req, res);
+   *   }
+   * });
+   * ```
+   */
   public async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method?.toUpperCase() || "GET";
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
@@ -645,14 +690,55 @@ export class CatelogAgent<TInput = any, TOutput = any> {
 //  Factory Function
 // ─────────────────────────────────────────────────
 
-/** Create a new CatelogAgent */
+/**
+ * Creates and configures a new `CatelogAgent` instance conforming to the
+ * Marketplace Agent Protocol Specification (MAPS).
+ *
+ * Developers define the agent metadata, schemas, and a single `execute` function.
+ * The SDK automatically provides:
+ * - Built-in HTTP router (`/health`, `/schema`, `/execute`, `/tasks/:id`)
+ * - Dual-mode security (Bearer API key + HMAC-SHA256 signatures)
+ * - Real-time SSE streaming (`task.progress`, `task.delta`, `task.activity`)
+ * - Schema validation via Zod or JSON Schema
+ * - Execution telemetry and duration metrics
+ *
+ * @param config Configuration options including `name`, `execute`, schemas, and security keys
+ * @returns Configured `CatelogAgent` instance ready for `.listen()` or `.handleRequest()`
+ *
+ * @example
+ * ```ts
+ * import { createAgent } from "catelog";
+ * import { z } from "zod";
+ *
+ * const agent = createAgent({
+ *   name: "Summarizer Agent",
+ *   description: "Summarizes text documents",
+ *   inputSchema: z.object({ text: z.string().min(1) }),
+ *   outputSchema: z.object({ summary: z.string() }),
+ *   async execute({ input, stream, log }) {
+ *     stream.step("Analyzing input...");
+ *     stream.progress(50, "Generating summary...");
+ *     return {
+ *       output: { summary: "..." }
+ *     };
+ *   }
+ * });
+ *
+ * agent.listen(4000);
+ * ```
+ */
 export function createAgent<TInput = any, TOutput = any>(
   config: CatelogAgentConfig<TInput, TOutput>
 ): CatelogAgent<TInput, TOutput> {
   return new CatelogAgent(config);
 }
 
-/** Legacy alias */
+/**
+ * Legacy alias for `createAgent`.
+ * Creates and configures a new `CatelogAgent` instance for the Marketplace.
+ *
+ * @param config Configuration options for the agent
+ */
 export function createMarketplaceAgent<TInput = any, TOutput = any>(
   config: CatelogAgentConfig<TInput, TOutput>
 ): CatelogAgent<TInput, TOutput> {

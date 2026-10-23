@@ -821,6 +821,16 @@ curl http://localhost:3000/tasks/run_abc123
 { "run_id": "run_abc123", "status": "working", "elapsed_ms": 4200 }
 ```
 
+## Stream
+
+stream.delta(content, type?)	Streams text/token deltas (task.delta event)
+stream.write(text)	Convenience alias for delta
+stream.progress(percent, message?)	Emits a progress tick (task.progress event)
+stream.step(label)	Convenience alias for progress label
+stream.activity(type, data?)	Emits named activity events (tool calls, etc.)
+stream.emit(event, data)	Emits raw SSE events
+stream.isClosed()	Checks if connection is active
+
 ---
 
 ## 11. Testing Locally

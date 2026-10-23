@@ -156,6 +156,11 @@ export class SSEWriter implements AgentStream {
     this.delta(text, "text");
   }
 
+  /** Convenience alias for delta / streaming chunks of text */
+  public chunk(chunk: string): void {
+    this.delta(chunk, "text");
+  }
+
   /** Raw event emitter */
   public emit(event: string, data: unknown): void {
     this.sendEvent(event, data);
@@ -259,5 +264,6 @@ export class NoopStream implements AgentStream {
   step(_label: string): void {}
   emit(_event: string, _data: unknown): void {}
   write(text: string): void { this.delta(text); }
+  chunk(chunk: string): void { this.delta(chunk); }
   isClosed(): boolean { return false; }
 }
