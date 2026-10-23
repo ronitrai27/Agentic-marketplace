@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Copy, Check, Plus, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/../convex/_generated/api";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
 import type { Id } from "@/../convex/_generated/dataModel";
@@ -17,23 +17,20 @@ interface KeyRecord {
   rateLimit: number;
 }
 
-// Compute client-side SHA-256 hash using Web Crypto API
-async function sha256(text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text.trim());
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+// Key generation and hashing is now done server-side in a Convex action.
+// No client-side crypto needed.
 
 export default function CreatorCredentialsPage() {
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
   // Live Convex Query
   const apiKeysData = useQuery(api.apiKeys.getApiKeys);
-  const getOrCreatePublicKey = useMutation(api.apiKeys.getOrCreatePublicKey);
-  const createSecretKeyMutation = useMutation(api.apiKeys.createSecretKey);
-  const rotateSecretKeyMutation = useMutation(api.apiKeys.rotateSecretKey);
+  // getOrCreatePublicKey is now an action (server-side crypto)
+  const getOrCreatePublicKey = useAction(api.apiKeys.getOrCreatePublicKey);
+  // generateSecretKey is an action — key is generated + hashed server-side
+  const generateSecretKeyAction = useAction(api.apiKeys.generateSecretKey);
+  // rotateSecretKey is also an action now
+  const rotateSecretKeyAction = useAction(api.apiKeys.rotateSecretKey);
   const deleteSecretKeyMutation = useMutation(api.apiKeys.deleteSecretKey);
 
   // Modals state
@@ -110,24 +107,13 @@ export default function CreatorCredentialsPage() {
     setTimeout(() => setCopiedKeyId(null), 2000);
   };
 
-  // Generate & Hash Secret Key
+  // Generate secret key — everything happens server-side (Fix 1 + 2)
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
-      // 1. Generate 32-byte hex raw key
-      const randomSuffix = Math.random().toString(36).substring(2, 6);
-      const randomHex = Array.from({ length: 28 }, () =>
-        Math.floor(Math.random() * 16).toString(16),
-      ).join("");
-      const generatedRawKey = `cat_sec_live_${randomHex}${randomSuffix}`;
-      const previewKey = `••••••••${randomSuffix}`;
-
-      // 2. Client-side SHA-256 hash
-      const keyHash = await sha256(generatedRawKey);
-
-      // 3. Expiry timestamp calculation
+      // Expiry timestamp
       let expiresAt: number | undefined = undefined;
       if (expiryOption !== "never") {
         const days = parseInt(expiryOption, 10) || 30;
@@ -139,18 +125,16 @@ export default function CreatorCredentialsPage() {
         .map((s) => s.trim())
         .filter(Boolean);
 
-      // 4. Save to Convex: ONLY hash and preview are stored
-      await createSecretKeyMutation({
-        keyHash,
-        previewKey,
+      // Server generates key with crypto.randomBytes + SHA-256 (never browser)
+      const { rawKey } = await generateSecretKeyAction({
         expiresAt,
         allowedRegions: allowedRegion === "all" ? ["all"] : [allowedRegion],
         allowedIps: ipArray,
         rateLimitPerMin: Number(rateLimitPerMin) || 10,
       });
 
-      // 5. Reveal raw key strictly once to user
-      setRevealedNewKey(generatedRawKey);
+      // Reveal raw key strictly once to user
+      setRevealedNewKey(rawKey);
       toast.success("Secret key generated successfully");
     } catch (err: any) {
       toast.error(err.message || "Failed to create secret key");
@@ -159,27 +143,17 @@ export default function CreatorCredentialsPage() {
     }
   };
 
-  // Rotate in-place on existing key
+  // Rotate in-place — server generates new key (Fix 1 + 2)
   const confirmRotate = async () => {
     if (!keyToRotate) return;
     setIsSubmitting(true);
 
     try {
-      const randomSuffix = Math.random().toString(36).substring(2, 6);
-      const randomHex = Array.from({ length: 28 }, () =>
-        Math.floor(Math.random() * 16).toString(16),
-      ).join("");
-      const generatedRawKey = `cat_sec_live_${randomHex}${randomSuffix}`;
-      const newPreviewKey = `••••••••${randomSuffix}`;
-      const newKeyHash = await sha256(generatedRawKey);
-
-      await rotateSecretKeyMutation({
+      const { rawKey } = await rotateSecretKeyAction({
         keyId: keyToRotate.id,
-        newKeyHash,
-        newPreviewKey,
       });
 
-      setRevealedRotatedKey(generatedRawKey);
+      setRevealedRotatedKey(rawKey);
       toast.success("API key rotated in-place successfully");
     } catch (err: any) {
       toast.error(err.message || "Failed to rotate API key");

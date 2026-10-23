@@ -60,7 +60,7 @@ export function CreatorSidebar({
           <SidebarTrigger className="text-foreground hover:bg-black/5 dark:hover:bg-white/10 shrink-0" />
         </SidebarHeader>
 
-        <SidebarContent className="p-2 mt-5">
+        <SidebarContent className="p-2 mt-5 ">
           <SidebarGroup className="p-0">
             <SidebarMenu>
               <SidebarMenuItem>
@@ -81,7 +81,7 @@ export function CreatorSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              <SidebarMenuItem>
+              <SidebarMenuItem className="mt-3">
                 <SidebarMenuButton
                   render={<Link href="/space/creator/credentials" />}
                   isActive={pathname.startsWith("/space/creator/credentials")}
