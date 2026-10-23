@@ -37,3 +37,23 @@ High-contrast secure card with copy button.
 Clear warning: "Save this key in your environment variables (.env). It will never be displayed again."
 "Rotate Key" Modal:
 Grace period selector (Instant / 24 hours / 48 hours).
+
+
+==========================
+
+Correction: the gateway is not as secure as I said
+I said the gateway was secure and the keys were ready. That was too strong. Problems in the code I wrote:
+
+Weak key generation: keys come from Math.random(), which isn't cryptographically secure. They should be generated with crypto.getRandomValues, server-side.
+
+Not salted: the hash is plain SHA-256. Both the UI text and I called it "salted". For random keys that's acceptable, but adding a server-side secret (HMAC-SHA256) is better.
+
+Hash is computed in the browser: Convex stores whatever hash the client sends. Generation and hashing should both happen in a Convex action.
+
+Anyone can call verifyApiKey: it's a public mutation. It should be an internalMutation called only from an HTTP action.
+
+Rate limit is stored but never enforced. The IP check is exact-match only, so CIDR ranges don't work.
+No schema.ts or indexes: every lookup scans the whole table.
+
+sdk/verifyApiKey.ts is in the wrong layer. Agent servers already check Catelog's HMAC signature. API keys are for creator → Catelog calls, so the gateway should check them, not the agent.
+None of this blocks the UI, but it needs fixing before production.

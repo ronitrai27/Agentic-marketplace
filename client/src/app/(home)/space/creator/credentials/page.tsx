@@ -1,29 +1,45 @@
 "use client";
 
 import React, { useState } from "react";
-import { Copy, Check, Plus, ArrowRight, AlertTriangle } from "lucide-react";
+import { Copy, Check, Plus, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/../convex/_generated/api";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
+import type { Id } from "@/../convex/_generated/dataModel";
 
 interface KeyRecord {
-  id: string;
-  type: "secret" | "public";
+  id: Id<"creator_api_keys">;
   preview: string;
-  raw?: string;
   created: string;
   expires: string;
-  region: string;
   ips: string;
   rateLimit: number;
-  lastUsed: string;
+}
+
+// Compute client-side SHA-256 hash using Web Crypto API
+async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text.trim());
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export default function CreatorCredentialsPage() {
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
+  // Live Convex Query
+  const apiKeysData = useQuery(api.apiKeys.getApiKeys);
+  const getOrCreatePublicKey = useMutation(api.apiKeys.getOrCreatePublicKey);
+  const createSecretKeyMutation = useMutation(api.apiKeys.createSecretKey);
+  const rotateSecretKeyMutation = useMutation(api.apiKeys.rotateSecretKey);
+  const deleteSecretKeyMutation = useMutation(api.apiKeys.deleteSecretKey);
+
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [revealedNewKey, setRevealedNewKey] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Rotate confirmation modal
   const [keyToRotate, setKeyToRotate] = useState<KeyRecord | null>(null);
@@ -40,21 +56,52 @@ export default function CreatorCredentialsPage() {
   const [allowedIps, setAllowedIps] = useState<string>("");
   const [rateLimitPerMin, setRateLimitPerMin] = useState<number>(10);
 
-  const [publicKey] = useState<string>("cat_pub_live_9f82a17cb03e481b");
+  // Ensure public key exists on mount
+  React.useEffect(() => {
+    if (apiKeysData && !apiKeysData.publicKey) {
+      getOrCreatePublicKey().catch(() => {});
+    }
+  }, [apiKeysData, getOrCreatePublicKey]);
 
-  const [secretKeys, setSecretKeys] = useState<KeyRecord[]>([
-    {
-      id: "sec_1",
-      type: "secret",
-      preview: "••••••••Mh0U",
-      created: "Oct 12, 2026",
-      expires: "In 30 days",
-      region: "All regions",
-      ips: "All IPs",
-      rateLimit: 10,
-      lastUsed: "2 mins ago",
+  const publicKey = apiKeysData?.publicKey || "Generating...";
+
+  // Format secret keys from Convex live query
+  const secretKeys: KeyRecord[] = (apiKeysData?.secretKeys || []).map(
+    (k: any) => {
+      const createdDate = new Date(k.createdAt);
+      const created = createdDate.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+
+      let expires = "Never";
+      if (k.expiresAt) {
+        const expDate = new Date(k.expiresAt);
+        const diffDays = Math.ceil(
+          (k.expiresAt - Date.now()) / (1000 * 60 * 60 * 24),
+        );
+        expires =
+          diffDays > 0
+            ? `In ${diffDays} days`
+            : expDate.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              });
+      }
+
+      const ips = Array.isArray(k.allowedIps) ? k.allowedIps.join("\n") : "";
+
+      return {
+        id: k._id,
+        preview: k.previewKey,
+        created,
+        expires,
+        ips,
+        rateLimit: k.rateLimitPerMin ?? 10,
+      };
     },
-  ]);
+  );
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -63,67 +110,95 @@ export default function CreatorCredentialsPage() {
     setTimeout(() => setCopiedKeyId(null), 2000);
   };
 
-  const handleCreateKey = (e: React.FormEvent) => {
+  // Generate & Hash Secret Key
+  const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
-    const randomSuffix = Math.random().toString(36).substring(2, 6);
-    const randomHex = Array.from({ length: 28 }, () =>
-      Math.floor(Math.random() * 16).toString(16),
-    ).join("");
-    const generatedRaw = `cat_sec_live_${randomHex}${randomSuffix}`;
-    const preview = `••••••••${randomSuffix}`;
+    setIsSubmitting(true);
 
-    const newKey: KeyRecord = {
-      id: `sec_${Date.now()}`,
-      type: "secret",
-      preview,
-      raw: generatedRaw,
-      created: "Today",
-      expires: expiryOption === "never" ? "Never" : `In ${expiryOption} days`,
-      region: allowedRegion === "all" ? "All regions" : allowedRegion,
-      ips: allowedIps.trim() ? allowedIps.trim() : "All IPs",
-      rateLimit: Number(rateLimitPerMin) || 10,
-      lastUsed: "Never",
-    };
+    try {
+      // 1. Generate 32-byte hex raw key
+      const randomSuffix = Math.random().toString(36).substring(2, 6);
+      const randomHex = Array.from({ length: 28 }, () =>
+        Math.floor(Math.random() * 16).toString(16),
+      ).join("");
+      const generatedRawKey = `cat_sec_live_${randomHex}${randomSuffix}`;
+      const previewKey = `••••••••${randomSuffix}`;
 
-    setSecretKeys([newKey, ...secretKeys]);
-    setRevealedNewKey(generatedRaw);
-    toast.success("Secret key generated successfully");
+      // 2. Client-side SHA-256 hash
+      const keyHash = await sha256(generatedRawKey);
+
+      // 3. Expiry timestamp calculation
+      let expiresAt: number | undefined = undefined;
+      if (expiryOption !== "never") {
+        const days = parseInt(expiryOption, 10) || 30;
+        expiresAt = Date.now() + days * 24 * 60 * 60 * 1000;
+      }
+
+      const ipArray = allowedIps
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      // 4. Save to Convex: ONLY hash and preview are stored
+      await createSecretKeyMutation({
+        keyHash,
+        previewKey,
+        expiresAt,
+        allowedRegions: allowedRegion === "all" ? ["all"] : [allowedRegion],
+        allowedIps: ipArray,
+        rateLimitPerMin: Number(rateLimitPerMin) || 10,
+      });
+
+      // 5. Reveal raw key strictly once to user
+      setRevealedNewKey(generatedRawKey);
+      toast.success("Secret key generated successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create secret key");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Perform rotation IN-PLACE on the existing key (no new entry created)
-  const confirmRotate = () => {
+  // Rotate in-place on existing key
+  const confirmRotate = async () => {
     if (!keyToRotate) return;
+    setIsSubmitting(true);
 
-    const randomSuffix = Math.random().toString(36).substring(2, 6);
-    const randomHex = Array.from({ length: 28 }, () =>
-      Math.floor(Math.random() * 16).toString(16),
-    ).join("");
-    const generatedRaw = `cat_sec_live_${randomHex}${randomSuffix}`;
-    const updatedPreview = `••••••••${randomSuffix}`;
+    try {
+      const randomSuffix = Math.random().toString(36).substring(2, 6);
+      const randomHex = Array.from({ length: 28 }, () =>
+        Math.floor(Math.random() * 16).toString(16),
+      ).join("");
+      const generatedRawKey = `cat_sec_live_${randomHex}${randomSuffix}`;
+      const newPreviewKey = `••••••••${randomSuffix}`;
+      const newKeyHash = await sha256(generatedRawKey);
 
-    setSecretKeys((prev) =>
-      prev.map((k) =>
-        k.id === keyToRotate.id
-          ? {
-              ...k,
-              preview: updatedPreview,
-              raw: generatedRaw,
-              created: "Today (Rotated)",
-            }
-          : k,
-      ),
-    );
+      await rotateSecretKeyMutation({
+        keyId: keyToRotate.id,
+        newKeyHash,
+        newPreviewKey,
+      });
 
-    setRevealedRotatedKey(generatedRaw);
-    toast.success("API key rotated in-place successfully");
+      setRevealedRotatedKey(generatedRawKey);
+      toast.success("API key rotated in-place successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to rotate API key");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Perform deletion with confirmation toast
-  const confirmDelete = () => {
+  // Delete API key
+  const confirmDelete = async () => {
     if (!keyToDelete) return;
-    setSecretKeys((prev) => prev.filter((k) => k.id !== keyToDelete.id));
-    toast.success("API key deleted successfully");
-    setKeyToDelete(null);
+
+    try {
+      await deleteSecretKeyMutation({ keyId: keyToDelete.id });
+      toast.success("API key deleted successfully");
+      setKeyToDelete(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete API key");
+    }
   };
 
   return (
@@ -141,7 +216,7 @@ export default function CreatorCredentialsPage() {
           {/* Animated Pixel Dither at right end */}
           <div
             aria-hidden="true"
-            className="absolute right-0 top-0 -bottom-5 w-96 pointer-events-none overflow-hidden"
+            className="absolute right-0 top-0 w-96 pointer-events-none overflow-hidden"
             style={{
               maskImage:
                 "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.6) 45%, black 100%)",
@@ -167,13 +242,9 @@ export default function CreatorCredentialsPage() {
           <div className="relative z-10 pt-1">
             <button
               type="button"
-              onClick={() => {
-                setRevealedNewKey(null);
-                setShowCreateModal(true);
-              }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium bg-neutral-900 text-white hover:bg-black dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 transition-colors cursor-pointer shadow-xs"
             >
-              <span>Create Production Key</span>
+              <span>View Docs</span>
               <ArrowRight className="size-3.5" />
             </button>
           </div>
@@ -183,7 +254,7 @@ export default function CreatorCredentialsPage() {
         <div className="space-y-3 pt-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
+              <h3 className="text-sm font-semibold dark:text-white">
                 Publishable key
               </h3>
               <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
@@ -191,13 +262,13 @@ export default function CreatorCredentialsPage() {
               </span>
             </div>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs dark:text-neutral-400">
             Use this key on client-side SDKs, web widgets, and browsers to
             identify your creator space.
           </p>
 
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 overflow-hidden">
-            <div className="grid grid-cols-12 px-5 py-2.5 border-b border-neutral-200/80 dark:border-neutral-800 text-[11px] font-mono uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+            <div className="grid grid-cols-12 px-5 py-2.5 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-mono uppercase tracking-wide dark:text-neutral-500">
               <div className="col-span-8 sm:col-span-9">KEY</div>
               <div className="col-span-4 sm:col-span-3 text-right">ACTION</div>
             </div>
@@ -233,7 +304,7 @@ export default function CreatorCredentialsPage() {
         <div className="space-y-3 pt-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
+              <h3 className="text-sm font-semibold dark:text-white">
                 Secret keys
               </h3>
               <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
@@ -262,7 +333,7 @@ export default function CreatorCredentialsPage() {
           {/* Table Container */}
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 overflow-hidden">
             {/* Table Header */}
-            <div className="grid grid-cols-12 px-5 py-2.5 border-b border-neutral-200/80 dark:border-neutral-800 text-[11px] font-mono uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+            <div className="grid grid-cols-12 px-5 py-2.5 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-mono uppercase tracking-wide font-semibold dark:text-neutral-500">
               <div className="col-span-3">KEY</div>
               <div className="col-span-2">CREATED</div>
               <div className="col-span-2">EXPIRES</div>
@@ -288,8 +359,8 @@ export default function CreatorCredentialsPage() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => copyToClipboard(k.raw || k.preview, k.id)}
-                      title="Copy Key"
+                      onClick={() => copyToClipboard(k.preview, k.id)}
+                      title="Copy Key Preview"
                       className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors p-1 cursor-pointer shrink-0"
                     >
                       {copiedKeyId === k.id ? (
@@ -310,16 +381,14 @@ export default function CreatorCredentialsPage() {
                     {k.expires}
                   </div>
 
-                  {/* IP Allowlist: Column like Expires. Shows IP if added, otherwise blank */}
+                  {/* IP Allowlist */}
                   <div className="col-span-2 text-neutral-600 dark:text-neutral-400 text-xs font-mono truncate">
-                    {k.ips && k.ips !== "All IPs" && k.ips.trim() !== ""
-                      ? k.ips.split("\n")[0]
-                      : ""}
+                    {k.ips ? k.ips.split("\n")[0] : ""}
                   </div>
 
                   {/* Actions: Always show Rate limit + Rotate + Delete */}
                   <div className="col-span-3 flex items-center justify-end gap-3 text-xs">
-                    <span className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded border border-neutral-200/80 dark:border-neutral-700/80 shrink-0">
+                    <span className="font-mono text-[11px] text-neutral-800 dark:text-neutral-400 bg-yellow-100 dark:bg-neutral-800 px-2 py-0.5 rounded border border-neutral-200 dark:border-neutral-700/80 shrink-0">
                       {k.rateLimit} req/min
                     </span>
 
@@ -467,7 +536,7 @@ export default function CreatorCredentialsPage() {
                     value={rateLimitPerMin}
                     onChange={(e) =>
                       setRateLimitPerMin(
-                        Math.max(1, parseInt(e.target.value) || 1),
+                        Math.max(1, parseInt(e.target.value, 10) || 1),
                       )
                     }
                     className="w-full font-mono text-xs rounded border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 text-neutral-800 dark:text-neutral-200 focus:outline-hidden"
@@ -484,9 +553,10 @@ export default function CreatorCredentialsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 rounded text-xs font-medium bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition-opacity cursor-pointer"
+                    disabled={isSubmitting}
+                    className="px-4 py-1.5 rounded text-xs font-medium bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
                   >
-                    Create key
+                    {isSubmitting ? "Creating..." : "Create key"}
                   </button>
                 </div>
               </form>
@@ -510,7 +580,7 @@ export default function CreatorCredentialsPage() {
                   <button
                     type="button"
                     onClick={() => copyToClipboard(revealedNewKey, "modal-key")}
-                    className="p-1 text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors cursor-pointer shrink-0"
+                    className="p-1 text-neutral-600 hover:text-neutral-950 dark:text-neutral-400 dark:hover:text-white transition-colors cursor-pointer shrink-0"
                     title="Copy to clipboard"
                   >
                     {copiedKeyId === "modal-key" ? (
@@ -570,10 +640,11 @@ export default function CreatorCredentialsPage() {
                   </button>
                   <button
                     type="button"
+                    disabled={isSubmitting}
                     onClick={confirmRotate}
-                    className="px-4 py-1.5 rounded text-xs font-medium bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition-opacity cursor-pointer"
+                    className="px-4 py-1.5 rounded text-xs font-medium bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
                   >
-                    Confirm Rotation
+                    {isSubmitting ? "Rotating..." : "Confirm Rotation"}
                   </button>
                 </div>
               </div>
