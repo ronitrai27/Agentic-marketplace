@@ -1,0 +1,24 @@
+[project]
+name = "website-ux-tester"
+version = "1.0.0"
+description = "Autonomous Website UX & Conversion Tester built with Google ADK, Browserbase, and Playwright"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk>=2.8.0",
+    "google-agents-cli>=1.11.0",
+    "browserbase>=1.21.0",
+    "playwright>=1.50.0",
+    "pydantic>=2.10.0",
+    "starlette>=0.45.0",
+    "uvicorn>=0.34.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+website-ux-tester = "cli:main"
+website-ux-server = "server:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

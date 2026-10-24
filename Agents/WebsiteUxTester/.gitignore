@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*$py.class
+artifacts/
+*.png
+.env
+.pytest_cache/
