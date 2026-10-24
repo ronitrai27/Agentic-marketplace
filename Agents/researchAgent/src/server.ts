@@ -4,19 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { createMarketplaceAgent } from "catelog";
-import { evaluateInputGuardrail } from "./guardrail/jev-guard.js";
-import { runResearchAgent } from "./index.js";
-import { tasks, runs } from "@trigger.dev/sdk";
+import { classify, answerDirect, type AgentExecutionResult } from "./index.js";
+import {
+  startResearchWorkflow,
+  getWorkflowEvents,
+  getWorkflowState,
+} from "./temporal/client.js";
 import { ENV } from "./config/env.js";
-
-// Pending async tasks waiting for Trigger.dev completion callback
-const pendingCallbacks = new Map<
-  string,
-  {
-    resolve: (res: any) => void;
-    reject: (err: any) => void;
-  }
->();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, "../public");
@@ -67,14 +61,14 @@ type AgentOutput = {
   metadata?: Record<string, any>;
 };
 
-// 2. Wrap LangGraph Research Agent with Catelog Marketplace SDK
+// 2. Wrap Research Agent with Catelog Marketplace SDK
 export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
   id: "langgraph-deep-research",
   name: "LangGraph Deep Research Agent",
   version: "1.0.0",
   mode: "async",
   description:
-    "Autonomous multi-node LangGraph deep research agent with TypeSafe JEV guardrails, Tavily search, and Langfuse tracing",
+    "Autonomous multi-node LangGraph deep research agent with TypeSafe JEV guardrails, Firecrawl search, Langfuse tracing, and Temporal durable workflow orchestration",
   secretKey: ENV.CATELOG_SECRET_KEY,
   publicKey: ENV.CATELOG_PUBLIC_KEY,
   inputSchema: InputSchema as any,
@@ -88,91 +82,106 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
     console.log(`   - User ID: ${input.userId || "anonymous"}`);
     console.log(`======================================================\n`);
 
-    stream.step("Dispatching deep research workflow to Trigger.dev Cloud...");
+    stream.step("Evaluating prompt guardrails & intent with TypeSafe JEV-1.14...");
 
     if (signal.aborted) {
       console.error(`❌ [MAPS PROTOCOL] Run ID ${runId} aborted before dispatch.`);
       throw new Error("EXECUTION_TIMEOUT");
     }
 
-    const host = process.env.SERVER_URL || `http://localhost:${PORT}`;
-    const callbackUrl = `${host}/api/trigger-callback`;
+    // STEP 1: Fast Classification & Guardrails (~1s)
+    const guard = await classify(input.prompt, {
+      userId: input.userId,
+      sessionId: input.sessionId,
+      runId,
+    });
 
-    let triggerTaskId = "local-session";
-    let triggerRun: any = null;
-
-    try {
-      console.log(`📡 [Trigger.dev] Triggering "deep-research-agent" task on cloud...`);
-      console.log(`   - Callback URL configured: ${callbackUrl}`);
-      triggerRun = await tasks.trigger("deep-research-agent", {
-        prompt: input.prompt,
-        userId: input.userId,
-        sessionId: input.sessionId,
-        runId,
-        callbackUrl,
-      });
-      triggerTaskId = triggerRun.id;
-      console.log(`✅ [Trigger.dev] Task triggered successfully! Task ID: ${triggerTaskId}`);
-      stream.step(
-        `Trigger.dev task running [${triggerTaskId}]. Synthesizing research...`,
-      );
-    } catch (err: any) {
-      console.warn(
-        `⚠️ [Trigger.dev] Cloud trigger failed (${err?.message}). Running research locally fallback...`,
-      );
-      const localResult = await runResearchAgent(input.prompt, {
-        userId: input.userId,
-        sessionId: input.sessionId,
-        onProgress: (step: string) => {
-          console.log(`   ⏳ [Local Progress]: ${step}`);
-          stream.step(step);
-        },
-      });
-
-      console.log(`\n======================================================`);
-      console.log(`📤 [MAPS PROTOCOL OUTGOING (Local Fallback)]`);
-      console.log(`   - Run ID: ${runId}`);
-      console.log(`   - Status: ${localResult.status}`);
-      console.log(`   - Answer: "${localResult.answer.slice(0, 120)}..."`);
-      console.log(`======================================================\n`);
-
+    // Guardrail blocked: Return immediately
+    if (!guard.isAllowed) {
+      console.warn(`[Guardrail] Request rejected: ${guard.rejectionReason}`);
       return {
-        output: localResult,
+        output: {
+          status: "GUARDRAIL_BLOCKED",
+          prompt: input.prompt,
+          answer: guard.rejectionReason || "Request blocked by safety guardrails.",
+          sourcesCount: 0,
+          durationSeconds: 1,
+          metadata: { scores: guard.scores },
+        },
         telemetry: {
-          model_used: ENV.JEV_MODEL || "gpt-4.1-mini",
-          execution_status: localResult.status,
-          sources_count: localResult.sourcesCount,
-          execution_type: "local_fallback",
+          model_used: ENV.JEV_MODEL,
+          execution_status: "GUARDRAIL_BLOCKED",
+          sources_count: 0,
+          execution_type: "guardrail_blocked",
         },
       };
     }
 
-    // Await research results via webhook callback OR fallback polling of runs.poll
-    console.log(`⏳ [Trigger.dev] Awaiting task result (polling runs.poll & webhook listener)...`);
-    const result: AgentOutput = await Promise.race([
-      new Promise<AgentOutput>((resolve, reject) => {
-        pendingCallbacks.set(runId, { resolve, reject });
-      }),
-      (async () => {
-        try {
-          const completedRun = await runs.poll(triggerTaskId, {
-            pollIntervalMs: 4000,
-          });
-          console.log(`✅ [Trigger.dev] runs.poll completed for Task ID: ${triggerTaskId}`);
-          return completedRun.output as AgentOutput;
-        } catch (pollErr: any) {
-          console.error(`⚠️ [Trigger.dev] runs.poll error for Task ID ${triggerTaskId}:`, pollErr?.message || pollErr);
-          // If poll fails or unsupported in environment, hold promise until webhook callback arrives
-          return new Promise<AgentOutput>(() => {});
-        }
-      })(),
-    ]).finally(() => {
-      pendingCallbacks.delete(runId);
+    // STEP 2: Chit-Chat / Direct Question -> Answer via Groq in 1-2s (NO Temporal Worker!)
+    if (!guard.needsResearch) {
+      stream.step("Conversational question detected. Generating direct answer via Groq...");
+      console.log(`💬 [Chit-chat] Prompt is conversational. Answering directly via Groq (no background worker invoked).`);
+
+      const directResult = await answerDirect(input.prompt, {
+        userId: input.userId,
+        sessionId: input.sessionId,
+        runId,
+        scores: guard.scores,
+      });
+
+      console.log(`\n======================================================`);
+      console.log(`📤 [MAPS PROTOCOL OUTGOING (Groq Direct Answer)]`);
+      console.log(`   - Run ID: ${runId}`);
+      console.log(`   - Status: ${directResult.status}`);
+      console.log(`   - Answer: "${directResult.answer.slice(0, 120)}..."`);
+      console.log(`======================================================\n`);
+
+      return {
+        output: directResult,
+        telemetry: {
+          model_used: ENV.GROQ_MODEL,
+          execution_status: directResult.status,
+          sources_count: 0,
+          execution_type: "groq_direct",
+        },
+      };
+    }
+
+    // STEP 3: Deep Research -> Orchestrate via Temporal Workflow
+    stream.step("Dispatching deep research workflow to Temporal Cluster...");
+    console.log(`🔬 [Deep Research] Topic requires investigation. Starting Temporal Workflow...`);
+
+    const { workflowId, handle } = await startResearchWorkflow({
+      prompt: input.prompt,
+      userId: input.userId,
+      sessionId: input.sessionId,
+      runId,
     });
 
+    stream.step(`Temporal workflow active [${workflowId}]. Synthesizing research...`);
+
+    // Poll events periodically to stream progress back to Catelog stream
+    const progressTimer = setInterval(async () => {
+      try {
+        const events = await getWorkflowEvents(workflowId);
+        if (events && events.length > 0) {
+          const latest = events[events.length - 1];
+          stream.step(latest.message);
+        }
+      } catch {}
+    }, 4000);
+
+    let result: AgentOutput;
+    try {
+      result = (await handle.result()) as AgentOutput;
+    } finally {
+      clearInterval(progressTimer);
+    }
+
     console.log(`\n======================================================`);
-    console.log(`📤 [MAPS PROTOCOL OUTGOING (Trigger.dev Cloud)]`);
+    console.log(`📤 [MAPS PROTOCOL OUTGOING (Temporal Durable Execution)]`);
     console.log(`   - Run ID: ${runId}`);
+    console.log(`   - Workflow ID: ${workflowId}`);
     console.log(`   - Status: ${result?.status}`);
     console.log(`   - Answer: "${result?.answer?.slice(0, 120)}..."`);
     console.log(`======================================================\n`);
@@ -180,11 +189,11 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
     return {
       output: result,
       telemetry: {
-        model_used: ENV.JEV_MODEL || "gpt-4.1-mini",
+        model_used: ENV.OPENAI_MODEL,
         execution_status: result?.status,
         sources_count: result?.sourcesCount,
-        trigger_task_id: triggerTaskId,
-        execution_type: "trigger_dev_cloud",
+        temporal_workflow_id: workflowId,
+        execution_type: "temporal_workflow",
       },
     };
   },
@@ -200,13 +209,13 @@ const MIME_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
 };
 
-const server = http.createServer(async (req, res) => {
+export const server = http.createServer(async (req, res) => {
   const url = new URL(
     req.url || "/",
-    `http://${req.headers.host || "localhost"}`,
+    `http://${req.headers.host || "localhost"}`
   );
 
-  // Route 0: Handle Marketplace Protocol Endpoints via Catelog SDK (/health, /schema, /execute, /tasks/:id)
+  // Route 0: Handle Marketplace Protocol Endpoints (/health, /schema, /execute, /tasks/:id)
   if (
     ["/health", "/schema", "/execute"].includes(url.pathname) ||
     url.pathname.startsWith("/tasks/")
@@ -214,44 +223,24 @@ const server = http.createServer(async (req, res) => {
     return agent.handleRequest(req, res);
   }
 
-  // Route 0.5: Webhook callback from Trigger.dev completion
-  if (url.pathname === "/api/trigger-callback" && req.method === "POST") {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
+  // Route 0.5: Query Temporal Workflow Events
+  if (url.pathname === "/api/temporal/events" && req.method === "GET") {
+    const workflowId = url.searchParams.get("workflowId");
+    if (!workflowId) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "workflowId query parameter is required" }));
+      return;
+    }
 
-    req.on("end", () => {
-      try {
-        const payload = JSON.parse(body);
-        const { runId, result, error } = payload;
-        console.log(`[Webhook Callback] Received callback for runId: ${runId}`);
+    const events = await getWorkflowEvents(workflowId);
+    const state = await getWorkflowState(workflowId);
 
-        if (runId && pendingCallbacks.has(runId)) {
-          const pending = pendingCallbacks.get(runId)!;
-          if (error) {
-            pending.reject(
-              new Error(error.message || "Trigger.dev task failed"),
-            );
-          } else {
-            pending.resolve(result);
-          }
-          pendingCallbacks.delete(runId);
-        }
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ received: true, runId }));
-      } catch (err: any) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({ error: "Invalid JSON body", message: err.message }),
-        );
-      }
-    });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ workflowId, state, events }));
     return;
   }
 
-  // 1. Handle Real-time SSE Chat API (Web UI)
+  // Route 1: Handle Real-time SSE Chat API (Web UI)
   if (url.pathname === "/api/chat-sse" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => {
@@ -288,45 +277,29 @@ const server = http.createServer(async (req, res) => {
       };
 
       try {
-        // Step 1: Evaluate JEV Guardrails
+        // Step 1: Evaluate JEV Guardrails & Intent
         sendEvent("progress", {
           step: "Evaluating prompt guardrails & intent with TypeSafe JEV-1.14...",
         });
-        const guard = await evaluateInputGuardrail(prompt);
+        const guard = await classify(prompt, { sessionId: "sse-session" });
 
         // Terminal Console Log of JEV Decision
         console.log(`\n======================================================`);
         console.log(`[JEV TELEMETRY] Prompt: "${prompt}"`);
         console.log(`  - Model: ${ENV.JEV_MODEL}`);
         console.log(
-          `  - Inappropriate Prob: ${guard.scores.inappropriateProb} (Allowed: ${guard.isAllowed})`,
+          `  - Inappropriate Prob: ${guard.scores.inappropriateProb} (Allowed: ${guard.isAllowed})`
         );
         console.log(
-          `  - Needs Research Prob: ${guard.scores.needsResearchProb}`,
+          `  - Needs Research Prob: ${guard.scores.needsResearchProb}`
         );
         console.log(
-          `  - Decision Route: ${guard.needsResearch ? "DEEP RESEARCH" : "CHIT-CHAT / DIRECT"}`,
+          `  - Decision Route: ${guard.needsResearch ? "DEEP RESEARCH" : "CHIT-CHAT / DIRECT"}`
         );
         console.log(
-          `  - Target Engine: ${guard.needsResearch ? "OpenAI gpt-4.1-mini" : "Groq openai/gpt-oss-120b"}`,
+          `  - Target Engine: ${guard.needsResearch ? "Temporal Workflow + LangGraph" : "Groq openai/gpt-oss-120b"}`
         );
         console.log(`======================================================\n`);
-
-        // Trigger Trigger.dev Background Task in parallel (if configured)
-        let triggerTaskId = "local-session";
-        try {
-          const triggerRun = await tasks.trigger("deep-research-agent", {
-            prompt,
-          });
-          triggerTaskId = triggerRun.id;
-          console.log(
-            `[Trigger.dev] Spawned background task ID: ${triggerTaskId}`,
-          );
-        } catch (err: any) {
-          console.log(
-            `[Trigger.dev] Local execution fallback (${err?.message || "dev worker"})`,
-          );
-        }
 
         // Send JEV Telemetry to UI
         sendEvent("jev_telemetry", {
@@ -337,21 +310,72 @@ const server = http.createServer(async (req, res) => {
           needsResearch: guard.needsResearch,
           route: guard.needsResearch ? "Deep Research" : "Chit-chat",
           targetModel: guard.needsResearch
-            ? "gpt-4.1-mini"
+            ? "gpt-4.1-mini (Temporal)"
             : "groq-openai/gpt-oss-120b",
-          triggerTaskId,
         });
 
-        // Step 2: Execute Master Research Agent with live progress events
-        const result = await runResearchAgent(prompt, {
-          onProgress: (stepMsg: string) => {
-            sendEvent("progress", { step: stepMsg });
-          },
+        // If guardrail blocked:
+        if (!guard.isAllowed) {
+          sendEvent("result", {
+            status: "GUARDRAIL_BLOCKED",
+            prompt,
+            answer: guard.rejectionReason || "Request blocked by safety guardrails.",
+            sourcesCount: 0,
+            durationSeconds: 1,
+            metadata: { scores: guard.scores },
+          });
+          sendEvent("done", { success: false });
+          res.end();
+          return;
+        }
+
+        // Step 2: Conversational Question -> Instant Direct Answer via Groq (No Temporal Worker!)
+        if (!guard.needsResearch) {
+          sendEvent("progress", {
+            step: "Conversational question detected. Generating direct answer via Groq...",
+          });
+          const directAns = await answerDirect(prompt, { scores: guard.scores });
+          sendEvent("result", directAns);
+          sendEvent("done", { success: true });
+          res.end();
+          return;
+        }
+
+        // Step 3: Deep Research Topic -> Start Temporal Workflow
+        sendEvent("progress", {
+          step: "Dispatching deep research workflow to Temporal Cluster...",
+        });
+        const { workflowId, handle } = await startResearchWorkflow({
+          prompt,
+          sessionId: "sse-session",
         });
 
-        // Step 3: Stream Final Result
-        sendEvent("result", result);
-        sendEvent("done", { success: true });
+        sendEvent("temporal_dispatched", { workflowId });
+        sendEvent("progress", {
+          step: `Temporal workflow running [${workflowId}]. Synthesizing research...`,
+        });
+
+        // Poll events periodically to stream progress updates
+        const pollInterval = setInterval(async () => {
+          try {
+            const events = await getWorkflowEvents(workflowId);
+            if (events && events.length > 0) {
+              const lastEvent = events[events.length - 1];
+              sendEvent("progress", { step: lastEvent.message, details: lastEvent.details });
+            }
+          } catch {}
+        }, 3000);
+
+        try {
+          const finalResult = await handle.result();
+          clearInterval(pollInterval);
+          sendEvent("result", finalResult);
+          sendEvent("done", { success: true });
+        } catch (execErr: any) {
+          clearInterval(pollInterval);
+          throw execErr;
+        }
+
         res.end();
       } catch (err: any) {
         console.error("[SSE Error]:", err);
@@ -367,10 +391,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 2. Serve Static Frontend Files
+  // Route 2: Static Frontend Files
   let filePath = path.join(
     PUBLIC_DIR,
-    url.pathname === "/" ? "index.html" : url.pathname,
+    url.pathname === "/" ? "index.html" : url.pathname
   );
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     filePath = path.join(PUBLIC_DIR, "index.html");
@@ -390,22 +414,18 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(
-    `🚀 LangGraph Research Agent running at: http://localhost:${PORT}`,
-  );
-  console.log(`📡 Marketplace Protocol (Catelog SDK v1.0.5 - Mode: ASYNC):`);
-  console.log(`   - Ping / Liveness: http://localhost:${PORT}/health`);
-  console.log(`   - Schema Manifest: http://localhost:${PORT}/schema`);
-  console.log(
-    `   - Async Execute:   http://localhost:${PORT}/execute (returns 202 + poll_url)`,
-  );
-  console.log(`   - Task Polling:    http://localhost:${PORT}/tasks/:run_id`);
-  console.log(
-    `   - Webhook Callback:http://localhost:${PORT}/api/trigger-callback`,
-  );
-  console.log(`💬 Web UI:            http://localhost:${PORT}`);
-  console.log(`   - Realtime SSE:    http://localhost:${PORT}/api/chat-sse`);
-  console.log(`======================================================\n`);
-});
+if (
+  process.argv[1]?.endsWith("server.ts") ||
+  process.argv[1]?.endsWith("server.js")
+) {
+  server.listen(PORT, () => {
+    console.log(`\n======================================================`);
+    console.log(`🚀 Unified Marketplace Agent & Realtime UI Server`);
+    console.log(`📡 MAPS Protocol:   http://localhost:${PORT}/execute`);
+    console.log(`📋 Health Check:    http://localhost:${PORT}/health`);
+    console.log(`📜 Schema Manifest: http://localhost:${PORT}/schema`);
+    console.log(`💬 Web UI:          http://localhost:${PORT}`);
+    console.log(`🔄 Temporal Events: http://localhost:${PORT}/api/temporal/events?workflowId=...`);
+    console.log(`======================================================\n`);
+  });
+}

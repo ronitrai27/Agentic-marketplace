@@ -162,13 +162,12 @@ function handleSSEEvent(type, data, elements) {
     console.log("Needs Research Probability:", data.scores.needsResearchProb);
     console.log("Is Allowed:", data.isAllowed);
     console.log("Selected Route:", data.route);
-    console.log("Execution Engine:", data.targetModel);
-    console.log("Trigger.dev Task ID:", data.triggerTaskId);
+    console.log("Temporal Workflow ID:", data.temporalWorkflowId || data.workflowId || "none (direct)");
     console.groupEnd();
 
     const routePill = data.needsResearch
       ? `<span class="telemetry-pill pill-research">Deep Research</span>`
-      : `<span class="telemetry-pill pill-chitchat">Chit-chat</span>`;
+      : `<span class="telemetry-pill pill-chitchat">Chit-chat (Instant)</span>`;
 
     const statusPill = data.isAllowed
       ? `<span class="telemetry-pill pill-research">Safe (P=${data.scores.inappropriateProb})</span>`
@@ -179,7 +178,7 @@ function handleSSEEvent(type, data, elements) {
         <strong>JEV 1.14:</strong> ${statusPill} &bull; Route: ${routePill} &bull; Engine: <code>${data.targetModel}</code>
       </div>
       <div class="telemetry-line" style="font-size: 11px;">
-        Research Prob: ${(data.scores.needsResearchProb * 100).toFixed(1)}% &bull; Task: <code>${data.triggerTaskId || "local-sync"}</code>
+        Research Prob: ${(data.scores.needsResearchProb * 100).toFixed(1)}% &bull; Orchestration: <code>${data.needsResearch ? "Temporal Workflow" : "Groq Direct"}</code>
       </div>
     `;
   }

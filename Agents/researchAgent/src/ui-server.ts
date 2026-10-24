@@ -2,9 +2,11 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateInputGuardrail } from "./guardrail/jev-guard.js";
-import { runResearchAgent } from "./index.js";
-import { tasks } from "@trigger.dev/sdk";
+import { classify, answerDirect } from "./index.js";
+import {
+  startResearchWorkflow,
+  getWorkflowEvents,
+} from "./temporal/client.js";
 import { ENV } from "./config/env.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,9 +63,9 @@ export const uiServer = http.createServer(async (req, res) => {
       };
 
       try {
-        // Step 1: Evaluate JEV Guardrails
+        // Step 1: Evaluate JEV Guardrails & Intent
         sendEvent("progress", { step: "Evaluating prompt guardrails & intent with TypeSafe JEV-1.14..." });
-        const guard = await evaluateInputGuardrail(prompt);
+        const guard = await classify(prompt, { sessionId: "ui-sse" });
 
         console.log(`\n======================================================`);
         console.log(`[JEV TELEMETRY] Prompt: "${prompt}"`);
@@ -71,20 +73,8 @@ export const uiServer = http.createServer(async (req, res) => {
         console.log(`  - Inappropriate Prob: ${guard.scores.inappropriateProb} (Allowed: ${guard.isAllowed})`);
         console.log(`  - Needs Research Prob: ${guard.scores.needsResearchProb}`);
         console.log(`  - Decision Route: ${guard.needsResearch ? "DEEP RESEARCH" : "CHIT-CHAT / DIRECT"}`);
-        console.log(`  - Target Engine: ${guard.needsResearch ? "OpenAI gpt-4.1-mini" : "Groq openai/gpt-oss-120b"}`);
+        console.log(`  - Target Engine: ${guard.needsResearch ? "Temporal Workflow + LangGraph" : "Groq openai/gpt-oss-120b"}`);
         console.log(`======================================================\n`);
-
-        // Trigger Trigger.dev Background Task in parallel (if configured)
-        let triggerTaskId = "local-session";
-        try {
-          const triggerRun = await tasks.trigger("deep-research-agent", {
-            prompt,
-          });
-          triggerTaskId = triggerRun.id;
-          console.log(`[Trigger.dev] Spawned background task ID: ${triggerTaskId}`);
-        } catch (err: any) {
-          console.log(`[Trigger.dev] Local execution fallback (${err?.message || "dev worker"})`);
-        }
 
         // Send JEV Telemetry to UI
         sendEvent("jev_telemetry", {
@@ -94,20 +84,71 @@ export const uiServer = http.createServer(async (req, res) => {
           isAllowed: guard.isAllowed,
           needsResearch: guard.needsResearch,
           route: guard.needsResearch ? "Deep Research" : "Chit-chat",
-          targetModel: guard.needsResearch ? "gpt-4.1-mini" : "groq-openai/gpt-oss-120b",
-          triggerTaskId,
+          targetModel: guard.needsResearch ? "gpt-4.1-mini (Temporal)" : "groq-openai/gpt-oss-120b",
         });
 
-        // Step 2: Execute Master Research Agent with live progress events
-        const result = await runResearchAgent(prompt, {
-          onProgress: (stepMsg: string) => {
-            sendEvent("progress", { step: stepMsg });
-          },
+        // If guardrail blocked:
+        if (!guard.isAllowed) {
+          sendEvent("result", {
+            status: "GUARDRAIL_BLOCKED",
+            prompt,
+            answer: guard.rejectionReason || "Request blocked by safety guardrails.",
+            sourcesCount: 0,
+            durationSeconds: 1,
+            metadata: { scores: guard.scores },
+          });
+          sendEvent("done", { success: false });
+          res.end();
+          return;
+        }
+
+        // Step 2: Chit-Chat / Direct Question -> Direct Groq Answer in 1-2s (No Temporal Worker!)
+        if (!guard.needsResearch) {
+          sendEvent("progress", {
+            step: "Conversational question detected. Generating direct answer via Groq...",
+          });
+          const directAns = await answerDirect(prompt, { scores: guard.scores });
+          sendEvent("result", directAns);
+          sendEvent("done", { success: true });
+          res.end();
+          return;
+        }
+
+        // Step 3: Deep Research -> Start Temporal Workflow
+        sendEvent("progress", {
+          step: "Dispatching deep research workflow to Temporal Cluster...",
+        });
+        const { workflowId, handle } = await startResearchWorkflow({
+          prompt,
+          sessionId: "ui-sse",
         });
 
-        // Step 3: Stream Final Result
-        sendEvent("result", result);
-        sendEvent("done", { success: true });
+        sendEvent("temporal_dispatched", { workflowId });
+        sendEvent("progress", {
+          step: `Temporal workflow running [${workflowId}]. Synthesizing research...`,
+        });
+
+        // Poll events periodically to stream progress updates
+        const pollInterval = setInterval(async () => {
+          try {
+            const events = await getWorkflowEvents(workflowId);
+            if (events && events.length > 0) {
+              const lastEvent = events[events.length - 1];
+              sendEvent("progress", { step: lastEvent.message, details: lastEvent.details });
+            }
+          } catch {}
+        }, 3000);
+
+        try {
+          const finalResult = await handle.result();
+          clearInterval(pollInterval);
+          sendEvent("result", finalResult);
+          sendEvent("done", { success: true });
+        } catch (execErr: any) {
+          clearInterval(pollInterval);
+          throw execErr;
+        }
+
         res.end();
       } catch (err: any) {
         console.error("[SSE Error]:", err);

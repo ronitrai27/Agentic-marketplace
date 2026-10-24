@@ -31,6 +31,12 @@ export const ENV = {
   CATELOG_SECRET_KEY: process.env.CATELOG_SECRET_KEY || process.env.MARKETPLACE_SECRET || "cat_sec_live_fe471b4c5047d5b81e369db1f67d78dd8fc6dd1d371634d7a3ad7566041422f0",
   CATELOG_PUBLIC_KEY: process.env.CATELOG_PUBLIC_KEY || "cat_pub_live_21030fbabcbe3b8a1b8a09dd",
   
+  // Temporal Configuration
+  TEMPORAL_ADDRESS: process.env.TEMPORAL_ADDRESS || "localhost:7233",
+  TEMPORAL_NAMESPACE: process.env.TEMPORAL_NAMESPACE || "default",
+  TEMPORAL_API_KEY: process.env.TEMPORAL_API_KEY || "",
+  TEMPORAL_TASK_QUEUE: process.env.TEMPORAL_TASK_QUEUE || "deep-research",
+
   // Guardrail thresholds
   JEV_OFFENSIVE_THRESHOLD: 0.5,
   JEV_RESEARCH_THRESHOLD: 0.5,
