@@ -3,6 +3,7 @@ import { ENV } from "../../config/env.js";
 import { ResearchSection, ResearchSource } from "../state.js";
 import { searchWeb } from "../../tools/search.js";
 import { scrapePage } from "../../tools/firecrawl.js";
+import { notifyProgress } from "../../observability/progress.js";
 
 const openai = new OpenAI({
   apiKey: ENV.OPENAI_API_KEY || "build_dummy_key",
@@ -15,6 +16,7 @@ const openai = new OpenAI({
 export async function sectionWorkerNode(input: { section: ResearchSection }) {
   const { section } = input;
   console.log(`\n--> [Worker: ${section.id}] Starting deep research: "${section.title}"`);
+  notifyProgress(`🚀 [Worker: ${section.id}] Researching section: "${section.title}"`);
 
   const collectedSources: ResearchSource[] = [];
   const sourceContents: { title: string; url: string; markdown: string }[] = [];
@@ -88,6 +90,7 @@ Draft the complete section now:`;
   const findings = completion.choices[0]?.message?.content || "No findings generated.";
 
   console.log(`[Worker: ${section.id}] Completed section draft (${findings.length} chars).`);
+  notifyProgress(`✍️ [Worker: ${section.id}] Drafted section: "${section.title}" (${findings.length} chars)`);
 
   return {
     sections: [

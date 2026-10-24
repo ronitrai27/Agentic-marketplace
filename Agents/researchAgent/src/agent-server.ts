@@ -7,6 +7,7 @@ import {
   getWorkflowEvents,
   getWorkflowState,
 } from "./temporal/client.js";
+import { startWorker } from "./temporal/worker.js";
 import { ENV } from "./config/env.js";
 
 const PORT = process.env.PORT || 3005;
@@ -248,7 +249,7 @@ if (
   process.argv[1]?.endsWith("agent-server.ts") ||
   process.argv[1]?.endsWith("agent-server.js")
 ) {
-  server.listen(PORT, () => {
+  server.listen(PORT, async () => {
     console.log(`\n======================================================`);
     console.log(`🤖 Catelog Marketplace Agent (Autonomous Microservice)`);
     console.log(`📡 Protocol: MAPS 1.0.0 | Mode: ASYNC`);
@@ -267,5 +268,12 @@ if (
       `   - Temporal Events:  GET  http://localhost:${PORT}/api/temporal/events?workflowId=...`
     );
     console.log(`======================================================\n`);
+
+    // Auto-start Temporal Worker so single-service Render deployments work immediately
+    try {
+      await startWorker();
+    } catch (err: any) {
+      console.error(`⚠️ [Temporal Worker Auto-Start Warning]:`, err?.message || err);
+    }
   });
 }

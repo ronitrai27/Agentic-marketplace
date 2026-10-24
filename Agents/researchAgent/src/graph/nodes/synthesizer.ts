@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { ENV } from "../../config/env.js";
 import { ResearchState } from "../state.js";
+import { notifyProgress } from "../../observability/progress.js";
 
 const openai = new OpenAI({
   apiKey: ENV.OPENAI_API_KEY || "build_dummy_key",
@@ -14,6 +15,7 @@ export async function synthesizerNode(state: ResearchState): Promise<Partial<Res
   console.log(`\n======================================================`);
   console.log(`[Synthesizer: ${ENV.OPENAI_MODEL}] Compiling final executive research report...`);
   console.log(`======================================================`);
+  notifyProgress(`📊 [Synthesizer: ${ENV.OPENAI_MODEL}] Compiling final executive whitepaper report...`);
 
   // Collect and deduplicate all sources across all sections
   const allSourcesMap = new Map<string, string>();
@@ -80,6 +82,7 @@ Ensure the report is rigorous, coherent, fluidly written, and preserves all inli
   const finalReport = completion.choices[0]?.message?.content || "# Research Report\n\nFailed to synthesize content.";
 
   console.log(`[Synthesizer] Generated final report (${finalReport.length} characters).`);
+  notifyProgress(`🎉 Generated final executive research report (${finalReport.length} characters).`);
 
   return {
     finalReport,

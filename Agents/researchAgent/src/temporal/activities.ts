@@ -1,5 +1,6 @@
 import { Context } from "@temporalio/activity";
 import { runDeepResearch, type AgentExecutionResult } from "../index.js";
+import { progressEmitter } from "../observability/progress.js";
 import type { ResearchWorkflowInput } from "./types.js";
 
 /**
@@ -19,20 +20,30 @@ export async function runDeepResearchActivity(
 
   Context.current().heartbeat("Initializing LangGraph deep research workflow");
 
-  const result = await runDeepResearch(input.prompt, {
-    userId: input.userId,
-    sessionId: input.sessionId,
-    runId: input.runId,
-    onProgress: (step: string) => {
-      console.log(`   ⏳ [Temporal Heartbeat & Progress]: ${step}`);
-      // Send heartbeat to Temporal Cluster so stuck executions get detected
+  const progressHandler = ({ step }: { step: string }) => {
+    try {
       Context.current().heartbeat({
         step,
         attempt: actInfo.attempt,
         timestamp: Date.now(),
       });
-    },
-  });
+    } catch {}
+  };
+  progressEmitter.on("step", progressHandler);
+
+  let result: AgentExecutionResult;
+  try {
+    result = await runDeepResearch(input.prompt, {
+      userId: input.userId,
+      sessionId: input.sessionId,
+      runId: input.runId,
+      onProgress: (step: string) => {
+        console.log(`   ⏳ [Temporal Heartbeat & Progress]: ${step}`);
+      },
+    });
+  } finally {
+    progressEmitter.off("step", progressHandler);
+  }
 
   console.log(`\n======================================================`);
   console.log(`[Temporal Activity: Complete]`);

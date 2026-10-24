@@ -79,7 +79,7 @@ export async function getWorkflowEvents(workflowId: string): Promise<WorkflowEve
     const handle = client.workflow.getHandle(workflowId);
     return await handle.query(getEventsQuery);
   } catch (err: any) {
-    console.warn(`[Temporal Query Warning] Failed to query events for ${workflowId}:`, err?.message);
+    // Queries fail gracefully if workflow task has not yet been processed by worker
     return [];
   }
 }
@@ -93,7 +93,7 @@ export async function getWorkflowState(workflowId: string): Promise<WorkflowStat
     const handle = client.workflow.getHandle(workflowId);
     return await handle.query(getStateQuery);
   } catch (err: any) {
-    console.warn(`[Temporal Query Warning] Failed to query state for ${workflowId}:`, err?.message);
+    // Queries fail gracefully if workflow task has not yet been processed by worker
     return null;
   }
 }

@@ -10,6 +10,8 @@ import {
   getWorkflowEvents,
   getWorkflowState,
 } from "./temporal/client.js";
+import { startWorker } from "./temporal/worker.js";
+import { progressEmitter } from "./observability/progress.js";
 import { ENV } from "./config/env.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -82,10 +84,14 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
     console.log(`   - User ID: ${input.userId || "anonymous"}`);
     console.log(`======================================================\n`);
 
-    stream.step("Evaluating prompt guardrails & intent with TypeSafe JEV-1.14...");
+    stream.step(
+      "Evaluating prompt guardrails & intent with TypeSafe JEV-1.14...",
+    );
 
     if (signal.aborted) {
-      console.error(`❌ [MAPS PROTOCOL] Run ID ${runId} aborted before dispatch.`);
+      console.error(
+        `❌ [MAPS PROTOCOL] Run ID ${runId} aborted before dispatch.`,
+      );
       throw new Error("EXECUTION_TIMEOUT");
     }
 
@@ -103,7 +109,8 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
         output: {
           status: "GUARDRAIL_BLOCKED",
           prompt: input.prompt,
-          answer: guard.rejectionReason || "Request blocked by safety guardrails.",
+          answer:
+            guard.rejectionReason || "Request blocked by safety guardrails.",
           sourcesCount: 0,
           durationSeconds: 1,
           metadata: { scores: guard.scores },
@@ -119,8 +126,12 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 
     // STEP 2: Chit-Chat / Direct Question -> Answer via Groq in 1-2s (NO Temporal Worker!)
     if (!guard.needsResearch) {
-      stream.step("Conversational question detected. Generating direct answer via Groq...");
-      console.log(`💬 [Chit-chat] Prompt is conversational. Answering directly via Groq (no background worker invoked).`);
+      stream.step(
+        "Conversational question detected. Generating direct answer via Groq...",
+      );
+      console.log(
+        `💬 [Chit-chat] Prompt is conversational. Answering directly via Groq (no background worker invoked).`,
+      );
 
       const directResult = await answerDirect(input.prompt, {
         userId: input.userId,
@@ -149,7 +160,9 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 
     // STEP 3: Deep Research -> Orchestrate via Temporal Workflow
     stream.step("Dispatching deep research workflow to Temporal Cluster...");
-    console.log(`🔬 [Deep Research] Topic requires investigation. Starting Temporal Workflow...`);
+    console.log(
+      `🔬 [Deep Research] Topic requires investigation. Starting Temporal Workflow...`,
+    );
 
     const { workflowId, handle } = await startResearchWorkflow({
       prompt: input.prompt,
@@ -158,24 +171,21 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       runId,
     });
 
-    stream.step(`Temporal workflow active [${workflowId}]. Synthesizing research...`);
+    stream.step(
+      `Temporal workflow active [${workflowId}]. Synthesizing research...`,
+    );
 
-    // Poll events periodically to stream progress back to Catelog stream
-    const progressTimer = setInterval(async () => {
-      try {
-        const events = await getWorkflowEvents(workflowId);
-        if (events && events.length > 0) {
-          const latest = events[events.length - 1];
-          stream.step(latest.message);
-        }
-      } catch {}
-    }, 4000);
+    // Forward real-time node & tool progress directly to Catelog stream
+    const onStreamStep = ({ step }: { step: string }) => {
+      stream.step(step);
+    };
+    progressEmitter.on("step", onStreamStep);
 
     let result: AgentOutput;
     try {
       result = (await handle.result()) as AgentOutput;
     } finally {
-      clearInterval(progressTimer);
+      progressEmitter.off("step", onStreamStep);
     }
 
     console.log(`\n======================================================`);
@@ -212,7 +222,7 @@ const MIME_TYPES: Record<string, string> = {
 export const server = http.createServer(async (req, res) => {
   const url = new URL(
     req.url || "/",
-    `http://${req.headers.host || "localhost"}`
+    `http://${req.headers.host || "localhost"}`,
   );
 
   // Route 0: Handle Marketplace Protocol Endpoints (/health, /schema, /execute, /tasks/:id)
@@ -228,7 +238,9 @@ export const server = http.createServer(async (req, res) => {
     const workflowId = url.searchParams.get("workflowId");
     if (!workflowId) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "workflowId query parameter is required" }));
+      res.end(
+        JSON.stringify({ error: "workflowId query parameter is required" }),
+      );
       return;
     }
 
@@ -288,16 +300,16 @@ export const server = http.createServer(async (req, res) => {
         console.log(`[JEV TELEMETRY] Prompt: "${prompt}"`);
         console.log(`  - Model: ${ENV.JEV_MODEL}`);
         console.log(
-          `  - Inappropriate Prob: ${guard.scores.inappropriateProb} (Allowed: ${guard.isAllowed})`
+          `  - Inappropriate Prob: ${guard.scores.inappropriateProb} (Allowed: ${guard.isAllowed})`,
         );
         console.log(
-          `  - Needs Research Prob: ${guard.scores.needsResearchProb}`
+          `  - Needs Research Prob: ${guard.scores.needsResearchProb}`,
         );
         console.log(
-          `  - Decision Route: ${guard.needsResearch ? "DEEP RESEARCH" : "CHIT-CHAT / DIRECT"}`
+          `  - Decision Route: ${guard.needsResearch ? "DEEP RESEARCH" : "CHIT-CHAT / DIRECT"}`,
         );
         console.log(
-          `  - Target Engine: ${guard.needsResearch ? "Temporal Workflow + LangGraph" : "Groq openai/gpt-oss-120b"}`
+          `  - Target Engine: ${guard.needsResearch ? "Temporal Workflow + LangGraph" : "Groq openai/gpt-oss-120b"}`,
         );
         console.log(`======================================================\n`);
 
@@ -319,7 +331,8 @@ export const server = http.createServer(async (req, res) => {
           sendEvent("result", {
             status: "GUARDRAIL_BLOCKED",
             prompt,
-            answer: guard.rejectionReason || "Request blocked by safety guardrails.",
+            answer:
+              guard.rejectionReason || "Request blocked by safety guardrails.",
             sourcesCount: 0,
             durationSeconds: 1,
             metadata: { scores: guard.scores },
@@ -334,7 +347,9 @@ export const server = http.createServer(async (req, res) => {
           sendEvent("progress", {
             step: "Conversational question detected. Generating direct answer via Groq...",
           });
-          const directAns = await answerDirect(prompt, { scores: guard.scores });
+          const directAns = await answerDirect(prompt, {
+            scores: guard.scores,
+          });
           sendEvent("result", directAns);
           sendEvent("done", { success: true });
           res.end();
@@ -355,24 +370,19 @@ export const server = http.createServer(async (req, res) => {
           step: `Temporal workflow running [${workflowId}]. Synthesizing research...`,
         });
 
-        // Poll events periodically to stream progress updates
-        const pollInterval = setInterval(async () => {
-          try {
-            const events = await getWorkflowEvents(workflowId);
-            if (events && events.length > 0) {
-              const lastEvent = events[events.length - 1];
-              sendEvent("progress", { step: lastEvent.message, details: lastEvent.details });
-            }
-          } catch {}
-        }, 3000);
+        // Forward real-time node & tool progress directly to UI SSE stream
+        const onSseStep = ({ step }: { step: string }) => {
+          sendEvent("progress", { step });
+        };
+        progressEmitter.on("step", onSseStep);
 
         try {
           const finalResult = await handle.result();
-          clearInterval(pollInterval);
+          progressEmitter.off("step", onSseStep);
           sendEvent("result", finalResult);
           sendEvent("done", { success: true });
         } catch (execErr: any) {
-          clearInterval(pollInterval);
+          progressEmitter.off("step", onSseStep);
           throw execErr;
         }
 
@@ -394,7 +404,7 @@ export const server = http.createServer(async (req, res) => {
   // Route 2: Static Frontend Files
   let filePath = path.join(
     PUBLIC_DIR,
-    url.pathname === "/" ? "index.html" : url.pathname
+    url.pathname === "/" ? "index.html" : url.pathname,
   );
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     filePath = path.join(PUBLIC_DIR, "index.html");
@@ -418,14 +428,23 @@ if (
   process.argv[1]?.endsWith("server.ts") ||
   process.argv[1]?.endsWith("server.js")
 ) {
-  server.listen(PORT, () => {
+  server.listen(PORT, async () => {
     console.log(`\n======================================================`);
     console.log(`🚀 Unified Marketplace Agent & Realtime UI Server`);
     console.log(`📡 MAPS Protocol:   http://localhost:${PORT}/execute`);
     console.log(`📋 Health Check:    http://localhost:${PORT}/health`);
     console.log(`📜 Schema Manifest: http://localhost:${PORT}/schema`);
     console.log(`💬 Web UI:          http://localhost:${PORT}`);
-    console.log(`🔄 Temporal Events: http://localhost:${PORT}/api/temporal/events?workflowId=...`);
+    console.log(
+      `🔄 Temporal Events: http://localhost:${PORT}/api/temporal/events?workflowId=...`,
+    );
     console.log(`======================================================\n`);
+
+    // Auto-start Temporal Worker so single-service Render deployments work immediately
+    try {
+      await startWorker();
+    } catch (err: any) {
+      console.error(`⚠️ [Temporal Worker Auto-Start Warning]:`, err?.message || err);
+    }
   });
 }

@@ -184,24 +184,34 @@ function handleSSEEvent(type, data, elements) {
   }
 
   if (type === "progress") {
+    // Avoid repeating identical step consecutively
+    const active = progressContainer.querySelector(".progress-step.active");
+    if (active && active.textContent.trim().includes(data.step.trim())) {
+      return;
+    }
+
+    if (active) {
+      active.className = "progress-step";
+      active.innerHTML = `✓ <span>${active.textContent.replace("✓", "").trim()}</span>`;
+    }
+
     const step = document.createElement("div");
     step.className = "progress-step active";
     step.innerHTML = `<span class="spinner"></span> <span>${data.step}</span>`;
 
-    // Remove active spinner on previous step
-    const prev = progressContainer.querySelector(".progress-step.active");
-    if (prev) {
-      prev.className = "progress-step";
-      prev.innerHTML = `✓ <span>${prev.textContent.replace("✓", "").trim()}</span>`;
-    }
-
     progressContainer.appendChild(step);
+    progressContainer.scrollTop = progressContainer.scrollHeight;
     chatFeed.scrollTop = chatFeed.scrollHeight;
   }
 
   if (type === "result") {
-    // Hide progress container once result arrives
-    progressContainer.style.display = "none";
+    // Complete the last active spinner with a checkmark
+    const active = progressContainer.querySelector(".progress-step.active");
+    if (active) {
+      active.className = "progress-step";
+      active.innerHTML = `✓ <span>${active.textContent.replace("✓", "").trim()}</span>`;
+    }
+
     if (window.marked) {
       bubble.innerHTML = window.marked.parse(data.answer);
     } else {

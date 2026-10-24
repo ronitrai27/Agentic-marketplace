@@ -1,5 +1,6 @@
 import { FirecrawlAppV1 } from "@mendable/firecrawl-js";
 import { ENV } from "../config/env.js";
+import { notifyProgress } from "../observability/progress.js";
 
 export interface ScrapedPage {
   url: string;
@@ -18,7 +19,9 @@ export async function scrapePage(url: string, fallbackTitle?: string): Promise<S
     return { url, markdown: "", success: false };
   }
 
+  const domain = new URL(url).hostname.replace("www.", "");
   console.log(`[Firecrawl] Scraping URL: ${url}`);
+  notifyProgress(`📄 [Firecrawl] Reading authoritative source: ${domain}`);
 
   try {
     const res: any = await firecrawl.scrapeUrl(url, {

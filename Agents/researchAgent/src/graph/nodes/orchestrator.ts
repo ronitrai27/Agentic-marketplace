@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { ENV } from "../../config/env.js";
 import { ResearchState, ResearchSection } from "../state.js";
+import { notifyProgress } from "../../observability/progress.js";
 
 const openai = new OpenAI({
   apiKey: ENV.OPENAI_API_KEY || "build_dummy_key",
@@ -14,6 +15,7 @@ export async function orchestratorNode(state: ResearchState): Promise<Partial<Re
   console.log(`\n======================================================`);
   console.log(`[Orchestrator: ${ENV.OPENAI_MODEL}] Planning research for: "${state.topic}"`);
   console.log(`======================================================`);
+  notifyProgress(`🧠 [Lead Orchestrator] Architecting 3 research streams with targeted search vectors...`);
 
   const feedbackContext = state.critiqueFeedback
     ? `\nPREVIOUS CRITIQUE FEEDBACK (Address these missing points):\n${state.critiqueFeedback}\n`

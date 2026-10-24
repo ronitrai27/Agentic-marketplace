@@ -7,7 +7,27 @@ import { ENV } from "../config/env.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-async function run() {
+let activeWorker: Worker | null = null;
+let isStarting = false;
+
+/**
+ * Initializes and starts the Temporal Worker.
+ * Can be called standalone or embedded inside the web server process.
+ */
+export async function startWorker(): Promise<Worker> {
+  if (activeWorker) {
+    return activeWorker;
+  }
+  if (isStarting) {
+    // Wait until started
+    while (isStarting) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (activeWorker) return activeWorker;
+  }
+
+  isStarting = true;
+
   const address = ENV.TEMPORAL_ADDRESS;
   const namespace = ENV.TEMPORAL_NAMESPACE;
   const apiKey = ENV.TEMPORAL_API_KEY;
@@ -21,32 +41,48 @@ async function run() {
   console.log(`   - Mode:       ${apiKey ? "Temporal Cloud (TLS + API Key)" : "Local Dev Server"}`);
   console.log(`======================================================\n`);
 
-  const connection = await NativeConnection.connect({
-    address,
-    apiKey: apiKey || undefined,
-    tls: apiKey ? true : false,
-  });
+  try {
+    const connection = await NativeConnection.connect({
+      address,
+      apiKey: apiKey || undefined,
+      tls: apiKey ? true : false,
+    });
 
-  // Resolve workflows file for tsx (development) or compiled node (production)
-  const tsPath = path.resolve(__dirname, "./workflows.ts");
-  const jsPath = path.resolve(__dirname, "./workflows.js");
-  const workflowsPath = fs.existsSync(tsPath) ? tsPath : jsPath;
+    const tsPath = path.resolve(__dirname, "./workflows.ts");
+    const jsPath = path.resolve(__dirname, "./workflows.js");
+    const workflowsPath = fs.existsSync(tsPath) ? tsPath : jsPath;
 
-  const worker = await Worker.create({
-    connection,
-    namespace,
-    taskQueue,
-    workflowsPath,
-    activities,
-  });
+    const worker = await Worker.create({
+      connection,
+      namespace,
+      taskQueue,
+      workflowsPath,
+      activities,
+    });
 
-  console.log(`✅ Worker registered and polling for tasks on [${taskQueue}]...`);
-  console.log(`   Press Ctrl+C to terminate.\n`);
+    console.log(`✅ [Temporal Worker] Polling tasks on queue [${taskQueue}]!`);
 
-  await worker.run();
+    // Run worker in background
+    worker.run().catch((err) => {
+      console.error("❌ [Temporal Worker Execution Error]:", err);
+    });
+
+    activeWorker = worker;
+    isStarting = false;
+    return worker;
+  } catch (err) {
+    isStarting = false;
+    throw err;
+  }
 }
 
-run().catch((err) => {
-  console.error("❌ [Temporal Worker Fatal Error]:", err);
-  process.exit(1);
-});
+// If executed directly from command line (e.g. `npm run worker`)
+if (
+  process.argv[1]?.endsWith("worker.ts") ||
+  process.argv[1]?.endsWith("worker.js")
+) {
+  startWorker().catch((err) => {
+    console.error("❌ [Temporal Worker Fatal Error]:", err);
+    process.exit(1);
+  });
+}
