@@ -67,6 +67,8 @@ export interface TelemetryData {
   chunks_streamed?: number;
   /** Framework-specific extras (OpenAI usage, LangGraph nodes, etc.) */
   framework?: Record<string, unknown>;
+  /** Any custom metrics or telemetry added by the agent */
+  [key: string]: unknown;
 }
 
 // ─────────────────────────────────────────────────
@@ -236,6 +238,46 @@ export type SSEProtocolEvent =
   | TaskCompletedEvent
   | TaskFailedEvent
   | HeartbeatEvent;
+
+// ─────────────────────────────────────────────────
+//  Live Events for Async Polling (GET /tasks/:id)
+// ─────────────────────────────────────────────────
+
+/**
+ * One live event recorded while an async job runs.
+ * Produced by `stream.step()`, `stream.progress()`, `stream.activity()` and `stream.emit()`.
+ */
+export interface TaskEventRecord {
+  /** Monotonic sequence number (starts at 1). Use as the `?since=` cursor. */
+  seq: number;
+  /** Which stream helper produced this event. */
+  type: "step" | "progress" | "activity" | "event";
+  /** Epoch milliseconds when the event was recorded. */
+  timestamp: number;
+  /** Human-readable message (step label / progress message). */
+  message?: string;
+  /** Progress percentage (only for `type: "progress"`). */
+  percent?: number;
+  /** Activity or custom event name (for `type: "activity" | "event"`). */
+  name?: string;
+  /** Optional structured payload (for `type: "activity" | "event"`). */
+  data?: unknown;
+}
+
+/**
+ * Optional live fields added to every `GET /tasks/:id` response.
+ * Older clients simply ignore them.
+ */
+export interface TaskPollLiveFields {
+  /** Most recent step/progress message, if any was emitted. */
+  current_step?: string;
+  /** Most recent progress percentage (0-100), if any was emitted. */
+  progress_pct?: number;
+  /** Events with `seq > since` (all buffered events when `since` is omitted). */
+  events: TaskEventRecord[];
+  /** Highest sequence number recorded so far. Pass back as `?since=` on the next poll. */
+  last_seq: number;
+}
 
 // ─────────────────────────────────────────────────
 //  Stream Interface

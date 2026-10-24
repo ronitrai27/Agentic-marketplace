@@ -1,6 +1,6 @@
 {
   "name": "catelog",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Official TypeScript SDK for Marketplace Agent Protocol Specification (MAPS)",
   "type": "module",
   "main": "./dist/index.js",

@@ -85,18 +85,32 @@ export async function answerDirect(
   const directAns = await generateDirectAnswer(userPrompt);
   const durationSeconds = Math.round((Date.now() - startTime) / 1000);
 
+  const promptTokens = directAns.usage?.prompt_tokens || 0;
+  const completionTokens = directAns.usage?.completion_tokens || 0;
+  const totalTokens = directAns.usage?.total_tokens || (promptTokens + completionTokens);
+  const costUsd = Number(((promptTokens * 0.05 + completionTokens * 0.10) / 1_000_000).toFixed(6));
+
   trace.update({
-    output: { answer: directAns, status: "DIRECT_ANSWER" },
+    output: { answer: directAns.answer, status: "DIRECT_ANSWER" },
   });
   await langfuse.flushAsync();
 
   return {
     status: "DIRECT_ANSWER",
     prompt: userPrompt,
-    answer: directAns,
+    answer: directAns.answer,
     sourcesCount: 0,
     durationSeconds,
-    metadata: { model: "groq-openai/gpt-oss-120b", scores: options?.scores },
+    metadata: {
+      model: "groq-openai/gpt-oss-120b",
+      scores: options?.scores,
+      llm_tokens: {
+        prompt: promptTokens,
+        completion: completionTokens,
+        total: totalTokens,
+      },
+      cost_usd: costUsd,
+    },
   };
 }
 
@@ -137,9 +151,16 @@ export async function runDeepResearch(
   const durationSeconds = Math.round((Date.now() - startTime) / 1000);
   const totalSources = graphResult.sections?.flatMap((s: any) => s.sources || []).length || 0;
 
+  const promptTokens = graphResult.llmTokens?.prompt || 0;
+  const completionTokens = graphResult.llmTokens?.completion || 0;
+  const totalTokens = graphResult.llmTokens?.total || (promptTokens + completionTokens);
+  // gpt-4o-mini / gpt-4.1-mini: $0.15/1M input, $0.60/1M output
+  const costUsd = Number(((promptTokens * 0.15 + completionTokens * 0.60) / 1_000_000).toFixed(6));
+
   console.log(`\n======================================================`);
   console.log(`[Research Agent] Completed in ${durationSeconds}s (${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s)`);
   console.log(`[Research Agent] Total Sources Referenced: ${totalSources}`);
+  console.log(`[Research Agent] LLM Tokens: ${totalTokens} (Prompt: ${promptTokens}, Completion: ${completionTokens}) | Est Cost: $${costUsd}`);
   console.log(`======================================================`);
 
   trace.update({
@@ -166,6 +187,12 @@ export async function runDeepResearch(
         sourcesCount: s.sources?.length || 0,
       })),
       critiqueCount: graphResult.critiqueCount,
+      llm_tokens: {
+        prompt: promptTokens,
+        completion: completionTokens,
+        total: totalTokens,
+      },
+      cost_usd: costUsd,
     },
   };
 }

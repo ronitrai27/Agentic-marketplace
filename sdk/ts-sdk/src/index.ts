@@ -25,7 +25,7 @@ export {
 } from "./security.js";
 
 // SSE streaming
-export { SSEWriter, NoopStream, type SSEWriterOptions } from "./sse.js";
+export { SSEWriter, NoopStream, BufferedStream, type SSEWriterOptions } from "./sse.js";
 
 // Schema (Zod + JSON Schema)
 export { toJsonSchema, validateSchemaData, isZodSchema, type SchemaLike } from "./schema.js";

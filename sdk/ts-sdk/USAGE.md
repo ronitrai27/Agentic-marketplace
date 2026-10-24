@@ -206,13 +206,18 @@ const agent = createAgent({
     wordCount: z.number(),
   }),
 
-  async execute({ input, log }) {
+  async execute({ input, stream, log }) {
     // The client already has the 202 + job ID
-    // Write your long-running logic normally here:
+    // Live events are automatically recorded in a ring buffer for GET /tasks/:id:
+    stream.step("Initializing deep research vectors...");
+    stream.progress(10, "Crawling targeted web sources...");
     log.info("Starting deep research", { topic: input.topic, depth: input.depth });
 
     const sources = await crawlAndScrape(input.topic); // May take minutes
+    stream.progress(60, `Synthesizing ${sources.length} sources with LLM...`);
+
     const report = await generateReport(sources, input.depth);
+    stream.progress(100, "Research compiled.");
 
     log.info("Research complete", { sources: sources.length });
 
@@ -224,7 +229,8 @@ const agent = createAgent({
       },
       telemetry: {
         model_used: "gpt-4o",
-        llm_tokens: { total: 12000 },
+        llm_tokens: { prompt: 8500, completion: 3500, total: 12000 },
+        cost_usd: 0.052,
       },
     };
   },
@@ -233,21 +239,44 @@ const agent = createAgent({
 agent.listen(3000);
 ```
 
-**The request / response cycle:**
+**The request / response cycle (Live Event-Enriched Polling):**
 
 ```
 POST /execute
 → 202 Accepted
   { "run_id": "run_abc", "status": "working", "poll_url": "/tasks/run_abc" }
 
-GET /tasks/run_abc (marketplace polls every few seconds)
-→ 200 { "status": "working", "elapsed_ms": 14200 }
+GET /tasks/run_abc?since=0 (marketplace polls every 2-3s with ?since cursor)
+→ 200 {
+    "status": "working",
+    "elapsed_ms": 5200,
+    "current_step": "Crawling targeted web sources...",
+    "progress_pct": 10,
+    "events": [
+      { "seq": 1, "type": "step", "timestamp": 172975..., "message": "Initializing deep research vectors..." },
+      { "seq": 2, "type": "progress", "timestamp": 172975..., "percent": 10, "message": "Crawling targeted web sources..." }
+    ],
+    "last_seq": 2
+  }
 
-GET /tasks/run_abc (when done)
+GET /tasks/run_abc?since=2 (when finished)
 → 200 {
     "status": "completed",
+    "duration_ms": 14200,
+    "current_step": "Research compiled.",
+    "progress_pct": 100,
+    "events": [
+      { "seq": 3, "type": "progress", "timestamp": 172975..., "percent": 60, "message": "Synthesizing sources..." },
+      { "seq": 4, "type": "progress", "timestamp": 172975..., "percent": 100, "message": "Research compiled." }
+    ],
+    "last_seq": 4,
     "output": { "report": "...", "sources": [...], "wordCount": 4200 },
-    "telemetry": { ... }
+    "telemetry": {
+      "model_used": "gpt-4o",
+      "llm_tokens": { "prompt": 8500, "completion": 3500, "total": 12000 },
+      "cost_usd": 0.052,
+      "duration_ms": 14200
+    }
   }
 ```
 

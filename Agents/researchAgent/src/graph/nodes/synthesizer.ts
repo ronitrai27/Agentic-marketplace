@@ -86,5 +86,10 @@ Ensure the report is rigorous, coherent, fluidly written, and preserves all inli
 
   return {
     finalReport,
+    llmTokens: {
+      prompt: completion.usage?.prompt_tokens || 0,
+      completion: completion.usage?.completion_tokens || 0,
+      total: completion.usage?.total_tokens || 0,
+    },
   };
 }

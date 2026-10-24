@@ -82,5 +82,10 @@ Respond with a valid JSON object matching this schema:
   return {
     sections,
     critiqueFeedback: null,
+    llmTokens: {
+      prompt: completion.usage?.prompt_tokens || 0,
+      completion: completion.usage?.completion_tokens || 0,
+      total: completion.usage?.total_tokens || 0,
+    },
   };
 }

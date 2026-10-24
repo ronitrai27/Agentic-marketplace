@@ -70,6 +70,11 @@ Respond strictly in JSON format:
       needsMoreResearch: !approved,
       critiqueFeedback: !approved ? feedback : null,
       critiqueCount: state.critiqueCount + 1,
+      llmTokens: {
+        prompt: completion.usage?.prompt_tokens || 0,
+        completion: completion.usage?.completion_tokens || 0,
+        total: completion.usage?.total_tokens || 0,
+      },
     };
   } catch (err) {
     console.warn("[Critic] Evaluation error, defaulting to approved:", err);

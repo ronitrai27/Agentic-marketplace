@@ -154,6 +154,8 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
           execution_status: directResult.status,
           sources_count: 0,
           execution_type: "groq_direct",
+          llm_tokens: directResult.metadata?.llm_tokens,
+          cost_usd: directResult.metadata?.cost_usd,
         },
       };
     }
@@ -177,7 +179,19 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 
     // Forward real-time node & tool progress directly to Catelog stream
     const onStreamStep = ({ step }: { step: string }) => {
-      stream.step(step);
+      let pct: number | undefined;
+      if (step.includes("Orchestrator")) pct = 15;
+      else if (step.includes("sec_1")) pct = 35;
+      else if (step.includes("sec_2")) pct = 55;
+      else if (step.includes("sec_3")) pct = 75;
+      else if (step.includes("Critic")) pct = 85;
+      else if (step.includes("Synthesizer") || step.includes("executive")) pct = 95;
+
+      if (pct !== undefined) {
+        stream.progress(pct, step);
+      } else {
+        stream.step(step);
+      }
     };
     progressEmitter.on("step", onStreamStep);
 
@@ -204,6 +218,8 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
         sources_count: result?.sourcesCount,
         temporal_workflow_id: workflowId,
         execution_type: "temporal_workflow",
+        llm_tokens: result?.metadata?.llm_tokens,
+        cost_usd: result?.metadata?.cost_usd,
       },
     };
   },
@@ -447,4 +463,17 @@ if (
       console.error(`⚠️ [Temporal Worker Auto-Start Warning]:`, err?.message || err);
     }
   });
+
+  // Graceful shutdown on Ctrl+C to avoid port 3005 EADDRINUSE
+  const shutdown = () => {
+    console.log("\n🛑 [Shutdown] Closing server and background worker...");
+    server.close(() => {
+      console.log("✅ [Shutdown] Port 3005 released.");
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 1500).unref();
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }

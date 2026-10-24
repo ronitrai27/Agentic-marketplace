@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { SecurityManager, SecurityVerificationError } from "./security.js";
-import { SSEWriter, NoopStream } from "./sse.js";
+import { SSEWriter, NoopStream, BufferedStream } from "./sse.js";
 import { toJsonSchema, validateSchemaData, type SchemaLike } from "./schema.js";
 import { buildExecutionContext } from "./context.js";
 import { TelemetryReporter } from "./telemetry.js";
@@ -24,6 +24,7 @@ import {
   type NeedInputResult,
   type StructuredError,
   type TelemetryData,
+  type TaskPollLiveFields,
 } from "./types.js";
 import { startAgentServer, type ServerOptions } from "./server.js";
 import type { IncomingMessage, ServerResponse, Server } from "node:http";
@@ -96,6 +97,8 @@ interface AsyncJob<TOutput = any> {
   telemetry?: TelemetryData;
   durationMs?: number;
   createdAt: number;
+  /** Records live stream.step/progress/activity events for the poll endpoint */
+  stream?: BufferedStream;
 }
 
 const asyncJobs = new Map<string, AsyncJob>();
@@ -287,7 +290,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       // Async job polling: GET /tasks/:id
       if (pathname.startsWith("/tasks/") && method === "GET") {
         const jobId = pathname.slice(7); // Remove "/tasks/"
-        this.handleTaskPoll(res, jobId);
+        this.handleTaskPoll(res, jobId, url.searchParams.get("since"));
         return;
       }
 
@@ -398,14 +401,16 @@ export class CatelogAgent<TInput = any, TOutput = any> {
 
     // Execute in background (fire-and-forget from HTTP perspective)
     const startTs = Date.now();
-    const noopStream = new NoopStream();
+    // Records stream.step()/progress()/activity() so GET /tasks/:id can return live events
+    const bufferedStream = new BufferedStream();
+    job.stream = bufferedStream;
     const abortController = new AbortController();
 
     try {
       const { ctx, telemetryCollector } = buildExecutionContext({
         runId,
         input,
-        stream: noopStream,
+        stream: bufferedStream,
         signal: abortController.signal,
         metadata: payload.metadata,
         deadlineMs: payload.deadline_ms,
@@ -614,7 +619,22 @@ export class CatelogAgent<TInput = any, TOutput = any> {
 
   // ── Async Job Polling ──
 
-  private handleTaskPoll(res: ServerResponse, jobId: string): void {
+  /**
+   * Optional live fields appended to every poll response.
+   * Purely additive — existing clients ignore the extra keys.
+   */
+  private buildLiveFields(job: AsyncJob, sinceParam: string | null): TaskPollLiveFields {
+    const stream = job.stream;
+    const since = Number.parseInt(sinceParam ?? "", 10);
+    return {
+      current_step: stream?.currentStep,
+      progress_pct: stream?.progressPct,
+      events: stream ? stream.getEventsSince(Number.isFinite(since) ? since : 0) : [],
+      last_seq: stream?.lastSeq ?? 0,
+    };
+  }
+
+  private handleTaskPoll(res: ServerResponse, jobId: string, sinceParam: string | null = null): void {
     const job = asyncJobs.get(jobId);
     if (!job) {
       this.writeJson(res, 404, {
@@ -623,11 +643,14 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       return;
     }
 
+    const live = this.buildLiveFields(job, sinceParam);
+
     if (job.status === "working") {
       this.writeJson(res, 200, {
         run_id: job.runId,
         status: "working",
         elapsed_ms: Date.now() - job.createdAt,
+        ...live,
       });
     } else if (job.status === "completed") {
       this.writeJson(res, 200, {
@@ -636,6 +659,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
         duration_ms: job.durationMs,
         output: job.output,
         telemetry: job.telemetry,
+        ...live,
       });
     } else {
       this.writeJson(res, 200, {
@@ -643,6 +667,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
         status: "failed",
         duration_ms: job.durationMs,
         error: job.error,
+        ...live,
       });
     }
   }

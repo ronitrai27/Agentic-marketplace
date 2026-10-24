@@ -98,6 +98,48 @@
               <div class="polling-status" id="polling-timer">Elapsed: 0s</div>
             </div>
 
+            <!-- Live Progress & Step Indicator (Active during execution/polling) -->
+            <div class="live-progress-card" id="live-progress-card" style="display: none;">
+              <div class="live-progress-header">
+                <div class="live-step-container">
+                  <span class="pulse-indicator"></span>
+                  <span class="live-step-label" id="live-step-label">Initializing agent...</span>
+                </div>
+                <span class="live-progress-pct" id="live-progress-pct">0%</span>
+              </div>
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Telemetry Metrics Dashboard (Rendered when completed) -->
+            <div class="telemetry-dashboard" id="telemetry-dashboard" style="display: none;">
+              <div class="telemetry-chip">
+                <span class="chip-label">Model</span>
+                <span class="chip-val" id="telem-model">—</span>
+              </div>
+              <div class="telemetry-chip">
+                <span class="chip-label">Prompt Tokens</span>
+                <span class="chip-val" id="telem-prompt-tokens">0</span>
+              </div>
+              <div class="telemetry-chip">
+                <span class="chip-label">Completion Tokens</span>
+                <span class="chip-val" id="telem-completion-tokens">0</span>
+              </div>
+              <div class="telemetry-chip">
+                <span class="chip-label">Total Tokens</span>
+                <span class="chip-val highlight" id="telem-total-tokens">0</span>
+              </div>
+              <div class="telemetry-chip">
+                <span class="chip-label">Est. Cost</span>
+                <span class="chip-val cost" id="telem-cost">$0.0000</span>
+              </div>
+              <div class="telemetry-chip">
+                <span class="chip-label">Duration</span>
+                <span class="chip-val" id="telem-duration">0s</span>
+              </div>
+            </div>
+
             <div class="result-box">
               <label>Synthesized Answer / Result</label>
               <div id="answer-content" class="answer-card placeholder-state">

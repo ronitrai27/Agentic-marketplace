@@ -11,6 +11,7 @@ import type {
   StructuredError,
   TelemetryData,
   TaskState,
+  TaskEventRecord,
 } from "./types.js";
 
 // ─────────────────────────────────────────────────
@@ -263,6 +264,90 @@ export class NoopStream implements AgentStream {
   activity(_type: string, _data?: Record<string, unknown>): void {}
   step(_label: string): void {}
   emit(_event: string, _data: unknown): void {}
+  write(text: string): void { this.delta(text); }
+  chunk(chunk: string): void { this.delta(chunk); }
+  isClosed(): boolean { return false; }
+}
+
+// ─────────────────────────────────────────────────
+//  BufferedStream — async mode: record live events for GET /tasks/:id
+// ─────────────────────────────────────────────────
+
+const MAX_MESSAGE_CHARS = 500;
+
+/**
+ * Drop-in replacement for NoopStream used by `mode: "async"`.
+ * Every `step` / `progress` / `activity` / `emit` call is recorded in a
+ * bounded ring buffer so the poll endpoint can return them while the job runs.
+ *
+ * Text deltas are NOT buffered (they would flood the buffer at token rate);
+ * they are only counted, exactly like NoopStream.
+ */
+export class BufferedStream implements AgentStream {
+  public chunksStreamed = 0;
+  public currentStep?: string;
+  public progressPct?: number;
+
+  private seq = 0;
+  private events: TaskEventRecord[] = [];
+
+  /** @param maxEvents Max events kept in memory per job (oldest are dropped first). */
+  constructor(private readonly maxEvents = 200) {}
+
+  // ── Recording ──
+
+  private push(event: Omit<TaskEventRecord, "seq" | "timestamp">): void {
+    this.seq += 1;
+    this.events.push({ seq: this.seq, timestamp: Date.now(), ...event });
+    if (this.events.length > this.maxEvents) {
+      this.events.splice(0, this.events.length - this.maxEvents);
+    }
+  }
+
+  private clip(text?: string): string | undefined {
+    if (text === undefined) return undefined;
+    return text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS)}…` : text;
+  }
+
+  // ── Reading (used by the poll endpoint) ──
+
+  /** Highest sequence number recorded so far (0 = nothing yet). */
+  public get lastSeq(): number {
+    return this.seq;
+  }
+
+  /** Events with `seq > since`. Omit `since` to get everything still buffered. */
+  public getEventsSince(since = 0): TaskEventRecord[] {
+    return since > 0 ? this.events.filter((e) => e.seq > since) : [...this.events];
+  }
+
+  // ── AgentStream implementation ──
+
+  progress(percent: number, message?: string): void {
+    const pct = Math.min(100, Math.max(0, percent));
+    const msg = this.clip(message);
+    this.progressPct = pct;
+    if (msg !== undefined) this.currentStep = msg;
+    this.push({ type: "progress", percent: pct, message: msg });
+  }
+
+  step(label: string): void {
+    const msg = this.clip(label);
+    if (msg !== undefined) this.currentStep = msg;
+    this.push({ type: "step", message: msg });
+  }
+
+  activity(type: string, data?: Record<string, unknown>): void {
+    this.push({ type: "activity", name: type, data });
+  }
+
+  emit(event: string, data: unknown): void {
+    this.push({ type: "event", name: event, data });
+  }
+
+  delta(_content: string, _type?: "text" | "json_patch"): void {
+    this.chunksStreamed++;
+  }
   write(text: string): void { this.delta(text); }
   chunk(chunk: string): void { this.delta(chunk); }
   isClosed(): boolean { return false; }

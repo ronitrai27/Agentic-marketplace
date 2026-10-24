@@ -100,5 +100,10 @@ Draft the complete section now:`;
         sources: collectedSources,
       },
     ],
+    llmTokens: {
+      prompt: completion.usage?.prompt_tokens || 0,
+      completion: completion.usage?.completion_tokens || 0,
+      total: completion.usage?.total_tokens || 0,
+    },
   };
 }

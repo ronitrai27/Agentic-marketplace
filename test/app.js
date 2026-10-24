@@ -25,6 +25,20 @@ const schemaJson = document.getElementById("schema-json");
 const timelineList = document.getElementById("timeline-list");
 const btnClearLogs = document.getElementById("btn-clear-logs");
 
+// Live Progress & Telemetry DOM Elements
+const liveProgressCard = document.getElementById("live-progress-card");
+const liveStepLabel = document.getElementById("live-step-label");
+const liveProgressPct = document.getElementById("live-progress-pct");
+const progressBarFill = document.getElementById("progress-bar-fill");
+
+const telemetryDashboard = document.getElementById("telemetry-dashboard");
+const telemModel = document.getElementById("telem-model");
+const telemPromptTokens = document.getElementById("telem-prompt-tokens");
+const telemCompletionTokens = document.getElementById("telem-completion-tokens");
+const telemTotalTokens = document.getElementById("telem-total-tokens");
+const telemCost = document.getElementById("telem-cost");
+const telemDuration = document.getElementById("telem-duration");
+
 // Toggle key visibility
 toggleKeyBtn.addEventListener("click", () => {
   if (secretKeyInput.type === "password") {
@@ -198,6 +212,13 @@ btnExecute.addEventListener("click", async () => {
   answerContent.textContent = "Dispatched! Waiting for task execution...";
   rawTaskJson.textContent = "{}";
 
+  // Reset progress and telemetry
+  liveProgressCard.style.display = "none";
+  telemetryDashboard.style.display = "none";
+  liveStepLabel.textContent = "Connecting to agent...";
+  liveProgressPct.textContent = "0%";
+  progressBarFill.style.width = "0%";
+
   if (activePollInterval) {
     clearInterval(activePollInterval);
   }
@@ -218,7 +239,7 @@ btnExecute.addEventListener("click", async () => {
       logEvent(`Job accepted (Run ID: ${data.run_id}). Polling ${data.poll_url}...`, "info");
       startPolling(data.run_id, data.poll_url);
     } else if (res.status === 200) {
-      // Sync response
+      // Sync response (e.g. Groq direct answer)
       logEvent(`Job executed synchronously`, "success");
       displayFinalResult(data);
     } else {
@@ -240,22 +261,54 @@ function startPolling(runId, pollUrl) {
   taskBadge.textContent = "WORKING";
   taskIdDisplay.textContent = runId;
 
+  // Activate live progress indicator
+  liveProgressCard.style.display = "block";
+  liveStepLabel.textContent = "Task submitted. Waiting for stream...";
+  liveProgressPct.textContent = "0%";
+  progressBarFill.style.width = "0%";
+
   pollStartTime = Date.now();
-  const fullPollUrl = pollUrl.startsWith("http") ? pollUrl : `${getBaseUrl()}${pollUrl}`;
+  let lastSeq = 0;
+  const baseUrl = pollUrl.startsWith("http") ? pollUrl : `${getBaseUrl()}${pollUrl}`;
 
   activePollInterval = setInterval(async () => {
     const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
     pollingTimer.textContent = `Elapsed: ${elapsedSec}s`;
 
     try {
-      const res = await fetch(fullPollUrl, { headers: getHeaders() });
+      const fetchUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}since=${lastSeq}`;
+      const res = await fetch(fetchUrl, { headers: getHeaders() });
       const taskData = await res.json();
       rawTaskJson.textContent = JSON.stringify(taskData, null, 2);
+
+      // Process live stream events
+      if (Array.isArray(taskData.events) && taskData.events.length > 0) {
+        for (const evt of taskData.events) {
+          const msg = evt.message || evt.name || JSON.stringify(evt.data || "");
+          logEvent(msg, evt.type === "step" ? "info" : "success");
+          if (evt.seq > lastSeq) lastSeq = evt.seq;
+        }
+      }
+      if (taskData.last_seq && taskData.last_seq > lastSeq) {
+        lastSeq = taskData.last_seq;
+      }
+
+      // Update live step and progress bar
+      if (taskData.current_step) {
+        liveStepLabel.textContent = taskData.current_step;
+      }
+      if (typeof taskData.progress_pct === "number") {
+        const pct = Math.max(0, Math.min(100, Math.round(taskData.progress_pct)));
+        liveProgressPct.textContent = `${pct}%`;
+        progressBarFill.style.width = `${pct}%`;
+      }
 
       if (taskData.status === "completed") {
         clearInterval(activePollInterval);
         taskBadge.className = "task-pill completed";
         taskBadge.textContent = "COMPLETED";
+        progressBarFill.style.width = "100%";
+        liveProgressPct.textContent = "100%";
         logEvent(`Run ${runId} finished successfully in ${elapsedSec}s!`, "success");
         displayFinalResult(taskData);
       } else if (taskData.status === "failed") {
@@ -264,25 +317,48 @@ function startPolling(runId, pollUrl) {
         taskBadge.textContent = "FAILED";
         logEvent(`Run ${runId} failed: ${taskData.error?.message || "Unknown error"}`, "error");
         answerContent.textContent = `Task Failed: ${taskData.error?.message || JSON.stringify(taskData)}`;
-      } else {
-        logEvent(`Task status: ${taskData.status} (${elapsedSec}s)...`, "info");
       }
     } catch (err) {
       logEvent(`Poll error: ${err.message}`, "warning");
     }
-  }, 3000);
+  }, 2000);
 }
 
 function displayFinalResult(taskData) {
   answerContent.classList.remove("placeholder-state");
   const output = taskData.output || taskData;
-  const answer = output.answer || output.response || JSON.stringify(output, null, 2);
+  const answer = output.answer || output.response || (typeof output === "string" ? output : JSON.stringify(output, null, 2));
 
   let formatted = answer;
   if (output.sourcesCount !== undefined) {
     formatted += `\n\n----------------------------------------\n📊 Sources Checked: ${output.sourcesCount} | Outcome: ${output.status || 'DONE'}`;
   }
   answerContent.textContent = formatted;
+
+  // Extract and render telemetry metrics
+  const telemetry = taskData.telemetry || taskData.output?.metadata?.telemetry || (taskData.output?.metadata ? {
+    model_used: taskData.output.metadata.model,
+    llm_tokens: taskData.output.metadata.llm_tokens,
+    cost_usd: taskData.output.metadata.cost_usd,
+    duration_ms: taskData.duration_ms,
+  } : null);
+
+  if (telemetry) {
+    telemModel.textContent = telemetry.model_used || "gpt-4.1-mini";
+    const prompt = telemetry.llm_tokens?.prompt || 0;
+    const comp = telemetry.llm_tokens?.completion || 0;
+    const total = telemetry.llm_tokens?.total || (prompt + comp);
+
+    telemPromptTokens.textContent = prompt.toLocaleString();
+    telemCompletionTokens.textContent = comp.toLocaleString();
+    telemTotalTokens.textContent = total.toLocaleString();
+    telemCost.textContent = `$${(telemetry.cost_usd || 0).toFixed(4)}`;
+
+    const durMs = taskData.duration_ms || telemetry.duration_ms || (taskData.output?.durationSeconds ? taskData.output.durationSeconds * 1000 : null);
+    telemDuration.textContent = durMs ? `${(durMs / 1000).toFixed(1)}s` : "—";
+
+    telemetryDashboard.style.display = "grid";
+  }
 }
 
 // Automatically fetch schema and health on page load
