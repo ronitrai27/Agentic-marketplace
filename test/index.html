@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Protocol Inspector & Tester</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-badge">MAPS</div>
+        <h1>Agent Protocol Inspector</h1>
+      </div>
+      <p class="tagline">Live health check, JSON schema validator, execution dispatcher, and task poller.</p>
+    </header>
+
+    <main class="grid-container">
+      <!-- Left Column: Controls & Configuration -->
+      <section class="panel config-panel">
+        <div class="panel-header">
+          <h2>1. Connection & Credentials</h2>
+        </div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label for="backend-url">Backend URL</label>
+            <input type="url" id="backend-url" value="https://research-backend-bb7j.onrender.com" placeholder="https://your-service.onrender.com" />
+          </div>
+
+          <div class="form-group">
+            <label for="secret-key">Catelog / Bearer Secret Key</label>
+            <input type="password" id="secret-key" value="cat_sec_live_fe471b4c5047d5b81e369db1f67d78dd8fc6dd1d371634d7a3ad7566041422f0" placeholder="cat_sec_live_..." />
+            <div class="field-actions">
+              <button type="button" id="toggle-key-btn" class="text-btn">Show Key</button>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button id="btn-health" class="btn btn-secondary">
+              <span class="icon">●</span> Check /health
+            </button>
+            <button id="btn-schema" class="btn btn-secondary">
+              <span class="icon">⊞</span> Fetch /schema
+            </button>
+          </div>
+
+          <div class="status-summary" id="connection-status">
+            <span class="indicator neutral"></span>
+            <span class="status-text">Ready to probe backend</span>
+          </div>
+
+          <hr class="divider" />
+
+          <div class="panel-header inner">
+            <h2>2. Execute Query</h2>
+          </div>
+
+          <div class="form-group">
+            <label for="prompt-input">Input Prompt</label>
+            <textarea id="prompt-input" rows="3" placeholder="Enter research query or message...">hello good morning !!</textarea>
+          </div>
+
+          <div class="quick-prompts">
+            <span class="prompt-chip" data-text="hello good morning !!">"hello good morning !!"</span>
+            <span class="prompt-chip" data-text="What are the latest AI agent trends in 2026?">"AI agent trends"</span>
+          </div>
+
+          <button id="btn-execute" class="btn btn-primary">
+            <span class="btn-spinner" id="exec-spinner"></span>
+            <span class="btn-text">Send POST /execute</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Right Column: Live Monitor, Timeline & JSON Viewer -->
+      <section class="panel results-panel">
+        <div class="panel-header tab-header">
+          <div class="tabs">
+            <button class="tab active" data-tab="live-execution">Execution & Poller</button>
+            <button class="tab" data-tab="schema-view">Schema & Health</button>
+            <button class="tab" data-tab="timeline-log">Event Timeline</button>
+          </div>
+          <button id="btn-clear-logs" class="text-btn">Clear</button>
+        </div>
+
+        <div class="panel-body tab-content-wrapper">
+          <!-- Tab 1: Execution & Polling View -->
+          <div id="tab-live-execution" class="tab-pane active">
+            <div class="task-banner" id="task-banner" style="display: none;">
+              <div class="task-info">
+                <span class="task-pill" id="task-badge">IDLE</span>
+                <span class="task-id" id="task-id-display">run-none</span>
+              </div>
+              <div class="polling-status" id="polling-timer">Elapsed: 0s</div>
+            </div>
+
+            <div class="result-box">
+              <label>Synthesized Answer / Result</label>
+              <div id="answer-content" class="answer-card placeholder-state">
+                No execution run yet. Click "Send POST /execute" to test.
+              </div>
+            </div>
+
+            <div class="result-box">
+              <label>Raw Task Response (JSON)</label>
+              <pre id="raw-task-json" class="json-viewer">{}</pre>
+            </div>
+          </div>
+
+          <!-- Tab 2: Schema & Health View -->
+          <div id="tab-schema-view" class="tab-pane">
+            <div class="result-box">
+              <div class="table-header-title">
+                <h3>📥 What It Takes (Input Schema)</h3>
+                <span class="badge-tag">POST /execute -> { "input": { ... } }</span>
+              </div>
+              <div class="table-wrapper">
+                <table class="schema-table" id="input-schema-table">
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Type</th>
+                      <th>Required</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td colspan="4" class="loading-td">Click "Fetch /schema" to render fields...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="result-box">
+              <div class="table-header-title">
+                <h3>📤 What It Returns (Output Schema)</h3>
+                <span class="badge-tag">GET /tasks/:id -> { "output": { ... } }</span>
+              </div>
+              <div class="table-wrapper">
+                <table class="schema-table" id="output-schema-table">
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Type</th>
+                      <th>Required</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td colspan="4" class="loading-td">Click "Fetch /schema" to render fields...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="result-box collapsable-box">
+              <details>
+                <summary>🔍 Raw Schema & Health JSON (Click to inspect)</summary>
+                <div class="raw-grid">
+                  <div>
+                    <label>Health Response</label>
+                    <pre id="health-json" class="json-viewer">// Click "Check /health" to inspect...</pre>
+                  </div>
+                  <div>
+                    <label>Raw Schema</label>
+                    <pre id="schema-json" class="json-viewer">// Click "Fetch /schema" to inspect...</pre>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <!-- Tab 3: Timeline Log -->
+          <div id="tab-timeline-log" class="tab-pane">
+            <ul id="timeline-list" class="timeline">
+              <li class="timeline-item info">
+                <span class="time">--:--:--</span>
+                <span class="msg">Inspector initialized. Enter credentials and click Execute.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
