@@ -3,7 +3,7 @@ import { ENV } from "../../config/env.js";
 import { ResearchState } from "../state.js";
 
 const openai = new OpenAI({
-  apiKey: ENV.OPENAI_API_KEY,
+  apiKey: ENV.OPENAI_API_KEY || "build_dummy_key",
 });
 
 /**

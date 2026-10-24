@@ -5,10 +5,14 @@
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "test:run": "tsx src/test-run.ts",
+    "start": "tsx src/agent-server.ts",
+    "start:agent": "tsx src/agent-server.ts",
+    "start:ui": "tsx src/ui-server.ts",
+    "dev": "tsx src/server.ts",
+    "ui": "tsx src/ui-server.ts",
     "trigger:dev": "npx trigger.dev@latest dev",
-    "ui": "tsx src/server.ts"
+    "trigger:deploy": "npx trigger.dev@latest deploy",
+    "test:run": "tsx src/test-run.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.18",
@@ -16,8 +20,8 @@
     "@langchain/langgraph": "^1.5.1",
     "@langchain/openai": "^1.6.2",
     "@mendable/firecrawl-js": "^4.46.0",
-    "@trigger.dev/sdk": "4.7.4",
-    "catelog": "^1.0.1",
+    "@trigger.dev/sdk": "4.8.1",
+    "catelog": "^1.0.5",
     "dotenv": "^18.0.8",
     "langfuse": "^3.39.2",
     "langfuse-langchain": "^3.39.2",
@@ -26,9 +30,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@trigger.dev/build": "4.7.4",
+    "@trigger.dev/build": "4.8.1",
     "@types/node": "^26.6.5",
-    "trigger.dev": "^4.7.4",
+    "trigger.dev": "4.8.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

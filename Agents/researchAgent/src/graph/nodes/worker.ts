@@ -5,7 +5,7 @@ import { searchWeb } from "../../tools/search.js";
 import { scrapePage } from "../../tools/firecrawl.js";
 
 const openai = new OpenAI({
-  apiKey: ENV.OPENAI_API_KEY,
+  apiKey: ENV.OPENAI_API_KEY || "build_dummy_key",
 });
 
 /**

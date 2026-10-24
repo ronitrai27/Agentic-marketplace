@@ -5,6 +5,8 @@ export interface DeepResearchPayload {
   prompt: string;
   userId?: string;
   sessionId?: string;
+  runId?: string;
+  callbackUrl?: string;
 }
 
 /**
@@ -25,6 +27,7 @@ export const deepResearchTask = task({
     logger.info("Starting background deep research task", {
       prompt: payload.prompt,
       userId: payload.userId,
+      runId: payload.runId,
     });
 
     const result = await runResearchAgent(payload.prompt, {
@@ -40,6 +43,23 @@ export const deepResearchTask = task({
       durationSeconds: result.durationSeconds,
       sourcesCount: result.sourcesCount,
     });
+
+    // Notify the Agent server webhook if callbackUrl is provided
+    if (payload.callbackUrl) {
+      try {
+        logger.info(`Sending callback notification to: ${payload.callbackUrl}`);
+        await fetch(payload.callbackUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            runId: payload.runId,
+            result,
+          }),
+        });
+      } catch (err: any) {
+        logger.error("Failed to notify callback endpoint", { error: err?.message });
+      }
+    }
 
     return result;
   },
