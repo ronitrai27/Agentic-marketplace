@@ -80,3 +80,82 @@ Dual-Mode Security: Bearer key authentication verified and authorized.
 SSE Streaming: Progress and text deltas stream in real-time.
 Task Lifecycle: task.status (working) → task.progress → task.delta → task.completed.
 Full Telemetry: Token count (4454 tokens), cost calculation ($0.02232), duration (3219ms), output byte size, and adapter metadata are all tracked and emitted properly.
+
+
+
+. The Big Picture: Why Developer Keys Even Exist
+Imagine a developer named Alex builds a Research Agent and hosts it on Render: https://alex-agent.onrender.com
+
+The Problem:
+If Alex deploys his agent to the public internet with no security, any random hacker on the internet could send 10,000 requests to https://alex-agent.onrender.com/execute, burn all of Alex's OpenAI credits, and crash his server for free!
+
+Alex needs a bouncer at the door of his server. That is what the Catelog SDK does.
+
+2. What the 2 Keys Are For
+Think of it like Stripe (which has a pk_live_... and a sk_live_...):
+
+A. The Secret Key (cat_sec_live_...) — The Master Key
+Who has it: Only the Developer and the Marketplace Backend.
+Where it lives: Put in the developer's agent server .env file on Render:
+env
+CATELOG_SECRET_KEY=cat_sec_live_fe47...
+What it does: When a buyer clicks "Run" on Catelog, Catelog's server calls Alex's agent on Render and says:
+"Hey Alex, here is your Secret Key. I am Catelog, I already took money from the buyer, please run this research for us."
+Alex's agent checks the key, says "Key matches! This is officially from Catelog", and runs.
+Can a buyer see it? NEVER. It is never sent to the browser.
+B. The Public Key (cat_pub_live_...) — The Safe Badge
+What it does: Safe to expose publicly. It only allows read-only public calls like:
+GET /health (Is the agent alive?)
+GET /schema (What inputs does this agent need?)
+It cannot run the agent or spend any money/compute.
+3. Why You (The Buyer) Don’t Need Any Key
+You are 100% right! A buyer is like an Uber rider or an Amazon shopper:
+
+When you take an Uber, you don’t need an API key. You just log into the Uber app, add money to your wallet, and click "Order Ride".
+When a buyer uses Catelog:
+Buyer logs in with Google/Email.
+Buyer has $10 in their wallet.
+Buyer clicks "Run Research Agent" with prompt: "Summarize AI trends".
+Catelog does all the key work in the background!
+ [Buyer in Browser]
+       │
+       │ 1. Logs in + pays $0.50 from Wallet (NO KEY NEEDED)
+       ▼
+ [Catelog Marketplace]
+       │
+       │ 2. Logs Audit Trail (Buyer email, IP, Region, Query)
+       │ 3. Attaches Developer's Secret Key
+       ▼
+ [Developer's Agent on Render]
+       │
+       │ 4. Verifies Secret Key -> Executes LLM / Code
+       ▼
+ [Catelog Marketplace]
+       │
+       │ 5. Records time taken (e.g. 2.4s) & credits creator revenue
+       ▼
+ [Buyer gets answer!]
+
+
+==================================
+
+Create the Execution & Audit Log table in Convex
+Add a table in Convex (execution_logs) to track every call:
+
+Agent Name (e.g., ResearchAgent, CompetitorAgent)
+Buyer Info (Email / User ID)
+Caller IP & Region (e.g., 198.51.100.42, US-East)
+Input Query (What the user asked)
+Execution Time (e.g., 2.4s)
+Status (Success or Failed)
+Buyer Rating (★ 1 to 5 stars)
+Step 2: Build the Creator Analytics & Audit Dashboard
+Build the page matching your design screenshot:
+
+Top Metric Cards: Total Traffic/Calls, Revenue Earned, Success Rate, Avg Latency.
+Trends Chart: Visual graph showing calls and performance over time.
+Audit Table with Expandable Rows: Click any row to expand and see:
+Full prompt & response preview
+Caller's IP address and country/region
+Token usage and duration
+Buyer rating and feedback

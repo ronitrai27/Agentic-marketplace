@@ -72,7 +72,7 @@ type AgentOutput = {
 
 export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
   name: "Universal Research Agent 2",
-  version: "1.0.0",
+  version: "1.0.0", // tell developer agent version
   description:
     "Dual-mode research agent using OpenAI Responses API + live Web Search (fast & deep reasoning)",
 
@@ -375,11 +375,14 @@ const server = http.createServer(async (req, res) => {
               message: `Temporal Workflow [${workflowId}] actively running on cloud queue...`,
             });
 
-            const handle = await temporalClient.workflow.start(deepResearchWorkflow, {
-              taskQueue: TEMPORAL_CONFIG.taskQueue,
-              workflowId,
-              args: [{ prompt }],
-            });
+            const handle = await temporalClient.workflow.start(
+              deepResearchWorkflow,
+              {
+                taskQueue: TEMPORAL_CONFIG.taskQueue,
+                workflowId,
+                args: [{ prompt }],
+              },
+            );
 
             const workflowResult = await handle.result();
             resultText = workflowResult.answer;
@@ -406,11 +409,15 @@ const server = http.createServer(async (req, res) => {
             res.end();
             return;
           } catch (temporalErr: any) {
-            console.warn("⚠️ Temporal execution fallback:", temporalErr?.message);
+            console.warn(
+              "⚠️ Temporal execution fallback:",
+              temporalErr?.message,
+            );
             sendEvent("status", {
               phase: "dispatching",
               model: "gpt-5.4-mini",
-              message: "Temporal fallback: executing local OpenAI background reasoning...",
+              message:
+                "Temporal fallback: executing local OpenAI background reasoning...",
             });
           }
 
