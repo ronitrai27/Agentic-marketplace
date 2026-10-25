@@ -16,6 +16,7 @@
     "test:catelog": "tsx src/test-catelog.ts",
     "chat": "tsx src/cli.ts",
     "web": "tsx src/server.ts",
+    "serve": "node dist/server.js",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit"
   },

@@ -14,11 +14,13 @@ import * as activities from "./activities/index.js";
 import { seoCatelogAgent } from "./catelog-agent.js";
 import { generateVerifiedExecutiveReport } from "./report.js";
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const app = createSeoAgentGraph();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const htmlFilePath = path.join(__dirname, "public", "index.html");
+const distHtml = path.join(__dirname, "public", "index.html");
+const srcHtml = path.join(__dirname, "../src/public", "index.html");
+const htmlFilePath = fs.existsSync(distHtml) ? distHtml : srcHtml;
 
 // SSE Client connections keyed by threadId
 const sseClients = new Map<string, http.ServerResponse>();

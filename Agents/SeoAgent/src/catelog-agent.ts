@@ -31,7 +31,7 @@ export const SeoAgentOutputSchema = z.object({
   report: z.string().describe("Comprehensive Technical SEO & GEO Audit Report in Markdown"),
   targetUrl: z.string().optional().describe("Audited website URL"),
   metrics: z
-    .record(z.any())
+    .record(z.string(), z.any())
     .optional()
     .describe("Key verified metrics (PageSpeed, SERP rank, citations)"),
 });
