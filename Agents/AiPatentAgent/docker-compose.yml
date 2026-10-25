@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: patent-agent-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: patent_agent
+    ports:
+      - "5437:5432"
+    volumes:
+      - patent_pgdata:/var/lib/postgresql/data
+      - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d patent_agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  patent_pgdata:

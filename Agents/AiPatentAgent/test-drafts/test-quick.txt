@@ -1,0 +1,17 @@
+TITLE: Offline UPI Payment System for Rural India
+
+Claim 1 (Independent):
+A method for processing digital payments without internet connectivity comprising:
+storing encrypted UPI transaction tokens locally on a mobile device SIM card;
+validating a payment request using a locally cached merchant authentication key;
+queuing the transaction in a tamper-proof local ledger; and
+synchronising the queued transactions to the UPI payment network upon restoration of internet connectivity within a maximum period of 24 hours.
+
+Claim 2 (Dependent on Claim 1):
+The method of Claim 1, wherein the tamper-proof local ledger uses a hash-chained data structure to prevent retroactive modification of queued transaction records.
+
+Claim 3 (Dependent on Claim 1):
+The method of Claim 1, wherein the maximum transaction value permitted in offline mode is limited to Rs 500 per transaction and Rs 2,000 per day per device, in compliance with Reserve Bank of India guidelines for offline digital payment systems.
+
+ABSTRACT:
+A system enabling UPI payments in rural India with no internet connectivity by storing encrypted tokens on SIM cards and syncing transactions within 24 hours, with RBI-compliant daily limits.

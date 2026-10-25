@@ -1,0 +1,48 @@
+TITLE: AI-Powered Crop Disease Detection System for Indian Farmers
+
+FIELD: Agricultural technology — mobile AI system for real-time crop disease detection on low-cost Android smartphones for Indian smallholder farmers.
+
+BACKGROUND: Indian farmers lose 15-25% of crop yield to undetected diseases. Existing solutions require lab testing or agronomist visits. No current system works offline, in regional Indian languages, on handsets under Rs 5,000.
+
+SUMMARY:
+The invention is a mobile application combining:
+1. An INT8-quantized MobileNetV3 CNN model (< 8 MB) running entirely on-device with no internet, classifying 38 Indian crop diseases in under 300 milliseconds on entry-level Android phones.
+2. A regional language advisory module generating treatment recommendations offline in Hindi, Marathi, Punjabi, Telugu and Tamil using pre-compiled slot-filling templates — no API call needed.
+3. A geo-tagged SQLite database of 48,000 agrochemical and organic remedy suppliers across India, queried locally to find the nearest treatment source within 20 km.
+4. A USSD/SMS gateway (*321#) for feature-phone farmers who cannot use smartphones — delivers a 160-character disease advisory in under 90 seconds after numeric menu input.
+5. A federated learning module that uploads anonymised, GPS-truncated disease detection events (crop type, disease, severity, taluka-level location) only when internet is available, building a national crop disease heatmap for state agriculture departments.
+
+CLAIMS:
+
+Claim 1 (Independent):
+A method for crop disease detection comprising:
+receiving a digital image of an affected crop plant part from a mobile device camera;
+running inference through an INT8-quantized convolutional neural network executing entirely on the mobile device without network connectivity;
+generating a disease classification comprising a disease identifier and a confidence score;
+retrieving a treatment advisory from a locally stored template database in a user-selected Indian regional language; and
+displaying the advisory on the device screen within five seconds of image capture.
+
+Claim 2 (Dependent on Claim 1):
+The method of Claim 1, wherein the neural network is a MobileNetV3-Small architecture trained on at least 80,000 labelled images of crop diseases prevalent in Indian agriculture including wheat blast, rice sheath blight, and cotton bollworm.
+
+Claim 3 (Dependent on Claim 1):
+The method of Claim 1, further comprising querying a locally stored geo-tagged supplier database to identify treatment sources within a configurable radius of the device GPS coordinates.
+
+Claim 4 (Independent):
+A system for delivering crop disease advisory to farmers without smartphones comprising:
+a USSD gateway receiving symptom inputs via numeric menu after a farmer dials a short code;
+a pre-computed disease-symptom lookup table;
+an SMS generation module producing a treatment advisory of at most 160 characters in a regional Indian language; and
+a telecommunications interface delivering said advisory within 90 seconds, compliant with TRAI regulations.
+
+Claim 5 (Independent):
+A federated data aggregation method comprising:
+collecting anonymised crop disease detection events with user consent, each event comprising crop type, disease identifier, severity, and GPS coordinates truncated to taluka level;
+transmitting events to a central server only when connectivity is available;
+aggregating events into a tile-based geographic heatmap; and
+publishing the heatmap via an open API to state agriculture department systems.
+
+ABSTRACT:
+A mobile crop disease detection system for Indian smallholder farmers. An offline INT8-quantized MobileNetV3 CNN classifies 38 Indian crop diseases from a photo in under 300 ms on Rs 4,999 handsets. Advisory text is generated offline in 6 regional Indian languages. Local supplier database finds nearest treatment within 20 km. Feature-phone farmers served via USSD *321# in under 90 seconds. Anonymised detections federated to national disease heatmap. Designed for India's Digital Agriculture Mission.
+
+PRIOR ART KNOWN: PlantVillage dataset (Hughes & Salathé, arXiv:1511.08060), Plantix app, AgroStar app. No prior art known combining offline inference + USSD + federated heatmap for Indian agricultural conditions.
