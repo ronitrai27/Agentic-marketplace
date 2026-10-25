@@ -1,7 +1,7 @@
 # ==============================================================================
 # Multi-Stage Dockerfile for SeoAgent (Optimized for Northflank & Cloud Deployments)
 # Stage 1: Build & Compile TypeScript
-# Stage 2: Minimal Production Runtime (<180MB)
+# Stage 2: Minimal Production Runtime
 # ==============================================================================
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -11,7 +11,7 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Install pnpm directly via npm (reliable across all cloud runners)
+# Install pnpm directly via npm
 RUN npm install -g pnpm@10
 
 # Copy package manifests first for optimal Docker layer caching
@@ -27,8 +27,8 @@ COPY src/ ./src/
 # Compile TypeScript to dist/
 RUN pnpm build
 
-# Copy static assets (HTML/CSS) to dist/public for the web UI
-RUN cp -r src/public ./dist/public
+# Copy static assets (HTML/CSS) to dist/public using Docker native COPY
+COPY src/public ./dist/public
 
 # ──────────────────────────────────────────────────────────────────────────────
 # STAGE 2: Production Runner
@@ -45,18 +45,12 @@ ENV PORT=3000
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pnpm for production dependencies
-RUN npm install -g pnpm@10
+# Copy pre-installed node_modules from builder (no network install needed, 100% reliable)
+COPY --from=builder /app/node_modules ./node_modules
 
-# Run as non-root user for security compliance
-USER node
-
-# Copy package manifests & install only production dependencies
-COPY --chown=node:node package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
-
-# Copy compiled JavaScript dist/ from builder stage
-COPY --chown=node:node --from=builder /app/dist ./dist
+# Copy compiled JavaScript dist/ and package.json from builder stage
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./package.json
 
 # Expose port (Northflank maps this or passes dynamic $PORT)
 EXPOSE 3000
