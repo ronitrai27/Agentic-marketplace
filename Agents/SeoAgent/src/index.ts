@@ -10,6 +10,8 @@ export * from "./temporal/connection.js";
 export * from "./temporal/workflows/index.js";
 export * from "./guardrails/index.js";
 export * from "./jev/escalation-gate.js";
+export * from "./catelog-agent.js";
+export * from "./report.js";
 
 console.log("🚀 SeoAgent Core Initialized");
 console.log(

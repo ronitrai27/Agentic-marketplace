@@ -15,7 +15,7 @@
     "@temporalio/client": "^1.24.0",
     "@temporalio/worker": "^1.24.0",
     "@temporalio/workflow": "^1.24.0",
-    "catelog": "^1.0.5",
+    "catelog": "^1.0.6",
     "dotenv": "^18.0.8",
     "openai": "^7.39.0",
     "zod": "^4.6.7"

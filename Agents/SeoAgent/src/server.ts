@@ -11,6 +11,8 @@ import { resolveAuditTarget } from "./core/target-resolver.js";
 import { getChatModel } from "./graph/model.js";
 import { env } from "./config/env.js";
 import * as activities from "./activities/index.js";
+import { seoCatelogAgent } from "./catelog-agent.js";
+import { generateVerifiedExecutiveReport } from "./report.js";
 
 const PORT = 3000;
 const app = createSeoAgentGraph();
@@ -97,81 +99,28 @@ async function getTemporalStatus() {
 }
 
 // ----------------------------------------------------
-// Synthesize Executive Report from Verified Audit Data
 // ----------------------------------------------------
-async function generateVerifiedExecutiveReport(data: FullAuditWorkflowResult): Promise<string> {
-  const model = getChatModel();
-
-  const prompt = `You are an Autonomous Technical SEO & GEO Senior Director.
-Synthesize the verified audit findings for: ${data.url}.
-
-VERIFIED AUDIT EVIDENCE (From Temporal Cloud execution):
-1. Static Ingestion:
-   - Status: ${data.staticResult.statusCode}
-   - Title: "${data.staticResult.metadata.title || "None"}"
-   - Description: "${data.staticResult.metadata.metaDescription || "None"}"
-   - Canonical: "${data.staticResult.metadata.declaredCanonical || "None"}"
-   - Fetch Latency: ${data.staticResult.timing.totalDurationMs}ms
-
-2. Firecrawl Verified Deep Markdown Content:
-   - Scrape Success: ${data.firecrawlResult.success}
-   - Scraped Title: "${data.firecrawlResult.title || "None"}"
-   - Scraped Description: "${data.firecrawlResult.description || "None"}"
-   - Page Content Markdown:
-${data.firecrawlResult.markdown ? data.firecrawlResult.markdown.slice(0, 3000) : "No markdown returned"}
-
-3. JEV Escalation & Browser Proof (Browserbase / Playwright):
-   - Browser Escalation Required: ${data.escalationDecision.requiresBrowser}
-   - JEV Reasons: [${data.escalationDecision.reasons.join("; ")}]
-   - DOM Diff Discrepancies Count: ${data.browserEvidence?.domDiff.discrepancies.length ?? 0}
-   - Diff Details: ${JSON.stringify(data.browserEvidence?.domDiff.discrepancies ?? [])}
-
-4. Google Ground Truth & Core Web Vitals:
-   - Performance Score: ${data.groundTruth.pageSpeed?.performanceScore ?? "N/A"}/100
-   - LCP: ${data.groundTruth.pageSpeed?.coreWebVitals?.lcpMs ?? "N/A"}ms
-   - CLS: ${data.groundTruth.pageSpeed?.coreWebVitals?.cls ?? "N/A"}
-   - SerpApi Organic Position: #${data.groundTruth.serp?.position ?? "Unranked"}
-   - Top Competitors: ${data.groundTruth.serp?.topCompetitors.join(", ") || "None"}
-
-5. GEO Engine Visibility & Internal Link Graph:
-   - Domain Cited in AI Engines: ${data.geoSemantic.geoCitation?.isDomainCited ?? false}
-   - Engine: ${data.geoSemantic.geoCitation?.aiEngine ?? "None"}
-   - Keyword Cannibalization Alerts: ${data.geoSemantic.cannibalizationIssues.length}
-   - Orphan Pages: ${data.linkGraph.orphanPages.length}
-   - Deep Pages (>3 Clicks): ${data.linkGraph.deepPages.length}
-
-INSTRUCTIONS:
-- First, clearly state what the website and company ACTUALLY do based STRICTLY on the Firecrawl Verified Scraped Content above. DO NOT guess or invent fake service categories.
-- Provide a crisp, structured report with:
-  - 🟢 Highlights (what's great)
-  - ⚠️ Critical Technical Risks
-  - 🎯 Actionable Fixes (Code & Strategy)
-- Reference the exact metrics above. DO NOT invent fake numbers.`;
-
-  try {
-    const res = await model.invoke([new SystemMessage(prompt)]);
-    return typeof res.content === "string" ? res.content : JSON.stringify(res.content);
-  } catch {
-    const fallback = getChatModel("gpt-4o-mini");
-    const res = await fallback.invoke([new SystemMessage(prompt)]);
-    return typeof res.content === "string" ? res.content : JSON.stringify(res.content);
-  }
-}
-
-// ----------------------------------------------------
-// HTTP Server
+// HTTP Server: Catelog MAPS Protocol + Web Chat UI
 // ----------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url || "/", `http://${req.headers.host}`);
 
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Marketplace-Protocol, X-Marketplace-Timestamp, X-Marketplace-Nonce, X-Marketplace-Run-Id, X-Marketplace-Signature");
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
     return;
+  }
+
+  // 0. Catelog MAPS Protocol Endpoints (/health, /schema, /execute, /tasks/:id)
+  if (
+    ["/health", "/schema", "/execute"].includes(parsedUrl.pathname) ||
+    parsedUrl.pathname.startsWith("/tasks/")
+  ) {
+    return seoCatelogAgent.handleRequest(req, res);
   }
 
   // 1. Status API: Real background Temporal execution status
@@ -271,6 +220,38 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
             status: "RUNNING",
           });
 
+          // Notify SSE clients of workflow dispatch (Catelog SSE Protocol)
+          const sseInit = sseClients.get(threadId);
+          if (sseInit) {
+            sseInit.write(
+              `event: task.status\ndata: ${JSON.stringify({
+                event: "task.status",
+                run_id: workflowId,
+                status: "working",
+                timestamp: Date.now(),
+              })}\n\n`
+            );
+            sseInit.write(
+              `event: task.progress\ndata: ${JSON.stringify({
+                event: "task.progress",
+                run_id: workflowId,
+                percent: 25,
+                message: `Durable audit active on Temporal Cloud queue "${env.TEMPORAL_TASK_QUEUE}"`,
+                step: 1,
+                timestamp: Date.now(),
+              })}\n\n`
+            );
+            sseInit.write(
+              `event: task.activity\ndata: ${JSON.stringify({
+                event: "task.activity",
+                run_id: workflowId,
+                activity_type: "temporal_workflow_dispatched",
+                data: { workflowId, targetUrl, taskQueue: env.TEMPORAL_TASK_QUEUE },
+                timestamp: Date.now(),
+              })}\n\n`
+            );
+          }
+
           // Asynchronously listen for workflow completion -> Push verified report via SSE
           handle
             .result()
@@ -285,6 +266,31 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
 
               const sse = sseClients.get(threadId);
               if (sse) {
+                // 1. Emit Catelog Canonical SSE Events
+                sse.write(
+                  `event: task.progress\ndata: ${JSON.stringify({
+                    event: "task.progress",
+                    run_id: workflowId,
+                    percent: 100,
+                    message: "Executive SEO & GEO report synthesized",
+                    step: 2,
+                    timestamp: Date.now(),
+                  })}\n\n`
+                );
+                sse.write(
+                  `event: task.completed\ndata: ${JSON.stringify({
+                    event: "task.completed",
+                    run_id: workflowId,
+                    duration_ms: Date.now() - (item?.startTime || Date.now()),
+                    output: {
+                      targetUrl,
+                      status: "COMPLETED",
+                      workflowId,
+                      executiveReport: report,
+                    },
+                  })}\n\n`
+                );
+                // 2. Emit UI compatibility event
                 sse.write(
                   `event: audit_complete\ndata: ${JSON.stringify({
                     report,
@@ -301,6 +307,18 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
 
               const sse = sseClients.get(threadId);
               if (sse) {
+                sse.write(
+                  `event: task.failed\ndata: ${JSON.stringify({
+                    event: "task.failed",
+                    run_id: workflowId,
+                    duration_ms: Date.now() - (item?.startTime || Date.now()),
+                    error: {
+                      code: "TOOL_FAILURE",
+                      message: err.message || String(err),
+                      retryable: false,
+                    },
+                  })}\n\n`
+                );
                 sse.write(
                   `event: audit_error\ndata: ${JSON.stringify({
                     error: err.message || String(err),
@@ -364,8 +382,12 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
 });
 
 server.listen(PORT, () => {
+  const hasKey = !!env.CATELOG_SECRET_KEY;
   console.log("================================================================================");
   console.log(`🌐 Enterprise SEO Platform Web Chat running live at: http://localhost:${PORT}`);
+  console.log(`🤖 Catelog Marketplace Protocol (v1.0.6) Active (Mode: async)`);
+  console.log(`🔑 Catelog Secret Key: ${hasKey ? "Configured [LIVE]" : "Not configured (Dev Mode)"}`);
+  console.log(`📡 MAPS Endpoints: /health  |  /schema  |  /execute  |  /tasks/:id`);
   console.log(`⚡ Connected to Temporal Cloud Namespace: ${env.TEMPORAL_NAMESPACE}`);
   console.log("================================================================================");
 });

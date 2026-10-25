@@ -18,12 +18,16 @@ const envSchema = z.object({
   SERPAPI_KEY: z.string().optional(),
   GOOGLE_PAGESPEED_KEY: z.string().optional(),
   FIRECRAWL_API_KEY: z.string().optional(),
+  CATELOG_SECRET_KEY: z.string().optional(),
+  CATELOG_PUBLIC_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
 const rawEnv = {
   ...process.env,
+  CATELOG_SECRET_KEY: process.env.CATELOG_SECRET_KEY,
+  CATELOG_PUBLIC_KEY: process.env.CATELOG_PUBLIC_KEY,
   TEMPORAL_API_KEY: process.env.TEMPORAL_API_KEY || process.env.TEMPORAL_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || process.env.OPENAPI_KEY,
   OPENROUTER_JEV: process.env.OPENROUTER_JEV || process.env.OPENROUTER_API_KEY,
