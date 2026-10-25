@@ -11,14 +11,14 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Enable pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm directly via npm (reliable across all cloud runners)
+RUN npm install -g pnpm@10
 
 # Copy package manifests first for optimal Docker layer caching
 COPY package.json pnpm-lock.yaml ./
 
-# Install all dependencies (including devDependencies needed for tsc build)
-RUN pnpm install --frozen-lockfile
+# Install dependencies (use --no-frozen-lockfile to prevent lockfile mismatch errors)
+RUN pnpm install --no-frozen-lockfile
 
 # Copy source code and configuration
 COPY tsconfig.json ./
@@ -29,9 +29,6 @@ RUN pnpm build
 
 # Copy static assets (HTML/CSS) to dist/public for the web UI
 RUN cp -r src/public ./dist/public
-
-# Prune devDependencies to keep only production packages for runtime
-RUN pnpm prune --prod
 
 # ──────────────────────────────────────────────────────────────────────────────
 # STAGE 2: Production Runner
@@ -48,17 +45,20 @@ ENV PORT=3000
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install pnpm for production dependencies
+RUN npm install -g pnpm@10
+
 # Run as non-root user for security compliance
 USER node
 
-# Copy production node_modules from builder stage
-COPY --chown=node:node --from=builder /app/node_modules ./node_modules
+# Copy package manifests & install only production dependencies
+COPY --chown=node:node package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
 
-# Copy compiled JavaScript dist/ and package.json
+# Copy compiled JavaScript dist/ from builder stage
 COPY --chown=node:node --from=builder /app/dist ./dist
-COPY --chown=node:node --from=builder /app/package.json ./package.json
 
-# Expose port (Northflank will map this or pass dynamic $PORT)
+# Expose port (Northflank maps this or passes dynamic $PORT)
 EXPOSE 3000
 
 # Northflank & Docker Healthcheck probe using Catelog /health endpoint
