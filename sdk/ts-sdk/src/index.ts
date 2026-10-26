@@ -24,6 +24,14 @@ export {
   type AuthMode,
 } from "./security.js";
 
+// Job stores (async mode persistence)
+export { MemoryJobStore, type JobStore, type StoredJob } from "./jobstore.js";
+export { RedisJobStore, type RedisLike, type RedisJobStoreOptions } from "./jobstores/redis.js";
+export { SqliteJobStore, type SqliteJobStoreOptions } from "./jobstores/sqlite.js";
+
+// Optional limits (rate limit, concurrency, body size)
+export { type LimitsConfig } from "./limits.js";
+
 // SSE streaming
 export { SSEWriter, NoopStream, BufferedStream, type SSEWriterOptions } from "./sse.js";
 

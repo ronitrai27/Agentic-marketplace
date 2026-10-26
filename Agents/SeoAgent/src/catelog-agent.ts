@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { createAgent, type AgentExecutionContext } from "catelog";
+import type { Client } from "@temporalio/client";
 import { createTemporalClient } from "./temporal/connection.js";
+import { awaitWorkflow, rootCauseMessage, WorkflowRunError, type WorkflowSnapshot } from "./temporal/await-workflow.js";
 import { fullAuditWorkflow, type FullAuditWorkflowResult } from "./temporal/workflows/full-audit.workflow.js";
 import { resolveAuditTarget } from "./core/target-resolver.js";
 import { generateVerifiedExecutiveReport } from "./report.js";
@@ -40,6 +42,42 @@ export type SeoAgentInput = z.infer<typeof SeoAgentInputSchema>;
 export type SeoAgentOutput = z.infer<typeof SeoAgentOutputSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Whole-audit ceiling enforced by Temporal itself (shows up as TIMED_OUT, never a silent hang). */
+const WORKFLOW_EXECUTION_TIMEOUT = "10 minutes";
+/** A cold worker (big bundle, small CPU) can need more than Temporal's 10s default for a workflow task. */
+const WORKFLOW_TASK_TIMEOUT = "30 seconds";
+
+/** Coded error: the Catelog SDK forwards `code` / `retryable` to the buyer as-is. */
+function agentError(code: string, message: string, retryable = false): Error {
+  return Object.assign(new Error(message), { code, retryable });
+}
+
+let temporalClient: Promise<Client> | undefined;
+
+/** One shared connection instead of a new gRPC channel per run. Reconnects after a failure. */
+function getTemporalClient(): Promise<Client> {
+  temporalClient ??= createTemporalClient().catch((err) => {
+    temporalClient = undefined;
+    throw err;
+  });
+  return temporalClient;
+}
+
+/** Which audit phase a running activity belongs to (drives an honest progress bar). */
+const ACTIVITY_PHASES: Record<string, { pct: number; label: string }> = {
+  staticCrawlActivity: { pct: 30, label: "Crawling page (static ingestion)..." },
+  firecrawlScrapeActivity: { pct: 35, label: "Deep-scraping page with Firecrawl..." },
+  escalationGateActivity: { pct: 45, label: "Running JEV hydration gate..." },
+  collectBrowserEvidenceActivity: { pct: 55, label: "Collecting cloud-browser evidence..." },
+  groundTruthActivity: { pct: 65, label: "Fetching PageSpeed CWV & SERP rank..." },
+  geoSemanticActivity: { pct: 68, label: "Checking AI-engine citations..." },
+  linkGraphActivity: { pct: 70, label: "Analysing internal link graph..." },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2. Catelog Agent Definition (Async Mode + Full SSE Event Streams)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -58,8 +96,8 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
   capabilities: {
     streaming: true,
     delta_stream: true,
-    max_timeout_seconds: 300,
-    execution_modes: ["async", "sync"],
+    max_timeout_seconds: 600,
+    execution_modes: ["async"],
   },
 
   inputSchema: SeoAgentInputSchema as any,
@@ -75,11 +113,21 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
 
     const rawQuery = input.url || input.prompt || "";
     if (!rawQuery.trim()) {
-      throw new Error("INVALID_INPUT: Either 'url' or 'prompt' must be provided.");
+      throw agentError("INVALID_INPUT", "Either 'url' or 'prompt' must be provided.");
     }
 
-    const resolved = await resolveAuditTarget(rawQuery);
+    let resolved: Awaited<ReturnType<typeof resolveAuditTarget>>;
+    try {
+      resolved = await resolveAuditTarget(rawQuery);
+    } catch (err) {
+      throw agentError("INVALID_INPUT", `Could not work out which site to audit: ${rootCauseMessage(err)}`);
+    }
     const targetUrl = resolved.targetUrl || (rawQuery.startsWith("http") ? rawQuery : `https://${rawQuery}`);
+    try {
+      new URL(targetUrl);
+    } catch {
+      throw agentError("INVALID_INPUT", `"${rawQuery}" is not a valid website URL.`);
+    }
     const companyName = resolved.companyName;
 
     stream.activity("target_resolved", {
@@ -90,14 +138,20 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     metric.count("audit_targets_resolved", 1);
 
     if (signal.aborted) {
-      throw new Error("EXECUTION_TIMEOUT");
+      throw agentError("TASK_CANCELED", "The audit was cancelled before it started.");
     }
 
     // Step 2: Dispatch Temporal Cloud Workflow
     stream.step(`Dispatching durable full-audit workflow to Temporal Cloud queue: ${env.TEMPORAL_TASK_QUEUE}...`);
     stream.progress(25, "Dispatching to Temporal Cloud...");
 
-    const client = await createTemporalClient();
+    let client: Client;
+    try {
+      client = await getTemporalClient();
+    } catch (err) {
+      throw agentError("TEMPORAL_UNAVAILABLE", `Cannot reach Temporal: ${rootCauseMessage(err)}`, true);
+    }
+
     const safeHost = new URL(targetUrl).hostname.replace(/[^a-zA-Z0-9]/g, "-");
     const workflowId = `maps-audit-${safeHost}-${Date.now()}`;
 
@@ -108,35 +162,74 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
       forceBrowser: input.forceBrowser ?? false,
     });
 
-    const handle = await client.workflow.start(fullAuditWorkflow, {
-      args: [{ url: targetUrl, companyName, forceBrowser: input.forceBrowser }],
-      taskQueue: env.TEMPORAL_TASK_QUEUE,
-      workflowId,
-    });
+    let handle;
+    try {
+      handle = await client.workflow.start(fullAuditWorkflow, {
+        args: [{ url: targetUrl, companyName, forceBrowser: input.forceBrowser }],
+        taskQueue: env.TEMPORAL_TASK_QUEUE,
+        workflowId,
+        workflowExecutionTimeout: WORKFLOW_EXECUTION_TIMEOUT,
+        workflowTaskTimeout: WORKFLOW_TASK_TIMEOUT,
+      });
+    } catch (err) {
+      throw agentError("TEMPORAL_UNAVAILABLE", `Could not start the audit workflow: ${rootCauseMessage(err)}`, true);
+    }
 
     log.info("Temporal Cloud workflow active", { workflowId, targetUrl });
 
-    // Step 3: Stream progress while waiting for Temporal durable activities
+    // Step 3: Watch the workflow for real. Every few seconds we ask Temporal what it is doing,
+    // stream that to the buyer, and fail immediately if it is terminated / cancelled / timed out / stuck.
     stream.step("Executing parallel activities: Static Ingestion, Firecrawl Deep Scrape & JEV Hydration Gate...");
-    stream.progress(45, "Crawling page & evaluating DOM discrepancies...");
+    stream.progress(30, "Audit workflow running on Temporal...");
 
-    // Periodically update progress until completion
-    const progressInterval = setInterval(() => {
-      if (!stream.isClosed()) {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        stream.activity("workflow_heartbeat", {
-          workflowId,
-          elapsedSeconds: elapsed,
-          status: "RUNNING",
-        });
+    let highestPct = 30;
+    let lastLabel = "";
+    const retryAlerted = new Set<string>();
+    let workerSlowAlerted = false;
+
+    const onSnapshot = (snap: WorkflowSnapshot) => {
+      stream.activity("workflow_heartbeat", {
+        workflowId,
+        status: snap.status,
+        elapsedSeconds: snap.elapsedSeconds,
+        historyLength: snap.historyLength,
+        running: snap.pendingActivities.map((a) => a.name),
+      });
+
+      for (const act of snap.pendingActivities) {
+        const phase = ACTIVITY_PHASES[act.name];
+        if (phase && phase.pct >= highestPct && phase.label !== lastLabel) {
+          highestPct = phase.pct;
+          lastLabel = phase.label;
+          stream.progress(phase.pct, phase.label);
+        }
+
+        // Surface activity retries together with their error so failures are never invisible
+        const retryKey = `${act.name}#${act.attempt}`;
+        if (act.attempt > 1 && act.lastError && !retryAlerted.has(retryKey)) {
+          retryAlerted.add(retryKey);
+          log.warn("Temporal activity retrying", { activity: act.name, attempt: act.attempt, error: act.lastError });
+          stream.activity("activity_retrying", { activity: act.name, attempt: act.attempt, error: act.lastError });
+        }
       }
-    }, 5000);
+
+      if (snap.workflowTaskAttempt > 1 && !workerSlowAlerted) {
+        workerSlowAlerted = true;
+        log.warn("Temporal worker is slow to answer", { workflowId, attempt: snap.workflowTaskAttempt });
+        stream.activity("worker_not_responding", { workflowId, attempt: snap.workflowTaskAttempt });
+      }
+    };
 
     let verifiedResult: FullAuditWorkflowResult;
     try {
-      verifiedResult = await handle.result();
-    } finally {
-      clearInterval(progressInterval);
+      verifiedResult = await awaitWorkflow<FullAuditWorkflowResult>(handle, { signal, onSnapshot });
+    } catch (err) {
+      const code = err instanceof WorkflowRunError ? err.code : "TOOL_FAILURE";
+      log.error("Audit workflow did not complete", { workflowId, code, error: rootCauseMessage(err) });
+      metric.count("audit_workflow_failures", 1);
+      stream.activity("workflow_failed", { workflowId, code, message: rootCauseMessage(err) });
+      if (err instanceof WorkflowRunError) throw err;
+      throw agentError("TOOL_FAILURE", `Audit workflow failed: ${rootCauseMessage(err)}`);
     }
 
     stream.step("Evaluating Google PageSpeed CWV, SerpApi rank & GEO AI citations...");
@@ -156,7 +249,16 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     stream.step("Synthesizing Executive Technical SEO & GEO Report...");
     stream.progress(90, "Synthesizing executive markdown report...");
 
-    const report = await generateVerifiedExecutiveReport(verifiedResult);
+    let report: string;
+    try {
+      report = await generateVerifiedExecutiveReport(verifiedResult);
+    } catch (err) {
+      throw agentError(
+        "REPORT_FAILED",
+        `Audit data was collected but the report could not be written: ${rootCauseMessage(err)}`,
+        true,
+      );
+    }
 
     // Stream the final report in chunks via SSE deltas
     const CHUNK_SIZE = 500;
@@ -165,7 +267,6 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     }
     stream.progress(100, "SEO & GEO Audit completed successfully");
 
-    const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
     metric.timing("audit_total_duration_ms", Date.now() - startTime);
 
     const output: SeoAgentOutput = {

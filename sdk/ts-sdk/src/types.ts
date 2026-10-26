@@ -17,6 +17,11 @@ export type ErrorCode =
   | "INTERNAL_CRASH"
   | "TOOL_FAILURE"
   | "TASK_CANCELED"
+  | "TASK_INTERRUPTED"
+  | "RATE_LIMITED"
+  | "SERVER_BUSY"
+  | "SHUTTING_DOWN"
+  | "PAYLOAD_TOO_LARGE"
   | "NOT_FOUND";
 
 export interface StructuredError {

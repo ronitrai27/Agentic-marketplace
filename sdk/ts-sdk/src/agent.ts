@@ -4,6 +4,8 @@ import { SSEWriter, NoopStream, BufferedStream } from "./sse.js";
 import { toJsonSchema, validateSchemaData, type SchemaLike } from "./schema.js";
 import { buildExecutionContext } from "./context.js";
 import { TelemetryReporter } from "./telemetry.js";
+import { MemoryJobStore, type JobStore, type StoredJob } from "./jobstore.js";
+import { BodyTooLargeError, LimitGuard, type LimitsConfig } from "./limits.js";
 import {
   pipeAiSdkStream,
   pipeOpenAiStream,
@@ -83,10 +85,17 @@ export interface CatelogAgentConfig<TInput = any, TOutput = any> {
     endpoint?: string;
     disabled?: boolean;
   };
+  /**
+   * Where async jobs are stored (`mode: "async"`). Default: in-memory.
+   * Use `RedisJobStore` / `SqliteJobStore` (or your own) so finished results survive restarts.
+   */
+  jobStore?: JobStore;
+  /** Optional protection limits (all off by default). */
+  limits?: LimitsConfig;
 }
 
 // ─────────────────────────────────────────────────
-//  Async Job Store (for mode: "async")
+//  Async Jobs (mode: "async") — live view in this process, persisted via JobStore
 // ─────────────────────────────────────────────────
 
 interface AsyncJob<TOutput = any> {
@@ -98,18 +107,13 @@ interface AsyncJob<TOutput = any> {
   durationMs?: number;
   createdAt: number;
   /** Records live stream.step/progress/activity events for the poll endpoint */
-  stream?: BufferedStream;
+  stream: BufferedStream;
+  heartbeat?: NodeJS.Timeout;
 }
 
-const asyncJobs = new Map<string, AsyncJob>();
-
-// Clean up old jobs periodically (keep for 1 hour)
-setInterval(() => {
-  const cutoff = Date.now() - 3_600_000;
-  for (const [id, job] of asyncJobs) {
-    if (job.createdAt < cutoff) asyncJobs.delete(id);
-  }
-}, 300_000).unref();
+/** A "working" job that no live process has touched for STALE_JOB_MS belongs to a dead process. */
+const HEARTBEAT_MS = 5_000;
+const STALE_JOB_MS = 20_000;
 
 // ─────────────────────────────────────────────────
 //  CatelogAgent Class
@@ -126,6 +130,14 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   private readonly config: CatelogAgentConfig<TInput, TOutput>;
   private readonly startTime: number;
   private readonly telemetryReporter: TelemetryReporter;
+  private readonly jobStore: JobStore;
+  private readonly limits: LimitGuard;
+  /** Async jobs running in THIS process. */
+  private readonly liveJobs = new Map<string, AsyncJob>();
+  /** Abort handles for every in-flight run (sync + async), used when draining. */
+  private readonly activeRuns = new Map<string, AbortController>();
+  private draining = false;
+  private idleWaiters: Array<() => void> = [];
 
   constructor(config: CatelogAgentConfig<TInput, TOutput>) {
     this.config = config;
@@ -147,6 +159,8 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     });
     this.startTime = Date.now();
     this.telemetryReporter = new TelemetryReporter(config.telemetry);
+    this.jobStore = config.jobStore ?? new MemoryJobStore();
+    this.limits = new LimitGuard(config.limits);
   }
 
   // ─────────────────────────────────────────────
@@ -290,7 +304,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       // Async job polling: GET /tasks/:id
       if (pathname.startsWith("/tasks/") && method === "GET") {
         const jobId = pathname.slice(7); // Remove "/tasks/"
-        this.handleTaskPoll(res, jobId, url.searchParams.get("since"));
+        await this.handleTaskPoll(res, jobId, url.searchParams.get("since"));
         return;
       }
 
@@ -308,7 +322,45 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   // ─────────────────────────────────────────────
 
   private async handleExecute(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const rawBody = await readBody(req);
+    if (this.draining) {
+      res.setHeader("Retry-After", "5");
+      this.writeJson(res, 503, {
+        error: { code: "SHUTTING_DOWN", message: "Agent is shutting down", retryable: true },
+      });
+      return;
+    }
+
+    const rejection = this.limits.admit(req);
+    if (rejection) {
+      if (rejection.retryAfterSec) res.setHeader("Retry-After", String(rejection.retryAfterSec));
+      this.writeJson(res, rejection.status, {
+        error: { code: rejection.code, message: rejection.message, retryable: true },
+      });
+      return;
+    }
+
+    try {
+      await this.runExecute(req, res);
+    } finally {
+      this.limits.release();
+      this.notifyIfIdle();
+    }
+  }
+
+  private async runExecute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let rawBody: Buffer;
+    try {
+      rawBody = await readBody(req, this.limits.maxBodyBytes);
+    } catch (err) {
+      if (err instanceof BodyTooLargeError) {
+        res.setHeader("Connection", "close");
+        this.writeJson(res, 413, {
+          error: { code: "PAYLOAD_TOO_LARGE", message: err.message, retryable: false },
+        });
+        return;
+      }
+      throw err;
+    }
     const headers = req.headers as Record<string, string | string[] | undefined>;
     const path = req.url || "/execute";
     const method = req.method || "POST";
@@ -385,12 +437,22 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     inputBytes: number,
     res: ServerResponse,
   ): Promise<void> {
+    // Records stream.step()/progress()/activity() so GET /tasks/:id can return live events
+    const bufferedStream = new BufferedStream();
     const job: AsyncJob = {
       runId,
       status: "working",
       createdAt: Date.now(),
+      stream: bufferedStream,
     };
-    asyncJobs.set(runId, job);
+    this.liveJobs.set(runId, job);
+    const abortController = new AbortController();
+    this.activeRuns.set(runId, abortController);
+
+    // Persist before acknowledging, so a 202 always has a pollable record
+    await this.persistJob(job);
+    job.heartbeat = setInterval(() => void this.persistJob(job), HEARTBEAT_MS);
+    job.heartbeat.unref();
 
     // Respond immediately with 202
     this.writeJson(res, 202, {
@@ -401,10 +463,6 @@ export class CatelogAgent<TInput = any, TOutput = any> {
 
     // Execute in background (fire-and-forget from HTTP perspective)
     const startTs = Date.now();
-    // Records stream.step()/progress()/activity() so GET /tasks/:id can return live events
-    const bufferedStream = new BufferedStream();
-    job.stream = bufferedStream;
-    const abortController = new AbortController();
 
     try {
       const { ctx, telemetryCollector } = buildExecutionContext({
@@ -422,22 +480,57 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       const durationMs = Date.now() - startTs;
       const result = this.normalizeExecuteResult<TOutput>(rawResult);
 
-      job.status = "completed";
-      job.output = result.output;
-      job.durationMs = durationMs;
-      const outputBytes = JSON.stringify(result.output ?? {}).length;
-      job.telemetry = telemetryCollector.finalize({
-        ...result.telemetry,
-        duration_ms: durationMs,
-        output_bytes: outputBytes,
-        chunks_streamed: bufferedStream.chunksStreamed,
-      });
+      if (job.status === "working") {
+        job.status = "completed";
+        job.output = result.output;
+        job.durationMs = durationMs;
+        const outputBytes = JSON.stringify(result.output ?? {}).length;
+        job.telemetry = telemetryCollector.finalize({
+          ...result.telemetry,
+          duration_ms: durationMs,
+          output_bytes: outputBytes,
+          chunks_streamed: bufferedStream.chunksStreamed,
+        });
+      }
     } catch (err) {
-      job.status = "failed";
-      job.error = normalizeError(err);
-      job.durationMs = Date.now() - startTs;
+      if (job.status === "working") {
+        job.status = "failed";
+        job.error = normalizeError(err);
+        job.durationMs = Date.now() - startTs;
+      }
     } finally {
+      if (job.heartbeat) clearInterval(job.heartbeat);
       this.security.markRunCompleted(runId);
+      this.activeRuns.delete(runId);
+      await this.persistJob(job);
+      this.liveJobs.delete(runId);
+    }
+  }
+
+  /** Snapshot a live job into its serializable form (also used for polling in-process jobs). */
+  private toStoredJob(job: AsyncJob): StoredJob {
+    return {
+      runId: job.runId,
+      status: job.status,
+      output: job.output,
+      error: job.error,
+      telemetry: job.telemetry,
+      durationMs: job.durationMs,
+      createdAt: job.createdAt,
+      updatedAt: Date.now(),
+      events: job.stream.getEventsSince(0),
+      currentStep: job.stream.currentStep,
+      progressPct: job.stream.progressPct,
+      lastSeq: job.stream.lastSeq,
+    };
+  }
+
+  /** Best-effort write: a store outage must never crash or fail a running agent. */
+  private async persistJob(job: AsyncJob): Promise<void> {
+    try {
+      await this.jobStore.set(this.toStoredJob(job));
+    } catch (err) {
+      console.error(`[catelog] jobStore.set failed for ${job.runId}:`, err);
     }
   }
 
@@ -464,10 +557,15 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       }, waitTime);
     }
 
-    if (acceptsSse) {
-      await this.executeWithSSE(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
-    } else {
-      await this.executeWithJSON(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
+    this.activeRuns.set(runId, abortController);
+    try {
+      if (acceptsSse) {
+        await this.executeWithSSE(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
+      } else {
+        await this.executeWithJSON(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
+      }
+    } finally {
+      this.activeRuns.delete(runId);
     }
   }
 
@@ -629,19 +727,52 @@ export class CatelogAgent<TInput = any, TOutput = any> {
    * Optional live fields appended to every poll response.
    * Purely additive — existing clients ignore the extra keys.
    */
-  private buildLiveFields(job: AsyncJob, sinceParam: string | null): TaskPollLiveFields {
-    const stream = job.stream;
+  private buildLiveFields(job: StoredJob, sinceParam: string | null): TaskPollLiveFields {
     const since = Number.parseInt(sinceParam ?? "", 10);
+    const cursor = Number.isFinite(since) ? since : 0;
+    const events = job.events ?? [];
     return {
-      current_step: stream?.currentStep,
-      progress_pct: stream?.progressPct,
-      events: stream ? stream.getEventsSince(Number.isFinite(since) ? since : 0) : [],
-      last_seq: stream?.lastSeq ?? 0,
+      current_step: job.currentStep,
+      progress_pct: job.progressPct,
+      events: cursor > 0 ? events.filter((e) => e.seq > cursor) : events,
+      last_seq: job.lastSeq ?? 0,
     };
   }
 
-  private handleTaskPoll(res: ServerResponse, jobId: string, sinceParam: string | null = null): void {
-    const job = asyncJobs.get(jobId);
+  /** Live job from this process, else the store. A "working" job whose owner stopped heartbeating is failed. */
+  private async resolveJob(jobId: string): Promise<StoredJob | undefined> {
+    const live = this.liveJobs.get(jobId);
+    if (live) return this.toStoredJob(live);
+
+    let job: StoredJob | undefined;
+    try {
+      job = await this.jobStore.get(jobId);
+    } catch (err) {
+      console.error(`[catelog] jobStore.get failed for ${jobId}:`, err);
+      return undefined;
+    }
+    if (job && job.status === "working" && Date.now() - job.updatedAt > STALE_JOB_MS) {
+      job = {
+        ...job,
+        status: "failed",
+        durationMs: job.updatedAt - job.createdAt,
+        error: {
+          code: "TASK_INTERRUPTED",
+          message: "The agent restarted while this task was running. Submit it again.",
+          retryable: true,
+        },
+      };
+      try {
+        await this.jobStore.set(job);
+      } catch {
+        // read path stays usable even if the write-back fails
+      }
+    }
+    return job;
+  }
+
+  private async handleTaskPoll(res: ServerResponse, jobId: string, sinceParam: string | null = null): Promise<void> {
+    const job = await this.resolveJob(jobId);
     if (!job) {
       this.writeJson(res, 404, {
         error: { code: "NOT_FOUND", message: `No task found: ${jobId}`, retryable: false },
@@ -675,6 +806,65 @@ export class CatelogAgent<TInput = any, TOutput = any> {
         error: job.error,
         ...live,
       });
+    }
+  }
+
+  // ── Graceful Shutdown ──
+
+  /** True once `shutdown()` has started; new `/execute` calls are refused with 503. */
+  public get isShuttingDown(): boolean {
+    return this.draining;
+  }
+
+  /**
+   * Stops accepting new runs, waits for in-flight runs to finish, then aborts any
+   * stragglers after `timeoutMs` and closes the job store. Safe to call more than once.
+   *
+   * @param timeoutMs How long to let running tasks finish (default: 25s)
+   */
+  public async shutdown(timeoutMs = 25_000): Promise<void> {
+    this.draining = true;
+
+    if (this.activeRuns.size > 0) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, timeoutMs);
+        timer.unref();
+        this.idleWaiters.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    }
+
+    // Anything still running ran out of time: tell the work to stop and record why.
+    for (const [runId, controller] of this.activeRuns) {
+      const job = this.liveJobs.get(runId);
+      if (job && job.status === "working") {
+        job.status = "failed";
+        job.error = {
+          code: "TASK_INTERRUPTED",
+          message: "The agent shut down before this task finished. Submit it again.",
+          retryable: true,
+        };
+        job.durationMs = Date.now() - job.createdAt;
+        if (job.heartbeat) clearInterval(job.heartbeat);
+        await this.persistJob(job);
+      }
+      controller.abort(new Error("SERVER_SHUTDOWN"));
+    }
+
+    try {
+      await this.jobStore.close?.();
+    } catch (err) {
+      console.error("[catelog] jobStore.close failed:", err);
+    }
+  }
+
+  private notifyIfIdle(): void {
+    if (this.draining && this.activeRuns.size === 0 && this.idleWaiters.length > 0) {
+      const waiters = this.idleWaiters;
+      this.idleWaiters = [];
+      for (const wake of waiters) wake();
     }
   }
 
@@ -800,6 +990,9 @@ function normalizeError(err: unknown, defaultCode = "INTERNAL_CRASH"): Structure
     if (err.name === "AbortError" || err.message === "EXECUTION_TIMEOUT") {
       return { code: "EXECUTION_TIMEOUT", message: "Exceeded deadline or timeout", retryable: true };
     }
+    if (err.message === "SERVER_SHUTDOWN") {
+      return { code: "TASK_INTERRUPTED", message: "Agent is shutting down", retryable: true };
+    }
     if (err.message === "CLIENT_DISCONNECTED") {
       return { code: "TASK_CANCELED", message: "Client disconnected", retryable: false };
     }
@@ -812,10 +1005,28 @@ function normalizeError(err: unknown, defaultCode = "INTERNAL_CRASH"): Structure
   return { code: defaultCode, message: String(err), retryable: false };
 }
 
-async function readBody(req: IncomingMessage): Promise<Buffer> {
+async function readBody(req: IncomingMessage, maxBytes?: number): Promise<Buffer> {
+  const declared = Number.parseInt(req.headers["content-length"] ?? "", 10);
+  if (maxBytes !== undefined && declared > maxBytes) {
+    req.resume();
+    throw new BodyTooLargeError(maxBytes);
+  }
+
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    let size = 0;
+    req.on("data", (chunk) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buf.length;
+      if (maxBytes !== undefined && size > maxBytes) {
+        chunks.length = 0;
+        req.removeAllListeners("data");
+        req.resume();
+        reject(new BodyTooLargeError(maxBytes));
+        return;
+      }
+      chunks.push(buf);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import { URL, fileURLToPath } from "node:url";
 import * as path from "node:path";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { Worker } from "@temporalio/worker";
+import { Worker, Runtime, DefaultLogger } from "@temporalio/worker";
 import { createSeoAgentGraph } from "./graph/index.js";
 import { createTemporalClient, createNativeConnection } from "./temporal/connection.js";
 import { fullAuditWorkflow, type FullAuditWorkflowResult } from "./temporal/workflows/full-audit.workflow.js";
@@ -13,6 +13,7 @@ import { env } from "./config/env.js";
 import * as activities from "./activities/index.js";
 import { seoCatelogAgent } from "./catelog-agent.js";
 import { generateVerifiedExecutiveReport } from "./report.js";
+import { awaitWorkflow } from "./temporal/await-workflow.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const app = createSeoAgentGraph();
@@ -34,8 +35,17 @@ const threadAuditCache = new Map<string, FullAuditWorkflowResult>();
 // ----------------------------------------------------
 // Start Embedded Temporal Worker
 // ----------------------------------------------------
+const workerState: { ready: boolean; error?: string; instance?: Worker; running?: Promise<void> } = { ready: false };
+
 async function startEmbeddedWorker() {
   try {
+    // Worker logs (task failures, panics, slow tasks) must reach stdout or outages are invisible
+    try {
+      Runtime.install({ logger: new DefaultLogger("INFO") });
+    } catch {
+      // already installed
+    }
+
     const connection = await createNativeConnection();
     const tsWorkflowsPath = path.join(__dirname, "temporal", "workflows", "index.ts");
     const jsWorkflowsPath = path.join(__dirname, "temporal", "workflows", "index.js");
@@ -50,9 +60,24 @@ async function startEmbeddedWorker() {
     });
 
     console.log(`✅ [Temporal Cloud Worker] Active & polling queue: "${env.TEMPORAL_TASK_QUEUE}"`);
-    worker.run().catch((err) => console.error("Worker error:", err));
+    workerState.instance = worker;
+    workerState.ready = true;
+    workerState.error = undefined;
+    workerState.running = worker.run().then(
+      () => {
+        workerState.ready = false;
+      },
+      (err) => {
+        // Without this the HTTP server keeps accepting audits that nothing will ever process
+        workerState.ready = false;
+        workerState.error = err?.message || String(err);
+        console.error("❌ [Temporal Cloud Worker] Worker stopped:", err);
+      },
+    );
   } catch (err: any) {
-    console.log(`⚠️ Worker initialization note: ${err.message || String(err)}`);
+    workerState.ready = false;
+    workerState.error = err.message || String(err);
+    console.error(`❌ [Temporal Cloud Worker] Failed to start: ${workerState.error}`);
   }
 }
 
@@ -117,9 +142,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Health must tell the truth: an agent whose Temporal worker is down cannot run audits.
+  if (parsedUrl.pathname === "/health" && req.method === "GET") {
+    const base = seoCatelogAgent.getHealth();
+    const status = seoCatelogAgent.isShuttingDown ? "not_ready" : workerState.ready ? "ready" : "degraded";
+    res.writeHead(status === "ready" ? 200 : 503, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        ...base,
+        status,
+        environment_ready: workerState.ready,
+        details: { temporal_worker: workerState.ready ? "polling" : workerState.error || "not running" },
+      }),
+    );
+    return;
+  }
+
   // 0. Catelog MAPS Protocol Endpoints (/health, /schema, /execute, /tasks/:id)
   if (
-    ["/health", "/schema", "/execute"].includes(parsedUrl.pathname) ||
+    ["/schema", "/execute"].includes(parsedUrl.pathname) ||
     parsedUrl.pathname.startsWith("/tasks/")
   ) {
     return seoCatelogAgent.handleRequest(req, res);
@@ -214,6 +255,8 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
             args: [{ url: targetUrl, companyName: resolved.companyName, forceBrowser }],
             taskQueue: env.TEMPORAL_TASK_QUEUE,
             workflowId,
+            workflowExecutionTimeout: "10 minutes",
+            workflowTaskTimeout: "30 seconds",
           });
 
           activeTemporalWorkflows.set(workflowId, {
@@ -255,8 +298,7 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
           }
 
           // Asynchronously listen for workflow completion -> Push verified report via SSE
-          handle
-            .result()
+          awaitWorkflow<FullAuditWorkflowResult>(handle)
             .then(async (verifiedResult) => {
               console.log(`✅ [Temporal Cloud] Workflow ${workflowId} completed successfully!`);
               const item = activeTemporalWorkflows.get(workflowId);
@@ -315,9 +357,9 @@ Answer the user's question accurately based STRICTLY on the real markdown and me
                     run_id: workflowId,
                     duration_ms: Date.now() - (item?.startTime || Date.now()),
                     error: {
-                      code: "TOOL_FAILURE",
+                      code: err.code || "TOOL_FAILURE",
                       message: err.message || String(err),
-                      retryable: false,
+                      retryable: Boolean(err.retryable),
                     },
                   })}\n\n`
                 );
@@ -387,25 +429,28 @@ server.listen(PORT, () => {
   const hasKey = !!env.CATELOG_SECRET_KEY;
   console.log("================================================================================");
   console.log(`🌐 Enterprise SEO Platform Web Chat running live at: http://localhost:${PORT}`);
-  console.log(`🤖 Catelog Marketplace Protocol (v1.0.6) Active (Mode: async)`);
+  console.log(`🤖 Catelog Marketplace Protocol Active (Mode: async)`);
   console.log(`🔑 Catelog Secret Key: ${hasKey ? "Configured [LIVE]" : "Not configured (Dev Mode)"}`);
   console.log(`📡 MAPS Endpoints: /health  |  /schema  |  /execute  |  /tasks/:id`);
   console.log(`⚡ Connected to Temporal Cloud Namespace: ${env.TEMPORAL_NAMESPACE}`);
   console.log("================================================================================");
 });
 
-// Graceful cleanup on Ctrl+C to guarantee Port 3000 is immediately freed
-function shutdown() {
-  server.close(() => {
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(0), 1000).unref();
+// Graceful shutdown: stop taking audits, let running ones finish, stop the worker, then exit.
+// (Temporal keeps the workflows durable either way; this just avoids dropping in-flight Catelog tasks.)
+let stopping = false;
+async function shutdown() {
+  if (stopping) process.exit(1);
+  stopping = true;
+  console.log("[SeoAgent] Shutting down: draining in-flight audits...");
+  setTimeout(() => process.exit(1), 30_000).unref();
+
+  server.close();
+  await seoCatelogAgent.shutdown(20_000).catch((err) => console.error("Catelog shutdown error:", err));
+  workerState.instance?.shutdown();
+  await Promise.race([workerState.running, new Promise((r) => setTimeout(r, 8_000))]);
+  process.exit(0);
 }
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-process.on("exit", () => {
-  try {
-    server.close();
-  } catch {}
-});

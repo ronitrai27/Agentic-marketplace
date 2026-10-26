@@ -10,6 +10,8 @@ const promptInput = document.getElementById("prompt-input");
 
 const btnHealth = document.getElementById("btn-health");
 const btnSchema = document.getElementById("btn-schema");
+const healthSpinner = document.getElementById("health-spinner");
+const schemaSpinner = document.getElementById("schema-spinner");
 const btnExecute = document.getElementById("btn-execute");
 const execSpinner = document.getElementById("exec-spinner");
 
@@ -76,8 +78,29 @@ btnClearLogs.addEventListener("click", () => {
 
 function getBaseUrl() {
   let url = backendUrlInput.value.trim();
+  if (!url) return "";
+  if (!/^https?:\/\//i.test(url)) {
+    if (/^(localhost|127\.0\.0\.1)(:\d+)?/i.test(url)) {
+      url = `http://${url}`;
+    } else {
+      url = `https://${url}`;
+    }
+    backendUrlInput.value = url;
+  }
   if (url.endsWith("/")) url = url.slice(0, -1);
   return url;
+}
+
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    if (text.startsWith("<!DOCTYPE") || text.includes("<html")) {
+      throw new Error(`Server returned HTML (${res.status} ${res.statusText}). Check endpoint URL or proxy.`);
+    }
+    throw new Error(`Invalid JSON: ${text.slice(0, 150)}`);
+  }
 }
 
 function getHeaders() {
@@ -89,11 +112,15 @@ function getHeaders() {
   return headers;
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function logEvent(msg, type = "info") {
   const now = new Date().toTimeString().split(" ")[0];
   const li = document.createElement("li");
   li.className = `timeline-item ${type}`;
-  li.innerHTML = `<span class="time">${now}</span><span class="msg">${msg}</span>`;
+  li.innerHTML = `<span class="time">${now}</span><span class="msg">${escapeHtml(msg)}</span>`;
   timelineList.prepend(li);
 }
 
@@ -106,28 +133,71 @@ function updateConnectionIndicator(status, text) {
 
 // 1. Health Probe
 btnHealth.addEventListener("click", async () => {
-  const url = `${getBaseUrl()}/health`;
-  logEvent(`Sending GET ${url}`, "info");
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) {
+    alert("⚠️ Please enter your Backend URL first!\nExample: https://p01--seoagent-test--k8clc8rvc9fq.code.run");
+    backendUrlInput.focus();
+    return;
+  }
+
+  const healthUrl = `${baseUrl}/health`;
+  const schemaUrl = `${baseUrl}/schema`;
+  logEvent(`Probing GET ${healthUrl}...`, "info");
+
   btnHealth.disabled = true;
+  btnHealth.classList.add("loading");
+  healthSpinner.classList.add("active");
+  updateConnectionIndicator("working", "Checking /health & /schema...");
+  healthJson.textContent = `Connecting to ${healthUrl} ...\nPlease wait (cold start or live server probe)...`;
 
   try {
-    const res = await fetch(url, { headers: getHeaders() });
-    const data = await res.json();
-    healthJson.textContent = JSON.stringify(data, null, 2);
+    const res = await fetch(healthUrl, { headers: getHeaders() });
+    const healthData = await parseJsonResponse(res);
+    healthJson.textContent = JSON.stringify(healthData, null, 2);
 
-    if (res.ok) {
-      logEvent(`Backend is HEALTHY (status ${res.status})`, "success");
-      updateConnectionIndicator("online", "Backend reachable & healthy");
-    } else {
+    if (!res.ok) {
       logEvent(`Health check returned status ${res.status}`, "warning");
       updateConnectionIndicator("working", `Status ${res.status}`);
+      alert(`⚠️ Health check failed with status ${res.status}`);
+      return;
+    }
+
+    logEvent(`Backend is HEALTHY (status ${res.status})`, "success");
+    updateConnectionIndicator("working", "Health OK! Fetching /schema...");
+
+    // Also fetch & verify /schema immediately
+    const schemaRes = await fetch(schemaUrl, { headers: getHeaders() });
+    const schemaData = await parseJsonResponse(schemaRes);
+    schemaJson.textContent = JSON.stringify(schemaData, null, 2);
+
+    if (schemaRes.ok) {
+      logEvent(`Loaded schema successfully (${schemaData.name || 'Agent'})`, "success");
+      if (schemaData.input_schema) {
+        renderSchemaTable(inputSchemaTable, schemaData.input_schema);
+      }
+      if (schemaData.output_schema) {
+        renderSchemaTable(outputSchemaTable, schemaData.output_schema);
+      }
+      updateConnectionIndicator("online", `Online: ${schemaData.name || 'Agent'} (v${schemaData.version || '1.0.0'})`);
+      document.querySelector('[data-tab="schema-view"]').click();
+
+      // Show verification alert as requested!
+      setTimeout(() => {
+        alert(`✅ /health /schema verified!\n\nAgent: ${schemaData.name || "SeoAgent"}\nVersion: ${schemaData.version || "1.0.0"}\nStatus: 200 OK (MAPS Protocol Verified)`);
+      }, 50);
+    } else {
+      updateConnectionIndicator("online", "Health OK, schema returned " + schemaRes.status);
+      alert(`⚠️ /health passed (200 OK) but /schema returned status ${schemaRes.status}`);
     }
   } catch (err) {
     healthJson.textContent = `Error: ${err.message}`;
     logEvent(`Health check failed: ${err.message}`, "error");
-    updateConnectionIndicator("failed", "Unreachable / CORS error");
+    updateConnectionIndicator("failed", "Unreachable / Network Error");
+    alert(`❌ Connection failed to ${baseUrl}:\n${err.message}\n\nPlease check your URL and make sure the server is awake.`);
   } finally {
     btnHealth.disabled = false;
+    btnHealth.classList.remove("loading");
+    healthSpinner.classList.remove("active");
   }
 });
 
@@ -167,13 +237,24 @@ function renderSchemaTable(tableElement, schemaObj) {
 
 // 2. Schema Fetch
 btnSchema.addEventListener("click", async () => {
-  const url = `${getBaseUrl()}/schema`;
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) {
+    alert("⚠️ Please enter your Backend URL first!\nExample: https://p01--seoagent-test--k8clc8rvc9fq.code.run");
+    backendUrlInput.focus();
+    return;
+  }
+
+  const url = `${baseUrl}/schema`;
   logEvent(`Fetching schema from ${url}`, "info");
+
   btnSchema.disabled = true;
+  btnSchema.classList.add("loading");
+  schemaSpinner.classList.add("active");
+  schemaJson.textContent = `Fetching schema from ${url} ...\nPlease wait...`;
 
   try {
     const res = await fetch(url, { headers: getHeaders() });
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     schemaJson.textContent = JSON.stringify(data, null, 2);
 
     if (res.ok) {
@@ -186,23 +267,37 @@ btnSchema.addEventListener("click", async () => {
       }
       // Switch to schema tab to show output
       document.querySelector('[data-tab="schema-view"]').click();
+      setTimeout(() => {
+        alert(`✅ /schema verified!\n\nAgent: ${data.name || "Agent"}\nVersion: ${data.version || "1.0.0"}\nInput fields: ${Object.keys(data.input_schema?.properties || {}).join(", ")}`);
+      }, 50);
     } else {
       logEvent(`Schema fetch error: status ${res.status}`, "error");
+      alert(`⚠️ /schema returned status ${res.status}`);
     }
   } catch (err) {
     schemaJson.textContent = `Error: ${err.message}`;
     logEvent(`Failed to fetch schema: ${err.message}`, "error");
+    alert(`❌ Failed to fetch /schema: ${err.message}`);
   } finally {
     btnSchema.disabled = false;
+    btnSchema.classList.remove("loading");
+    schemaSpinner.classList.remove("active");
   }
 });
 
 // 3. Execute & Task Poller
 btnExecute.addEventListener("click", async () => {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) {
+    alert("⚠️ Please enter your Backend URL first!\nExample: https://p01--seoagent-test--k8clc8rvc9fq.code.run");
+    backendUrlInput.focus();
+    return;
+  }
+
   const prompt = promptInput.value.trim();
   if (!prompt) return alert("Please enter a prompt");
 
-  const url = `${getBaseUrl()}/execute`;
+  const url = `${baseUrl}/execute`;
   btnExecute.disabled = true;
   execSpinner.classList.add("active");
   document.querySelector('[data-tab="live-execution"]').click();
@@ -219,9 +314,7 @@ btnExecute.addEventListener("click", async () => {
   liveProgressPct.textContent = "0%";
   progressBarFill.style.width = "0%";
 
-  if (activePollInterval) {
-    clearInterval(activePollInterval);
-  }
+  activePollInterval = null; // stop any previous poll loop
 
   try {
     const res = await fetch(url, {
@@ -232,7 +325,7 @@ btnExecute.addEventListener("click", async () => {
       })
     });
 
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     rawTaskJson.textContent = JSON.stringify(data, null, 2);
 
     if (res.status === 202 && data.run_id) {
@@ -255,10 +348,36 @@ btnExecute.addEventListener("click", async () => {
   }
 });
 
+// Consecutive poll failures before we tell the user the agent is unreachable (x 2s).
+const MAX_POLL_FAILURES = 5;
+
+function setTaskState(label, cls) {
+  taskBadge.className = cls ? `task-pill ${cls}` : "task-pill";
+  taskBadge.textContent = label;
+}
+
+function describeEvent(evt) {
+  const name = evt.message || evt.name || evt.type;
+  const data = evt.data && typeof evt.data === "object" ? evt.data : null;
+  if (!data) return name;
+  // Compact one-line summary so heartbeats / retries are readable instead of identical rows
+  const bits = Object.entries(data)
+    .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
+    .slice(0, 4)
+    .map(([k, v]) => `${k}=${v}`);
+  return bits.length ? `${name} (${bits.join(", ")})` : name;
+}
+
+function eventLevel(evt) {
+  const name = evt.name || "";
+  if (/failed|error/i.test(name)) return "error";
+  if (/retrying|not_responding/i.test(name)) return "warning";
+  return evt.type === "step" ? "info" : "success";
+}
+
 function startPolling(runId, pollUrl) {
   taskBanner.style.display = "flex";
-  taskBadge.className = "task-pill";
-  taskBadge.textContent = "WORKING";
+  setTaskState("WORKING", "");
   taskIdDisplay.textContent = runId;
 
   // Activate live progress indicator
@@ -269,34 +388,54 @@ function startPolling(runId, pollUrl) {
 
   pollStartTime = Date.now();
   let lastSeq = 0;
+  let failures = 0;
+  let finished = false;
   const baseUrl = pollUrl.startsWith("http") ? pollUrl : `${getBaseUrl()}${pollUrl}`;
+  const myPoll = {};
+  activePollInterval = myPoll; // lets a newer run cancel this loop
 
-  activePollInterval = setInterval(async () => {
+  const finish = (label, cls, message, level) => {
+    finished = true;
+    setTaskState(label, cls);
+    logEvent(message, level);
+  };
+
+  const failedWith = (error, fallback) => {
+    const code = error?.code ? `[${error.code}] ` : "";
+    const hint = error?.retryable ? " (retryable: you can run it again)" : "";
+    return `${code}${error?.message || fallback}${hint}`;
+  };
+
+  const tick = async () => {
+    if (finished || activePollInterval !== myPoll) return;
     const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
     pollingTimer.textContent = `Elapsed: ${elapsedSec}s`;
 
     try {
       const fetchUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}since=${lastSeq}`;
       const res = await fetch(fetchUrl, { headers: getHeaders() });
-      const taskData = await res.json();
+      const taskData = await parseJsonResponse(res);
+      failures = 0;
       rawTaskJson.textContent = JSON.stringify(taskData, null, 2);
 
-      // Process live stream events
-      if (Array.isArray(taskData.events) && taskData.events.length > 0) {
-        for (const evt of taskData.events) {
-          const msg = evt.message || evt.name || JSON.stringify(evt.data || "");
-          logEvent(msg, evt.type === "step" ? "info" : "success");
-          if (evt.seq > lastSeq) lastSeq = evt.seq;
-        }
-      }
-      if (taskData.last_seq && taskData.last_seq > lastSeq) {
-        lastSeq = taskData.last_seq;
+      // The task vanished (agent restarted, job expired) or the request was rejected: never spin forever
+      if (!res.ok && !taskData.status) {
+        const msg = failedWith(taskData.error, `HTTP ${res.status}`);
+        finish("FAILED", "failed", `Run ${runId} lost: ${msg}`, "error");
+        answerContent.textContent = `Task lost: ${msg}
+The agent may have restarted. Run it again.`;
+        return;
       }
 
-      // Update live step and progress bar
-      if (taskData.current_step) {
-        liveStepLabel.textContent = taskData.current_step;
+      // Live events, de-duplicated by sequence number
+      for (const evt of taskData.events || []) {
+        if (evt.seq <= lastSeq) continue;
+        lastSeq = evt.seq;
+        logEvent(describeEvent(evt), eventLevel(evt));
       }
+      if (taskData.last_seq > lastSeq) lastSeq = taskData.last_seq;
+
+      if (taskData.current_step) liveStepLabel.textContent = taskData.current_step;
       if (typeof taskData.progress_pct === "number") {
         const pct = Math.max(0, Math.min(100, Math.round(taskData.progress_pct)));
         liveProgressPct.textContent = `${pct}%`;
@@ -304,30 +443,43 @@ function startPolling(runId, pollUrl) {
       }
 
       if (taskData.status === "completed") {
-        clearInterval(activePollInterval);
-        taskBadge.className = "task-pill completed";
-        taskBadge.textContent = "COMPLETED";
         progressBarFill.style.width = "100%";
         liveProgressPct.textContent = "100%";
-        logEvent(`Run ${runId} finished successfully in ${elapsedSec}s!`, "success");
+        finish("COMPLETED", "completed", `Run ${runId} finished successfully in ${elapsedSec}s!`, "success");
         displayFinalResult(taskData);
-      } else if (taskData.status === "failed") {
-        clearInterval(activePollInterval);
-        taskBadge.className = "task-pill failed";
-        taskBadge.textContent = "FAILED";
-        logEvent(`Run ${runId} failed: ${taskData.error?.message || "Unknown error"}`, "error");
-        answerContent.textContent = `Task Failed: ${taskData.error?.message || JSON.stringify(taskData)}`;
+        return;
+      }
+
+      if (taskData.status === "failed" || taskData.status === "canceled") {
+        const canceled = taskData.status === "canceled" || taskData.error?.code === "TASK_CANCELED";
+        const msg = failedWith(taskData.error, "Unknown error");
+        finish(canceled ? "CANCELED" : "FAILED", "failed", `Run ${runId} ${canceled ? "canceled" : "failed"}: ${msg}`, "error");
+        answerContent.classList.remove("placeholder-state");
+        answerContent.textContent = `${canceled ? "Task Canceled" : "Task Failed"}: ${msg}`;
+        return;
       }
     } catch (err) {
-      logEvent(`Poll error: ${err.message}`, "warning");
+      failures += 1;
+      logEvent(`Poll error (${failures}/${MAX_POLL_FAILURES}): ${err.message}`, "warning");
+      if (failures >= MAX_POLL_FAILURES) {
+        finish("UNREACHABLE", "failed", `Lost contact with the agent after ${failures} failed polls. The task may still be running.`, "error");
+        answerContent.textContent = `Lost contact with the agent: ${err.message}
+The task may still be running; try polling again later.`;
+        return;
+      }
     }
-  }, 2000);
+
+    // Next poll only after this one finished: no overlapping requests, no duplicate rows
+    setTimeout(tick, 2000);
+  };
+
+  setTimeout(tick, 0);
 }
 
 function displayFinalResult(taskData) {
   answerContent.classList.remove("placeholder-state");
   const output = taskData.output || taskData;
-  const answer = output.answer || output.response || (typeof output === "string" ? output : JSON.stringify(output, null, 2));
+  const answer = output.report || output.answer || output.response || (typeof output === "string" ? output : JSON.stringify(output, null, 2));
 
   let formatted = answer;
   if (output.sourcesCount !== undefined) {
@@ -344,7 +496,7 @@ function displayFinalResult(taskData) {
   } : null);
 
   if (telemetry) {
-    telemModel.textContent = telemetry.model_used || "gpt-4.1-mini";
+    telemModel.textContent = telemetry.model_used || "—";
     const prompt = telemetry.llm_tokens?.prompt || 0;
     const comp = telemetry.llm_tokens?.completion || 0;
     const total = telemetry.llm_tokens?.total || (prompt + comp);

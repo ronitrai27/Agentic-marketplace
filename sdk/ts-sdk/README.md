@@ -24,6 +24,7 @@ Wrap any AI agent — LangGraph, OpenAI, Vercel AI SDK, CrewAI, or vanilla TypeS
 | Document | Purpose |
 | :--- | :--- |
 | **[USAGE.md](./USAGE.md)** | Complete developer guide — agent types, framework integrations, schemas, keys, telemetry, testing |
+| **[Catelog-TS.md](./Catelog-TS.md)** | Short setup guide incl. SSE events, installed into your project by `npx catelog init` |
 | **[DECISION.md](./DECISION.md)** | Architecture decisions — why things work the way they do |
 
 ---
@@ -90,9 +91,9 @@ createAgent({
 createAgent({
   name: "SQL Assistant",
   mode: "conversational",
-  async execute({ input, ctx }) {
+  async execute({ input, needInput }) {
     if (!input.table) {
-      return ctx.needInput({
+      return needInput({
         prompt: "Which table would you like to query?",
         schema: { type: "string", enum: await getTables() },
       });
@@ -100,6 +101,43 @@ createAgent({
     return { output: { rows: await query(input.table) } };
   },
 });
+```
+
+---
+
+## Production Options
+
+All optional. Beginners can ignore this section.
+
+```ts
+import { createAgent, RedisJobStore } from "catelog";
+
+createAgent({
+  name: "Deep Researcher",
+  mode: "async",
+  jobStore: new RedisJobStore(redisClient),   // or SqliteJobStore({ path }) / your own JobStore
+  limits: {
+    maxConcurrent: 10,                         // 429 SERVER_BUSY over the cap
+    maxBodyBytes: 1_000_000,                   // 413 PAYLOAD_TOO_LARGE
+    rateLimit: { max: 60, windowMs: 60_000 },  // 429 RATE_LIMITED per client IP
+  },
+  async execute(ctx) { /* ... */ },
+}).listen({ port: 3000, shutdownTimeoutMs: 25_000 });
+```
+
+- **Job stores** keep async results across restarts (the default is in-memory). A job that was running when the process died is reported as `TASK_INTERRUPTED` (retryable).
+- **Limits** are off unless you set them.
+- **Graceful shutdown** is automatic: on SIGTERM/SIGINT the agent refuses new runs (503), lets running tasks finish, then exits.
+
+---
+
+## CLI
+
+```bash
+npx catelog init               # add the setup guide (Catelog-TS.md or Catelog-PY.md) to your project
+npx catelog init --yes         # no prompts
+npx catelog init --lang py     # pick the language
+npx catelog --help
 ```
 
 ---
@@ -139,4 +177,4 @@ return pipeAsyncIterableStream(myStream, stream);
 
 - **Node.js** 18+
 - **TypeScript** 5+ (optional but strongly recommended)
-- **ESM** (`"type": "module"` in `package.json`)
+- **ESM or CommonJS** — `import` and `require` both work

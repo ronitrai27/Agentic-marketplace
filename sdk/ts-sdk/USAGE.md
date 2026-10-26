@@ -1,6 +1,6 @@
 # Catelog SDK — Usage Guide
 
-> **Node.js 18+ · TypeScript 5+ · ESM**
+> **Node.js 18+ · TypeScript 5+ · ESM + CommonJS**
 
 ---
 
@@ -27,6 +27,8 @@
 11. [Testing Locally](#11-testing-locally)
 12. [Registering on the Marketplace](#12-registering-on-the-marketplace)
 13. [Error Handling](#13-error-handling)
+14. [Production Options](#14-production-options)
+15. [CLI](#15-cli)
 
 ---
 
@@ -45,6 +47,8 @@ yarn add catelog zod
 # bun
 bun add catelog zod
 ```
+
+> CommonJS projects can use `const { createAgent } = require("catelog")`. After installing, run `npx catelog init` to add a short setup guide to your project (see [CLI](#15-cli)).
 
 > **Note:** `zod` is optional. Only needed if you want typed input validation and auto-generated marketplace forms. If you skip it, the SDK accepts any JSON payload.
 
@@ -286,7 +290,7 @@ GET /tasks/run_abc?since=2 (when finished)
 
 **Best for:** Document assistants, workflow agents, code review bots, or any agent that needs to ask the user a clarifying question mid-run before proceeding.
 
-**How it works:** The agent calls `ctx.needInput({...})` to suspend execution and emit a `task.input_required` SSE event with a resume token. The marketplace shows a form to the buyer. When the buyer submits, the agent is re-invoked with the resume token and the previous session state intact.
+**How it works:** The agent calls `needInput({...})` (from the `execute` context) to suspend execution and emit a `task.input_required` SSE event with a resume token. The marketplace shows a form to the buyer. When the buyer submits, the agent is re-invoked with the resume token and the previous session state intact.
 
 ```ts
 import { createAgent } from "catelog";
@@ -302,7 +306,7 @@ const agent = createAgent({
     selectedTable: z.string().optional(),
   }),
 
-  async execute({ input, ctx, stream, log }) {
+  async execute({ input, needInput, session, stream, log }) {
     // ── First invocation: user sends { question: "show me orders" } ──
     if (!input.selectedTable) {
       stream.progress(20, "Checking available tables...");
@@ -310,7 +314,7 @@ const agent = createAgent({
       log.info("Tables discovered", { count: tables.length });
 
       // Suspend and ask for input — does NOT complete the task
-      return ctx.needInput({
+      return needInput({
         prompt: `I found ${tables.length} tables. Which one would you like to query?`,
         schema: {
           type: "object",
@@ -333,8 +337,8 @@ const agent = createAgent({
     const results = await runQuery(input.selectedTable, input.question);
 
     // Session state is available across turns
-    const previousQueries = ctx.session.get<string[]>("queryHistory") ?? [];
-    ctx.session.set("queryHistory", [...previousQueries, input.question]);
+    const previousQueries = session.get<string[]>("queryHistory") ?? [];
+    session.set("queryHistory", [...previousQueries, input.question]);
 
     stream.delta(`Found ${results.length} records in ${input.selectedTable}.\n`);
 
@@ -619,7 +623,7 @@ All of these are available on the `stream` object inside `execute()`:
 | `stream.isClosed()` | `() => boolean` | Check if client disconnected | — |
 | `return value` | any | Completes the task with output | **Yes** |
 | `throw error` | Error | Fails the task | **Yes** |
-| `ctx.needInput()` | `(opts)` | Suspends with input-required | **Yes** |
+| `needInput()` | `(opts)` | Suspends with input-required | **Yes** |
 
 ---
 
@@ -960,6 +964,92 @@ async execute({ input, stream, signal }) {
 
 ---
 
+## 14. Production Options
+
+Everything here is optional.
+
+### 14.1 Job stores (async mode)
+
+By default async jobs live in memory and vanish on restart. Plug in a store to keep them:
+
+```ts
+import { createAgent, RedisJobStore, SqliteJobStore } from "catelog";
+import Redis from "ioredis";
+
+createAgent({
+  name: "Deep Researcher",
+  mode: "async",
+  jobStore: new RedisJobStore(new Redis(process.env.REDIS_URL!), { ttlMs: 86_400_000 }),
+  // jobStore: new SqliteJobStore({ path: "/data/jobs.db" }),   // Node 22.5+, needs a persistent volume
+  async execute(ctx) { /* ... */ },
+});
+```
+
+| Store | Needs | Notes |
+| :--- | :--- | :--- |
+| `MemoryJobStore` (default) | nothing | Lost on restart |
+| `RedisJobStore(client, { prefix?, ttlMs? })` | an `ioredis` or `redis` (node-redis v4+) client you create | Shared across instances |
+| `SqliteJobStore({ path?, ttlMs? })` | Node 22.5+ (`node:sqlite`) | Single instance, file on a volume |
+| your own | implement `JobStore` | `get(runId)`, `set(job)`, optional `close()` |
+
+**What survives a restart:** finished results (`completed` / `failed`) stay pollable. A task that was *running* when the process died cannot be resumed. Once its heartbeat is 20 seconds old it is reported as `failed` with code `TASK_INTERRUPTED` and `retryable: true`, so the buyer can resubmit. Store errors are logged and never crash a running agent.
+
+### 14.2 Limits
+
+```ts
+createAgent({
+  name: "My Agent",
+  limits: {
+    maxConcurrent: 10,
+    maxBodyBytes: 1_000_000,
+    rateLimit: { max: 60, windowMs: 60_000 },
+    trustProxy: true,
+  },
+  async execute(ctx) { /* ... */ },
+});
+```
+
+| Option | Effect when exceeded | Response |
+| :--- | :--- | :--- |
+| `maxConcurrent` | Too many runs at once | `429 SERVER_BUSY` + `Retry-After` |
+| `maxBodyBytes` | Request body too large | `413 PAYLOAD_TOO_LARGE` |
+| `rateLimit` | Too many requests per client in the window | `429 RATE_LIMITED` + `Retry-After` |
+| `trustProxy` | Rate limit keys on `X-Forwarded-For` instead of the socket IP | — |
+
+Limits apply to `POST /execute` only. With nothing set there are no limits.
+
+### 14.3 Graceful shutdown
+
+`agent.listen()` listens for `SIGTERM` and `SIGINT`. It stops taking new runs (`503 SHUTTING_DOWN`), waits for running tasks, then exits. After `shutdownTimeoutMs` (default 25000) remaining tasks are aborted and marked `TASK_INTERRUPTED`. A second signal exits immediately.
+
+```ts
+agent.listen({ port: 3000, shutdownTimeoutMs: 20_000 });
+agent.listen({ port: 3000, handleSignals: false });   // your own handler: await agent.shutdown(20_000)
+```
+
+Set your container stop grace period (Docker `--stop-timeout`, Kubernetes `terminationGracePeriodSeconds`) a few seconds above `shutdownTimeoutMs`. Docker's default is 10 seconds.
+
+### 14.4 New error codes
+
+`TASK_INTERRUPTED`, `RATE_LIMITED`, `SERVER_BUSY`, `SHUTTING_DOWN`, `PAYLOAD_TOO_LARGE`.
+
+---
+
+## 15. CLI
+
+```bash
+npx catelog init              # asks to add the setup guide, then TypeScript or Python
+npx catelog init --yes        # no prompts (TypeScript unless --lang is given)
+npx catelog init --lang py    # Catelog-PY.md (empty placeholder until the Python SDK ships)
+npx catelog init --force      # overwrite an existing guide
+npx catelog --version
+npx catelog --help
+```
+
+The guide (`Catelog-TS.md`) is written to your project root. It covers setup, SSE events, modes and production options.
+
+---
+
 ## Quick Reference
 
 ```ts
@@ -977,6 +1067,8 @@ const agent = createAgent({
   outputSchema?: ZodSchema | JSONSchema, // Optional
   telemetry?: { endpoint?: string; disabled?: boolean },
   capabilities?: { max_timeout_seconds?: number },
+  jobStore?: JobStore,             // async persistence (Redis / SQLite / custom)
+  limits?: { maxConcurrent?, maxBodyBytes?, rateLimit?, trustProxy? },
 
   async execute(ctx) {
     // ctx.runId        string
@@ -993,5 +1085,5 @@ const agent = createAgent({
   },
 });
 
-agent.listen(3000); // or agent.serve(3000)
+agent.listen(3000); // or agent.listen({ port, shutdownTimeoutMs, handleSignals })
 ```

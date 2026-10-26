@@ -58,4 +58,6 @@ console.log(`  ${c.bold}Quick Start:${c.reset}`);
 console.log(`  ${c.dim}import { createMarketplaceAgent } from "catelog";${c.reset}`);
 console.log(`  ${c.dim}const agent = createMarketplaceAgent({ ... });${c.reset}`);
 console.log(`  ${c.dim}agent.serve(3000);${c.reset}`);
+console.log("");
+console.log(`  ${c.dim}Want the setup guide (Catelog-TS.md or Catelog-PY.md) in your project?${c.reset} ${c.bold}npx catelog init${c.reset}`);
 console.log(doubleLine + "\n");

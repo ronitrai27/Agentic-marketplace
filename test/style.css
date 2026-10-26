@@ -222,6 +222,31 @@ input:focus, textarea:focus {
   cursor: not-allowed;
 }
 
+/* Spinner & Button Loading Styles */
+.btn-spinner {
+  display: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: btn-spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn-spinner.active {
+  display: inline-block;
+}
+
+.btn.loading .icon {
+  display: none;
+}
+
+@keyframes btn-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 /* Quick prompt pills */
 .quick-prompts {
   display: flex;

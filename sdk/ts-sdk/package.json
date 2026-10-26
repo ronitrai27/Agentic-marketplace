@@ -1,24 +1,32 @@
 {
   "name": "catelog",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "Official TypeScript SDK for Marketplace Agent Protocol Specification (MAPS)",
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/cjs/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    }
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
-    "catelog": "./scripts/postinstall.js"
+    "catelog": "./scripts/cli.js"
   },
   "files": [
     "dist",
     "scripts",
+    "Catelog-TS.md",
+    "Catelog-PY.md",
     "README.md",
     "USAGE.md",
     "DECISION.md",
@@ -38,9 +46,9 @@
     "sdk"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/clean.js && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/postbuild.js",
     "dev": "tsc --watch",
-    "test": "tsx test/index.test.ts",
+    "test": "tsx test/index.test.ts && tsx test/features.test.ts",
     "prepublishOnly": "npm run build",
     "postinstall": "node ./scripts/postinstall.js"
   },
@@ -52,5 +60,8 @@
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
