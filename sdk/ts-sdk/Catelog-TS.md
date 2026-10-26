@@ -210,11 +210,12 @@ for (;;) {
 The adapters read the framework's stream and call `stream.delta` / `stream.activity` for you:
 
 ```ts
-import { pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeAsyncIterableStream } from "catelog";
+import { pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeClaudeAgentStream, pipeAsyncIterableStream } from "catelog";
 
 return pipeOpenAiStream(await openai.chat.completions.create({ model, messages, stream: true }), stream);
 return pipeAiSdkStream(streamText({ model, prompt }), stream);                 // Vercel AI SDK
 return pipeLangGraphStream(graph, { input }, stream, { signal });              // LangGraph
+return pipeClaudeAgentStream(query({ prompt, options }), stream, { signal });   // Claude Agent SDK
 return pipeAsyncIterableStream(myAsyncGenerator(), stream);                    // CrewAI, LlamaIndex, custom
 ```
 
@@ -222,66 +223,45 @@ return pipeAsyncIterableStream(myAsyncGenerator(), stream);                    /
 
 All three live inside `execute()`. The agent file below is the *whole* integration (add `agent.listen(3000)` or mount it, see above).
 
-**Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`). There is no one-line adapter, so forward its messages yourself. It takes ~15 lines and gives you real cost and token telemetry:
+**Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), one line with the adapter. Tool calls become `task.activity`, and cost, tokens and model go into telemetry:
 
 ```ts
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { createAgent } from "catelog";
+import { createAgent, pipeClaudeAgentStream } from "catelog";
 import { z } from "zod";
-
-const Out = z.object({ answer: z.string() });
-// The Claude CLI rejects the "$schema" key zod adds, so drop it.
-const { $schema, ...outJson } = z.toJSONSchema(Out) as Record<string, unknown>;
 
 export const agent = createAgent({
   name: "Claude Researcher",
   mode: "async",                                   // Claude runs take 10-60s
   inputSchema: z.object({ prompt: z.string() }),
-  outputSchema: Out,
   async execute({ input, stream, signal, metric }) {
-    const abort = new AbortController();
-    signal.addEventListener("abort", () => abort.abort());   // client left / timeout => stop spending money
-
-    let tools = 0;
-    for await (const msg of query({
+    const run = query({
       prompt: input.prompt,
       options: {
         model: "claude-haiku-5-5",
         tools: ["WebSearch", "WebFetch"], allowedTools: ["WebSearch", "WebFetch"],
         permissionMode: "dontAsk", settingSources: [], persistSession: false,
-        maxTurns: 10, maxBudgetUsd: 0.15, abortController: abort,
-        outputFormat: { type: "json_schema", schema: outJson },
+        maxTurns: 10, maxBudgetUsd: 0.15,          // hard spend cap per run
       },
-    })) {
-      if (msg.type === "assistant") {
-        for (const b of msg.message.content)
-          if (b.type === "tool_use" && b.name !== "StructuredOutput") {
-            stream.activity(b.name, b.input as Record<string, unknown>);   // shows in /tasks/:id events
-            stream.progress(Math.min(15 + ++tools * 12, 85), `Using ${b.name}`);
-          }
-      } else if (msg.type === "result") {
-        const u = Object.values(msg.modelUsage);
-        const prompt = u.reduce((n, m) => n + m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens, 0);
-        const completion = u.reduce((n, m) => n + m.outputTokens, 0);
-        if (msg.subtype !== "success")
-          throw Object.assign(new Error(`Claude failed: ${msg.subtype}`), { code: "TOOL_FAILURE", retryable: true });
-        return {
-          output: Out.parse(msg.structured_output),
-          telemetry: {
-            model_used: Object.keys(msg.modelUsage).join(","),
-            cost_usd: msg.total_cost_usd,
-            llm_tokens: { prompt, completion, total: prompt + completion },
-            framework: { engine: "claude-agent-sdk", num_turns: msg.num_turns },
-          },
-        };
-      }
-    }
-    throw new Error("Claude ended without a result");
+    });
+    return pipeClaudeAgentStream(run, stream, {
+      signal,                                      // client leaves / timeout => query.interrupt()
+      onUsage: (t) => metric.gauge("cost_usd", t.cost_usd ?? 0),   // optional: keep cost even when the run fails
+    });                                            // => { output: { text }, telemetry }
   },
 });
 ```
 
-Full production version: `Agents/JobFitAgent/src/agent.ts` + `server.ts`.
+Want typed JSON back instead of text? Add `outputFormat: { type: "json_schema", schema }` to the query options and pass `parse` to the adapter:
+
+```ts
+const Out = z.object({ answer: z.string() });
+const { $schema, ...schema } = z.toJSONSchema(Out) as Record<string, unknown>;   // the Claude CLI rejects "$schema"
+// query options: outputFormat: { type: "json_schema", schema }
+return pipeClaudeAgentStream(run, stream, { signal, parse: (v) => Out.parse(v) });   // => { output: { answer }, telemetry }
+```
+
+The adapter maps Claude failures to Catelog error codes: rate limit / overloaded → `MODEL_RATE_LIMIT` (retryable), budget cap → `BUDGET_EXCEEDED`, out of turns → `TOOL_FAILURE`, bad structured output → `INTERNAL_CRASH`. Full production example: `Agents/JobFitAgent/`.
 
 **OpenAI SDK**, one line with the adapter (streams tokens, captures model + usage):
 
@@ -323,7 +303,7 @@ export const agent = createAgent({
 
 | Framework | How | Telemetry you get for free |
 | :--- | :--- | :--- |
-| Claude Agent SDK | manual loop (above) | whatever you map from `result` (cost, tokens, model) |
+| Claude Agent SDK | `pipeClaudeAgentStream` | model, tokens, cost, turns, per-tool counts |
 | OpenAI | `pipeOpenAiStream` / `pipeOpenAiResponsesStream` | model, tokens (+ cost for Responses) |
 | LangGraph | `pipeLangGraphStream` | nodes visited |
 | Vercel AI SDK | `pipeAiSdkStream` | tokens, tool calls |

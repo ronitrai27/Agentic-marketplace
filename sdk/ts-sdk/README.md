@@ -15,7 +15,7 @@
 ```
 
 The official TypeScript SDK for the **Catelog Agent Marketplace**.  
-Wrap any AI agent — LangGraph, OpenAI, Vercel AI SDK, CrewAI, or vanilla TypeScript — into a production-ready, protocol-compliant marketplace microservice in under 20 lines of code.
+Wrap any AI agent — Claude Agent SDK, LangGraph, OpenAI, Vercel AI SDK, CrewAI, or vanilla TypeScript — into a production-ready, protocol-compliant marketplace microservice in under 20 lines of code.
 
 ---
 
@@ -155,6 +155,9 @@ return pipeAiSdkStream(result, stream);
 
 // LangGraph compiled graph
 return pipeLangGraphStream(graph, { input }, stream, { signal });
+
+// Claude Agent SDK (query() from @anthropic-ai/claude-agent-sdk)
+return pipeClaudeAgentStream(query({ prompt, options }), stream, { signal });
 
 // Any AsyncIterable<string> — CrewAI, LlamaIndex, custom generators
 return pipeAsyncIterableStream(myStream, stream);

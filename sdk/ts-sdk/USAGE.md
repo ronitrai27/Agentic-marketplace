@@ -614,93 +614,83 @@ agent.listen(3000);
 
 ### 5.6 Claude Agent SDK
 
-`@anthropic-ai/claude-agent-sdk` runs Claude with built-in tools (`WebSearch`, `WebFetch`, `Read`, `Bash`...). There is no one-line adapter yet, so you forward its messages to the `stream` yourself. That also lets you report **exact cost, tokens and model** as Catelog telemetry.
+`@anthropic-ai/claude-agent-sdk` runs Claude with built-in tools (`WebSearch`, `WebFetch`, `Read`, `Bash`...). One line connects it to Catelog:
 
 ```ts
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { createAgent } from "catelog";
+import { createAgent, pipeClaudeAgentStream } from "catelog";
 import { z } from "zod";
 
-const Out = z.object({
-  response: z.string(),
-  jobs: z.array(z.object({ title: z.string(), company: z.string(), url: z.string() })),
-});
-// The Claude CLI rejects the "$schema" key that zod emits, so strip it.
-const { $schema, ...outJson } = z.toJSONSchema(Out) as Record<string, unknown>;
-
-export const agent = createAgent({
-  name: "Job Finder",
+const agent = createAgent({
+  name: "Claude Researcher",
   mode: "async",                                     // Claude runs take 10-60s
-  inputSchema: z.object({ query: z.string() }),
-  outputSchema: Out,
+  inputSchema: z.object({ prompt: z.string() }),
 
-  async execute({ input, stream, signal, log, metric }) {
-    const abort = new AbortController();
-    signal.addEventListener("abort", () => abort.abort());      // client gone / timeout => stop paying
-
-    let tools = 0;
-    for await (const msg of query({
-      prompt: input.query,
+  async execute({ input, stream, signal, metric }) {
+    const run = query({
+      prompt: input.prompt,
       options: {
         model: "claude-haiku-5-5",                    // cheap model
         tools: ["WebSearch", "WebFetch"],
         allowedTools: ["WebSearch", "WebFetch"],
         permissionMode: "dontAsk",
         settingSources: [], persistSession: false,
-        maxTurns: 12, maxBudgetUsd: 0.15,             // hard spend cap per run
-        abortController: abort,
-        outputFormat: { type: "json_schema", schema: outJson },
+        maxTurns: 10, maxBudgetUsd: 0.15,             // hard spend cap per run
       },
-    })) {
-      if (msg.type === "assistant") {
-        for (const b of msg.message.content) {
-          if (b.type === "tool_use" && b.name !== "StructuredOutput") {
-            stream.activity(b.name, b.input as Record<string, unknown>);
-            stream.progress(Math.min(15 + ++tools * 12, 85), `Using ${b.name}`);
-            metric.count(`tool_${b.name}`);
-          }
-        }
-      } else if (msg.type === "result") {
-        const u = Object.values(msg.modelUsage);
-        const prompt = u.reduce((n, m) => n + m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens, 0);
-        const completion = u.reduce((n, m) => n + m.outputTokens, 0);
-        log.info("Claude done", { cost: msg.total_cost_usd, turns: msg.num_turns });
+    });
 
-        if (msg.subtype === "error_max_budget_usd")
-          throw Object.assign(new Error("Cost cap hit"), { code: "BUDGET_EXCEEDED", retryable: false });
-        if (msg.subtype !== "success")
-          throw Object.assign(new Error(msg.subtype), { code: "TOOL_FAILURE", retryable: true });
-
-        return {
-          output: Out.parse(msg.structured_output),
-          telemetry: {
-            model_used: Object.keys(msg.modelUsage).join(","),
-            cost_usd: msg.total_cost_usd,
-            llm_tokens: { prompt, completion, total: prompt + completion },
-            framework: { engine: "claude-agent-sdk", num_turns: msg.num_turns },
-          },
-        };
-      }
-    }
-    throw new Error("Claude ended without a result");
+    return pipeClaudeAgentStream(run, stream, {
+      signal,                                         // client gone / timeout => query.interrupt()
+      onUsage: (t) => metric.gauge("cost_usd", t.cost_usd ?? 0),   // optional: cost kept even on failure
+    });
+    // => { output: { text: "..." }, telemetry: { model_used, llm_tokens, cost_usd, framework: {...} } }
   },
 });
 
 agent.listen(3000);
 ```
 
-**Mapping cheat-sheet**
+**What you get from the adapter:**
+- Each tool call (`WebSearch`, `Read`...) → `task.activity` + a `task.progress` step
+- Assistant text → `task.delta`
+- `total_cost_usd`, per-model tokens, model name, turns, per-tool counts → `telemetry`
+- Aborting `signal` → `query.interrupt()`, so a cancelled run stops spending money
+- Failures → thrown errors with a Catelog `code` + `retryable`:
 
-| Claude Agent SDK | Catelog |
+| Claude Agent SDK problem | Catelog error code | Retryable |
+| :--- | :--- | :---: |
+| `rate_limit`, `overloaded` | `MODEL_RATE_LIMIT` | yes |
+| `server_error` | `UPSTREAM_TIMEOUT` | yes |
+| `error_max_budget_usd` | `BUDGET_EXCEEDED` | no |
+| `error_max_turns` | `TOOL_FAILURE` | yes |
+| bad structured output | `INTERNAL_CRASH` | yes |
+| `authentication_failed`, `billing_error` | `MODEL_AUTH_FAILED`, `MODEL_BILLING_ERROR` | no |
+
+**Typed JSON output instead of text:**
+
+```ts
+const Out = z.object({
+  response: z.string(),
+  jobs: z.array(z.object({ title: z.string(), company: z.string(), url: z.string() })),
+});
+// The Claude CLI rejects the "$schema" key that zod emits, so strip it.
+const { $schema, ...schema } = z.toJSONSchema(Out) as Record<string, unknown>;
+
+// in execute():
+const run = query({ prompt, options: { /* ...as above... */ outputFormat: { type: "json_schema", schema } } });
+return pipeClaudeAgentStream(run, stream, { signal, parse: (v) => Out.parse(v) });   // => { output: Out, telemetry }
+```
+
+**Adapter options**
+
+| Option | Purpose |
 | :--- | :--- |
-| `tool_use` block | `stream.activity(name, input)` + `stream.progress(...)` |
-| `result.total_cost_usd` | `telemetry.cost_usd` |
-| `result.modelUsage` | `telemetry.model_used`, `telemetry.llm_tokens` |
-| `result.structured_output` | the returned `output` |
-| `error_max_budget_usd` / `error_max_turns` | thrown error with `code` + `retryable` |
-| `ctx.signal` abort | `abortController.abort()` |
+| `signal` | Pass `ctx.signal`; abort calls `query.interrupt()` |
+| `parse` | Validate/shape the structured output (e.g. `Out.parse`) |
+| `onUsage` | Called with final telemetry on success *and* failure |
+| `hideTools` | Internal tools not shown as activity (default `["StructuredOutput"]`) |
 
-A complete, tested example lives in `Agents/JobFitAgent/`.
+A complete example lives in `Agents/JobFitAgent/`.
 
 ---
 
@@ -1180,7 +1170,7 @@ The guide (`Catelog-TS.md`) is written to your project root. It covers setup, SS
 ## Quick Reference
 
 ```ts
-import { createAgent, pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream } from "catelog";
+import { createAgent, pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeClaudeAgentStream } from "catelog";
 
 const agent = createAgent({
   name: string,                    // Required
