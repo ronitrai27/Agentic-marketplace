@@ -19,6 +19,8 @@
    - [LangGraph / LangChain](#53-langgraph--langchain)
    - [CrewAI / Custom Generators](#54-crewaicustom-async-generator)
    - [Vanilla TypeScript](#55-vanilla-typescript-no-framework)
+   - [Claude Agent SDK](#56-claude-agent-sdk)
+   - [Do I need a separate server?](#57-do-i-need-a-separate-server)
 6. [Streaming Helpers](#6-streaming-helpers)
 7. [Schema Definition](#7-schema-definition)
 8. [API Keys](#8-api-keys)
@@ -427,6 +429,8 @@ agent.listen(3000);
 - Final `usage` chunk → captured as `telemetry.llm_tokens`
 - Model name → captured as `telemetry.model_used`
 
+Using the Responses API (e.g. built-in web search)? Use `pipeOpenAiResponsesStream(await openai.responses.create({ model, input, tools: [{ type: "web_search" }] }), stream)`. It emits `web_search` activity events and token telemetry.
+
 ---
 
 ### 5.2 Vercel AI SDK
@@ -605,6 +609,129 @@ const agent = createAgent({
 
 agent.listen(3000);
 ```
+
+---
+
+### 5.6 Claude Agent SDK
+
+`@anthropic-ai/claude-agent-sdk` runs Claude with built-in tools (`WebSearch`, `WebFetch`, `Read`, `Bash`...). There is no one-line adapter yet, so you forward its messages to the `stream` yourself. That also lets you report **exact cost, tokens and model** as Catelog telemetry.
+
+```ts
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { createAgent } from "catelog";
+import { z } from "zod";
+
+const Out = z.object({
+  response: z.string(),
+  jobs: z.array(z.object({ title: z.string(), company: z.string(), url: z.string() })),
+});
+// The Claude CLI rejects the "$schema" key that zod emits, so strip it.
+const { $schema, ...outJson } = z.toJSONSchema(Out) as Record<string, unknown>;
+
+export const agent = createAgent({
+  name: "Job Finder",
+  mode: "async",                                     // Claude runs take 10-60s
+  inputSchema: z.object({ query: z.string() }),
+  outputSchema: Out,
+
+  async execute({ input, stream, signal, log, metric }) {
+    const abort = new AbortController();
+    signal.addEventListener("abort", () => abort.abort());      // client gone / timeout => stop paying
+
+    let tools = 0;
+    for await (const msg of query({
+      prompt: input.query,
+      options: {
+        model: "claude-haiku-5-5",                    // cheap model
+        tools: ["WebSearch", "WebFetch"],
+        allowedTools: ["WebSearch", "WebFetch"],
+        permissionMode: "dontAsk",
+        settingSources: [], persistSession: false,
+        maxTurns: 12, maxBudgetUsd: 0.15,             // hard spend cap per run
+        abortController: abort,
+        outputFormat: { type: "json_schema", schema: outJson },
+      },
+    })) {
+      if (msg.type === "assistant") {
+        for (const b of msg.message.content) {
+          if (b.type === "tool_use" && b.name !== "StructuredOutput") {
+            stream.activity(b.name, b.input as Record<string, unknown>);
+            stream.progress(Math.min(15 + ++tools * 12, 85), `Using ${b.name}`);
+            metric.count(`tool_${b.name}`);
+          }
+        }
+      } else if (msg.type === "result") {
+        const u = Object.values(msg.modelUsage);
+        const prompt = u.reduce((n, m) => n + m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens, 0);
+        const completion = u.reduce((n, m) => n + m.outputTokens, 0);
+        log.info("Claude done", { cost: msg.total_cost_usd, turns: msg.num_turns });
+
+        if (msg.subtype === "error_max_budget_usd")
+          throw Object.assign(new Error("Cost cap hit"), { code: "BUDGET_EXCEEDED", retryable: false });
+        if (msg.subtype !== "success")
+          throw Object.assign(new Error(msg.subtype), { code: "TOOL_FAILURE", retryable: true });
+
+        return {
+          output: Out.parse(msg.structured_output),
+          telemetry: {
+            model_used: Object.keys(msg.modelUsage).join(","),
+            cost_usd: msg.total_cost_usd,
+            llm_tokens: { prompt, completion, total: prompt + completion },
+            framework: { engine: "claude-agent-sdk", num_turns: msg.num_turns },
+          },
+        };
+      }
+    }
+    throw new Error("Claude ended without a result");
+  },
+});
+
+agent.listen(3000);
+```
+
+**Mapping cheat-sheet**
+
+| Claude Agent SDK | Catelog |
+| :--- | :--- |
+| `tool_use` block | `stream.activity(name, input)` + `stream.progress(...)` |
+| `result.total_cost_usd` | `telemetry.cost_usd` |
+| `result.modelUsage` | `telemetry.model_used`, `telemetry.llm_tokens` |
+| `result.structured_output` | the returned `output` |
+| `error_max_budget_usd` / `error_max_turns` | thrown error with `code` + `retryable` |
+| `ctx.signal` abort | `abortController.abort()` |
+
+A complete, tested example lives in `Agents/JobFitAgent/`.
+
+---
+
+### 5.7 Do I need a separate server?
+
+**No.** `catelog` *is* the server. Choose one:
+
+| You have... | Do this |
+| :--- | :--- |
+| A new agent | `agent.listen(3000)` is the whole server |
+| An existing Express / Fastify / `http` / Next.js server | `agent.handleRequest(req, res)` inside it. Same port, same process |
+
+A `server.ts` is just a file where you call `createAgent()` + `listen()`. You can put it in your existing entry file.
+
+```ts
+import express from "express";
+import { agent } from "./my-agent.js";
+
+const app = express();
+app.get("/", (_req, res) => res.send("my existing app"));
+
+// Serves /agent/health, /agent/schema, /agent/execute, /agent/tasks/:id
+app.use("/agent", (req, res) => agent.handleRequest(req, res));
+app.use(express.json());          // your own body parser goes AFTER the agent mount
+
+app.listen(3000);
+```
+
+> **Gotcha:** `handleRequest` reads the raw body itself. A body parser such as `express.json()` placed **before** the mount consumes the stream and `/execute` will hang. Mount the agent first, or apply the parser only to your own routes.
+
+Register the URL that serves `/health` and `/schema` (here `https://your-host/agent`) on the marketplace.
 
 ---
 
