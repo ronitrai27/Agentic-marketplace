@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { extractText, getDocumentProxy } from "unpdf";
-import mammoth from "mammoth";
+import { unzipSync, strFromU8 } from "fflate";
 
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 const MAX_CHARS = 12_000;
@@ -15,7 +15,7 @@ export class ResumeError extends Error {
   }
 }
 
-/** Free, local parsing (unpdf for PDF, mammoth for DOCX). OCR only for scanned PDFs when OCR_SPACE_API_KEY is set. */
+/** Free, local parsing (unpdf for PDF, fflate for DOCX). OCR only for scanned PDFs when OCR_SPACE_API_KEY is set. */
 export async function parseResume(buf: Buffer, filename: string): Promise<string> {
   const ext = path.extname(filename).toLowerCase();
   if (ext !== ".pdf" && ext !== ".docx") throw new ResumeError("Resume must be a .pdf or .docx file");
@@ -23,7 +23,7 @@ export async function parseResume(buf: Buffer, filename: string): Promise<string
 
   let text: string;
   try {
-    text = ext === ".pdf" ? await pdfText(buf) : (await mammoth.extractRawText({ buffer: buf })).value;
+    text = ext === ".pdf" ? await pdfText(buf) : docxText(buf);
   } catch {
     throw new ResumeError(`Could not read the ${ext} file; it may be corrupt or password-protected`);
   }
@@ -36,6 +36,24 @@ export async function parseResume(buf: Buffer, filename: string): Promise<string
 
 export async function parseResumeFile(filePath: string): Promise<string> {
   return parseResume(await readFile(filePath), path.basename(filePath));
+}
+
+/**
+ * DOCX is a zip of XML. Reading word/document.xml directly keeps this pure JS (no `fs`),
+ * so it also survives serverless bundlers that break CommonJS packages like mammoth.
+ */
+function docxText(buf: Buffer): string {
+  const files = unzipSync(new Uint8Array(buf), { filter: (f) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(f.name) });
+  const xml = strFromU8(files["word/document.xml"] ?? new Uint8Array());
+  return xml
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<w:br[^>]*\/>|<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 async function pdfText(buf: Buffer): Promise<string> {

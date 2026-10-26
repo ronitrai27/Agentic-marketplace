@@ -6,13 +6,15 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "serve": "tsx src/server.ts",
+    "build": "tsc",
+    "serve:prod": "node dist/server.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.310",
     "catelog": "^1.1.1",
     "dotenv": "^18.0.9",
-    "mammoth": "^1.13.0",
+    "fflate": "^0.8.3",
     "unpdf": "^1.9.1",
     "zod": "^4.6.7"
   },
