@@ -16,7 +16,14 @@ import {
   SidebarGroup,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, LayoutDashboard, Key, Bot, Brain } from "lucide-react";
+import {
+  LogOut,
+  LayoutDashboard,
+  Key,
+  Bot,
+  Brain,
+  BookOpen,
+} from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 import { usePathname } from "next/navigation";
@@ -60,7 +67,21 @@ export function CreatorSidebar({
           <SidebarTrigger className="text-foreground hover:bg-black/5 dark:hover:bg-white/10 shrink-0" />
         </SidebarHeader>
 
-        <SidebarContent className="p-2 mt-5 ">
+        <SidebarContent className="p-2 mt-4">
+          {/* Documentation Full-Width Button */}
+          <div className="mb-3 px-1">
+            <Link
+              href="/docs"
+              title="Documentation"
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-white dark:bg-neutral-800 text-foreground font-medium text-xs rounded-md border border-neutral-200 dark:border-neutral-700/80 shadow-sm hover:bg-neutral-50 dark:hover:bg-neutral-700/70 transition-all cursor-pointer group-data-[collapsible=icon]:px-0"
+            >
+              <BookOpen className="size-3.5 shrink-0" />
+              <span className="truncate group-data-[collapsible=icon]:hidden">
+                Documentation
+              </span>
+            </Link>
+          </div>
+
           <SidebarGroup className="p-0">
             <SidebarMenu>
               <SidebarMenuItem>
