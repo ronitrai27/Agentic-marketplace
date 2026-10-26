@@ -224,7 +224,7 @@
     </h1>
     <div class="env-switch">
       <button id="env-live" class="active" onclick="switchEnv('live')">Cloud (Live)</button>
-      <button id="env-local" onclick="switchEnv('local')">Localhost:3000</button>
+      <button id="env-local" onclick="switchEnv('local')">Localhost:5000</button>
     </div>
   </div>
 
@@ -279,7 +279,7 @@
 let stopPoll = false;
 const LIVE_URL = "https://p01--claude-agent--k8clc8rvc9fq.code.run";
 const LIVE_KEY = "cat_sec_live_c67619ac727df612b50a6cb1be786046929dc48bf8b8daeca44556e91e5be7e1";
-const LOCAL_URL = "http://localhost:3000";
+const LOCAL_URL = "http://localhost:5000";
 
 const $ = id => document.getElementById(id);
 const base = () => $('url').value.trim().replace(/\/$/, '');

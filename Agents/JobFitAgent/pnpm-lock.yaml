@@ -12,8 +12,8 @@ importers:
         specifier: ^0.3.310
         version: 0.3.310(@anthropic-ai/sdk@1.3.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
       catelog:
-        specifier: ^1.1.2
-        version: 1.1.2
+        specifier: ^1.1.3
+        version: 1.1.3
       dotenv:
         specifier: ^18.0.9
         version: 18.0.9
@@ -25,7 +25,7 @@ importers:
         version: 1.9.1
       zod:
         specifier: ^4.6.7
-        version: 4.6.7
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^26.6.5
@@ -433,8 +433,8 @@ packages:
     resolution: {integrity: sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==}
     engines: {node: '>= 0.4'}
 
-  catelog@1.1.2:
-    resolution: {integrity: sha512-0rVdVBueoc/62fCURFXXpXjbalW7QKRd3IA6WP7N7OeDV5WY1hixCJSQazpzTfJkiXeu1luaN+cFp/wJDgvczQ==}
+  catelog@1.1.3:
+    resolution: {integrity: sha512-4WeH8xYe/Kz2a52kHUhAdNDjal2Z/fP2G9+TdTrvCHDc5Y51QdVPMPPu8uv8s3WjQas7gsenZZtWowynJSAcbw==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -1082,7 +1082,7 @@ snapshots:
       call-bind-apply-helpers: 1.0.2
       get-intrinsic: 1.3.0
 
-  catelog@1.1.2:
+  catelog@1.1.3:
     dependencies:
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)

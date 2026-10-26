@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual, randomUUID } from "node:crypto";
+import { createHash, createHmac, createPublicKey, verify as cryptoVerify, timingSafeEqual, randomUUID } from "node:crypto";
 import type { ErrorCode } from "./types.js";
 
 // ─────────────────────────────────────────────────
@@ -24,8 +24,27 @@ export type AuthMode =
   | "hmac"          // Full HMAC-SHA256 (Gateway → Agent)
   | "bearer"        // Simple Bearer secret key (curl, Postman, internal)
   | "public"        // Publishable key (read-only endpoints)
+  | "test"          // Marketplace-signed short-lived test token (dry runs)
   | "dev"           // No auth, permissive development mode
   | "none";         // No auth configured and not dev
+
+// ─────────────────────────────────────────────────
+//  Test tokens (marketplace-signed, short-lived)
+// ─────────────────────────────────────────────────
+
+/**
+ * Catelog's Ed25519 public keys for verifying test tokens, by key id.
+ * Override or add keys with CATELOG_TEST_PUBLIC_KEY (PEM) + CATELOG_TEST_KID.
+ */
+const CATELOG_TEST_KEYS: Record<string, string> = {
+  k1: `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAAqBmhtzqR7yK6bs6gBVFcTxJ4BfOzAy44eL5bnkr2mY=
+-----END PUBLIC KEY-----`,
+};
+
+const TEST_TOKEN_PREFIX = "cat_test_";
+const TEST_TOKEN_LEEWAY_MS = 30_000;
+const TEST_TOKEN_MAX_TTL_SEC = 300;
 
 // ─────────────────────────────────────────────────
 //  Errors
@@ -157,6 +176,23 @@ export class SecurityManager {
       );
     }
 
+    // Marketplace-signed test token (cat_test_...): dry runs from Creator Space
+    if (token.startsWith(TEST_TOKEN_PREFIX)) {
+      if (!this.publicKey) {
+        if (this.isDevMode()) {
+          const runId = (headers["x-marketplace-run-id"] as string) || `dev-${randomUUID().slice(0, 8)}`;
+          const nonce = (headers["x-marketplace-nonce"] as string) || `dev-${randomUUID().slice(0, 8)}`;
+          return { runId, nonce, timestamp: Date.now(), authMode: "dev" };
+        }
+        throw new SecurityVerificationError(
+          "AUTH_MISSING_KEY",
+          "Set CATELOG_PUBLIC_KEY on this agent to accept Catelog test tokens.",
+          401
+        );
+      }
+      return this.verifyTestToken(token, headers);
+    }
+
     // Check secret key (cat_sec_live_...)
     if (token.startsWith("cat_sec_") && this.secret) {
       // Constant-time comparison
@@ -206,6 +242,77 @@ export class SecurityManager {
       "Invalid API key format or key mismatch",
       401
     );
+  }
+
+  // ── Test token verification (Ed25519 JWT signed by Catelog) ──
+
+  private verifyTestToken(
+    token: string,
+    headers: Record<string, string | string[] | undefined>
+  ): { runId: string; nonce: string; timestamp: number; authMode: AuthMode } {
+    const invalid = (message: string, code: ErrorCode = "AUTH_INVALID_KEY") =>
+      new SecurityVerificationError(code, message, 401);
+
+    const parts = token.slice(TEST_TOKEN_PREFIX.length).split(".");
+    if (parts.length !== 3) throw invalid("Malformed test token");
+    const [h, p, sig] = parts;
+
+    let header: { alg?: string; kid?: string };
+    let claims: { iss?: string; sub?: string; scope?: string; iat?: number; exp?: number; jti?: string };
+    try {
+      header = JSON.parse(Buffer.from(h, "base64url").toString("utf8"));
+      claims = JSON.parse(Buffer.from(p, "base64url").toString("utf8"));
+    } catch {
+      throw invalid("Malformed test token");
+    }
+
+    const keys: Record<string, string> = { ...CATELOG_TEST_KEYS };
+    if (process.env.CATELOG_TEST_PUBLIC_KEY) {
+      keys[process.env.CATELOG_TEST_KID || "env"] = process.env.CATELOG_TEST_PUBLIC_KEY.replace(/\\n/g, "\n");
+    }
+    const pem = header.kid ? keys[header.kid] : undefined;
+    if (header.alg !== "EdDSA" || !pem) throw invalid("Unrecognized test token key");
+
+    let signatureOk = false;
+    try {
+      signatureOk = cryptoVerify(
+        null,
+        Buffer.from(`${h}.${p}`),
+        createPublicKey(pem),
+        Buffer.from(sig, "base64url")
+      );
+    } catch {
+      signatureOk = false;
+    }
+    if (!signatureOk) throw invalid("Invalid test token signature", "AUTH_INVALID_SIGNATURE");
+
+    const now = Date.now();
+    const iatMs = (claims.iat ?? 0) * 1000;
+    const expMs = (claims.exp ?? 0) * 1000;
+    if (
+      claims.iss !== "catelog" ||
+      claims.scope !== "test" ||
+      !claims.exp ||
+      !claims.iat ||
+      expMs - iatMs > TEST_TOKEN_MAX_TTL_SEC * 1000 ||
+      iatMs > now + TEST_TOKEN_LEEWAY_MS
+    ) {
+      throw invalid("Invalid test token claims");
+    }
+    if (now > expMs + TEST_TOKEN_LEEWAY_MS) {
+      throw invalid("Test token expired. Generate a new one.", "AUTH_TIMESTAMP_OUT_OF_BOUNDS");
+    }
+
+    // The token must belong to the creator who owns this agent.
+    const subBuf = Buffer.from(claims.sub ?? "", "utf8");
+    const pubBuf = Buffer.from(this.publicKey ?? "", "utf8");
+    if (subBuf.length !== pubBuf.length || !timingSafeEqual(subBuf, pubBuf)) {
+      throw invalid("Test token was issued for a different creator");
+    }
+
+    const runId = (headers["x-marketplace-run-id"] as string) || `test-${(claims.jti ?? randomUUID()).slice(0, 8)}`;
+    const nonce = (headers["x-marketplace-nonce"] as string) || `test-${randomUUID().slice(0, 8)}`;
+    return { runId, nonce, timestamp: now, authMode: "test" };
   }
 
   // ── HMAC-SHA256 Verification (Gateway traffic) ──

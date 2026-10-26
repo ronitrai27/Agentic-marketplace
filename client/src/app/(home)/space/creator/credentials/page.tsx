@@ -7,6 +7,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/../convex/_generated/api";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
 import type { Id } from "@/../convex/_generated/dataModel";
+import { TestTokenPanel } from "@/modules/space/components/test-token-panel";
 
 interface KeyRecord {
   id: Id<"creator_api_keys">;
@@ -225,6 +226,28 @@ export default function CreatorCredentialsPage() {
               <span>View Docs</span>
               <ArrowRight className="size-3.5" />
             </button>
+          </div>
+        </div>
+
+        {/* Test tokens */}
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold dark:text-white">
+              Test tokens
+            </h3>
+            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
+              TESTING ONLY
+            </span>
+          </div>
+          <p className="text-xs dark:text-neutral-400">
+            Short-lived tokens for testing your own agents from Creator Space or
+            tools like curl and Postman. They can&apos;t process buyer requests,
+            can&apos;t move money, and expire after the time you choose. Your
+            secret keys are separate and are used for production
+            authentication. Agents need SDK 1.1.3 or newer.
+          </p>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 p-5">
+            <TestTokenPanel />
           </div>
         </div>
 

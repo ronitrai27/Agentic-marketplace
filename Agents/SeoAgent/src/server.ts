@@ -15,7 +15,7 @@ import { seoCatelogAgent } from "./catelog-agent.js";
 import { generateVerifiedExecutiveReport } from "./report.js";
 import { awaitWorkflow } from "./temporal/await-workflow.js";
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 4000;
 const app = createSeoAgentGraph();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

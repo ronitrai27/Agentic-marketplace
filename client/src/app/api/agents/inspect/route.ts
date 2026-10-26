@@ -1,34 +1,9 @@
 import { NextResponse } from "next/server";
-import { lookup } from "node:dns/promises";
-import net from "node:net";
 import { isAuthenticated } from "@/lib/auth-server";
+import { resolveAgentRoot } from "@/lib/agent-url";
 
 const TIMEOUT_MS = 8000;
 const MAX_BYTES = 512 * 1024;
-
-function isPrivateIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split(".").map(Number);
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127)
-    );
-  }
-  const v6 = ip.toLowerCase();
-  if (v6.startsWith("::ffff:")) return isPrivateIp(v6.slice(7));
-  return (
-    v6 === "::1" ||
-    v6 === "::" ||
-    v6.startsWith("fc") ||
-    v6.startsWith("fd") ||
-    v6.startsWith("fe80")
-  );
-}
 
 async function fetchJson(url: string) {
   const started = Date.now();
@@ -55,38 +30,15 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json().catch(() => null)) as { url?: string } | null;
-  let base: URL;
-  try {
-    base = new URL(body?.url?.trim() ?? "");
-  } catch {
-    return NextResponse.json({ error: "Enter a valid URL." }, { status: 400 });
-  }
-
-  const dev = process.env.NODE_ENV !== "production";
-  if (base.protocol !== "https:" && !(dev && base.protocol === "http:")) {
+  const target = await resolveAgentRoot(body?.url);
+  if (!target.ok) {
     return NextResponse.json(
-      { error: "Agent URL must use https." },
-      { status: 400 },
+      { error: target.error },
+      { status: target.status },
     );
   }
+  const root = target.root;
 
-  // SSRF guard: never let the marketplace probe internal addresses.
-  try {
-    const addrs = await lookup(base.hostname, { all: true });
-    if (!dev && addrs.some((a) => isPrivateIp(a.address))) {
-      return NextResponse.json(
-        { error: "URL must resolve to a public address." },
-        { status: 400 },
-      );
-    }
-  } catch {
-    return NextResponse.json(
-      { error: "Could not resolve this host." },
-      { status: 422 },
-    );
-  }
-
-  const root = base.href.replace(/\/+$/, "");
   try {
     const health = await fetchJson(`${root}/health`);
     if (!health.ok) {

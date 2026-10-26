@@ -81,5 +81,5 @@ export const agent = createAgent<JobFitInput, JobFitOutput>({
   },
 });
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.PORT ?? 5000);
 agent.listen(port);

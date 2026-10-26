@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
   pipeClaudeAgentStream,
+  toJsonSchema,
   type AgentStream,
   type TelemetryData,
 } from "catelog";
@@ -66,9 +67,9 @@ Rules:
 - Infer skills, seniority and location preference from the resume when provided; the user's query takes priority.`;
 
 // The Claude CLI rejects the "$schema" URL zod emits, so drop it.
-const { $schema: _omit, ...OUTPUT_JSON_SCHEMA } = z.toJSONSchema(
+const { $schema: _omit, ...OUTPUT_JSON_SCHEMA } = (toJsonSchema(
   OutputSchema,
-) as Record<string, unknown>;
+) ?? {}) as Record<string, unknown>;
 
 /** Drops repeat postings (same URL, or same company + title) and keeps the best-scored copy. */
 export function dedupeJobs(out: JobFitOutput): JobFitOutput {

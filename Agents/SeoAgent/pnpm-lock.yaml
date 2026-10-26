@@ -33,8 +33,8 @@ importers:
         specifier: ^1.24.0
         version: 1.24.0
       catelog:
-        specifier: ^1.1.0
-        version: 1.1.0
+        specifier: ^1.1.3
+        version: 1.1.3
       cheerio:
         specifier: ^1.2.0
         version: 1.2.0
@@ -815,8 +815,8 @@ packages:
   caniuse-lite@1.0.30001819:
     resolution: {integrity: sha512-LFUqIIAwpzsIuevnKnsR9qnStBcgzPShTX61lBwN9uFkkf8o8zLiebEjbW8AYtZiF+1YKDWfdt/pWDtMuG8Xwg==}
 
-  catelog@1.1.0:
-    resolution: {integrity: sha512-UykjTLlbXPtmJbV4P4KAU+diK6bW2jLNb9LjSSxwD3LQLqzxpCdrhF6A4C/OmQQMD+vz3/eVScDqDSxc/esKdA==}
+  catelog@1.1.3:
+    resolution: {integrity: sha512-4WeH8xYe/Kz2a52kHUhAdNDjal2Z/fP2G9+TdTrvCHDc5Y51QdVPMPPu8uv8s3WjQas7gsenZZtWowynJSAcbw==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -2167,7 +2167,7 @@ snapshots:
 
   caniuse-lite@1.0.30001819: {}
 
-  catelog@1.1.0:
+  catelog@1.1.3:
     dependencies:
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
