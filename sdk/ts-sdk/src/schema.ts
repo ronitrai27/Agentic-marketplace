@@ -79,7 +79,8 @@ export function validateSchemaData<T>(
     if (result.success) {
       return { success: true, data: result.data as T };
     }
-    const formattedErrors = (result.error?.errors || []).map(
+    const issues = result.error?.issues ?? result.error?.errors ?? []; // zod 4: .issues, zod 3: .errors
+    const formattedErrors = issues.map(
       (err: any) => `${err.path?.join(".") || "root"}: ${err.message}`
     );
     return { success: false, errors: formattedErrors };
