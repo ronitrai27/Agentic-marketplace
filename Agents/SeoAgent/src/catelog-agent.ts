@@ -5,7 +5,8 @@ import { createTemporalClient } from "./temporal/connection.js";
 import { awaitWorkflow, rootCauseMessage, WorkflowRunError, type WorkflowSnapshot } from "./temporal/await-workflow.js";
 import { fullAuditWorkflow, type FullAuditWorkflowResult } from "./temporal/workflows/full-audit.workflow.js";
 import { resolveAuditTarget } from "./core/target-resolver.js";
-import { generateVerifiedExecutiveReport } from "./report.js";
+import { generateVerifiedExecutiveReport, generateChatReply } from "./report.js";
+import { UsageTracker } from "./core/usage.js";
 import { env } from "./config/env.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,12 +117,33 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
       throw agentError("INVALID_INPUT", "Either 'url' or 'prompt' must be provided.");
     }
 
+    const usage = new UsageTracker();
     let resolved: Awaited<ReturnType<typeof resolveAuditTarget>>;
     try {
-      resolved = await resolveAuditTarget(rawQuery);
+      resolved = await resolveAuditTarget(rawQuery, usage);
     } catch (err) {
       throw agentError("INVALID_INPUT", `Could not work out which site to audit: ${rootCauseMessage(err)}`);
     }
+
+    // JEV said this is not an audit request (e.g. "hello") → chat back, no audit, no report prefix.
+    // An explicit `url` input is always treated as an audit request.
+    if (!input.url && !resolved.isAuditIntent) {
+      stream.step("Not an audit request — replying conversationally...");
+      let reply: string;
+      try {
+        reply = await generateChatReply(rawQuery, usage);
+      } catch (err) {
+        throw agentError("REPORT_FAILED", `Could not generate a reply: ${rootCauseMessage(err)}`, true);
+      }
+      stream.delta(reply, "text");
+      stream.progress(100, "Replied");
+      metric.timing("audit_total_duration_ms", Date.now() - startTime);
+      return {
+        output: { status: "COMPLETED", report: reply },
+        telemetry: { duration_ms: Date.now() - startTime, intent: "chat", ...usage.telemetry() },
+      };
+    }
+
     const targetUrl = resolved.targetUrl || (rawQuery.startsWith("http") ? rawQuery : `https://${rawQuery}`);
     try {
       new URL(targetUrl);
@@ -251,7 +273,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
 
     let report: string;
     try {
-      report = await generateVerifiedExecutiveReport(verifiedResult);
+      report = await generateVerifiedExecutiveReport(verifiedResult, usage);
     } catch (err) {
       throw agentError(
         "REPORT_FAILED",
@@ -288,7 +310,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
         duration_ms: Date.now() - startTime,
         target_url: targetUrl,
         jev_escalated: verifiedResult.escalationDecision.requiresBrowser,
-        model_used: env.JEV_MODEL,
+        ...usage.telemetry(),
       },
     };
   },

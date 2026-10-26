@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import type { UsageTracker } from "./usage.js";
 
 export interface ResolvedAuditTarget {
   isAuditIntent: boolean;
@@ -9,7 +10,8 @@ export interface ResolvedAuditTarget {
   source: "deterministic" | "jev";
 }
 
-const DOMAIN_REGEX = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/i;
+const DOMAIN_REGEX =
+  /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/i;
 
 /**
  * Enterprise Target & Intent Resolver.
@@ -18,10 +20,18 @@ const DOMAIN_REGEX = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA
  * Tier 1: Deterministic domain pattern recognition (< 1ms) for www.*, bare domains, full URLs.
  * Tier 2: OpenRouter TypeSafe JEV Decisions API (noul decision) for brand/natural language intents + SerpApi discovery.
  */
-export async function resolveAuditTarget(query: string): Promise<ResolvedAuditTarget> {
+export async function resolveAuditTarget(
+  query: string,
+  usage?: UsageTracker,
+): Promise<ResolvedAuditTarget> {
   const trimmed = query.trim();
   if (!trimmed) {
-    return { isAuditIntent: false, targetUrl: null, confidence: 0, source: "deterministic" };
+    return {
+      isAuditIntent: false,
+      targetUrl: null,
+      confidence: 0,
+      source: "deterministic",
+    };
   }
 
   // ----------------------------------------------------
@@ -54,7 +64,12 @@ export async function resolveAuditTarget(query: string): Promise<ResolvedAuditTa
   // ----------------------------------------------------
   const openrouterApiKey = env.OPENROUTER_JEV || process.env.OPENROUTER_JEV;
   if (!openrouterApiKey) {
-    return { isAuditIntent: false, targetUrl: null, confidence: 0, source: "deterministic" };
+    return {
+      isAuditIntent: false,
+      targetUrl: null,
+      confidence: 0,
+      source: "deterministic",
+    };
   }
 
   try {
@@ -80,7 +95,8 @@ export async function resolveAuditTarget(query: string): Promise<ResolvedAuditTa
               "Does this user message explicitly request to audit, inspect, analyze, browse, visit, or check a website, product, or company?",
             criteria: {
               true: "User specifies a website, company, or brand to inspect, browse, audit, or learn about (e.g. 'go to wekraft - a project management platform and tell about that', 'check linear app', 'audit stripe').",
-              false: "General conversation, asking how the assistant works, or asking conceptual questions without asking to inspect a specific target.",
+              false:
+                "General conversation, asking how the assistant works, or asking conceptual questions without asking to inspect a specific target.",
             },
           },
         },
@@ -91,6 +107,7 @@ export async function resolveAuditTarget(query: string): Promise<ResolvedAuditTa
 
     if (res.ok) {
       const data = (await res.json()) as any;
+      usage?.addProviderUsage(env.JEV_MODEL || "typesafe/jev-1.14", data.usage);
       const jevScore =
         data.answers?.is_audit_or_web_inspection_request?.noul ??
         data.decisions?.is_audit_or_web_inspection_request?.probability ??
@@ -101,7 +118,10 @@ export async function resolveAuditTarget(query: string): Promise<ResolvedAuditTa
       if (isAuditIntent) {
         // Extract the brand/company name from the prompt deterministically
         const candidate = trimmed
-          .replace(/^(?:please\s+)?(?:go\s+to|check|audit|inspect|analyze|visit|look\s+at|tell\s+me\s+about)\s+/i, "")
+          .replace(
+            /^(?:please\s+)?(?:go\s+to|check|audit|inspect|analyze|visit|look\s+at|tell\s+me\s+about)\s+/i,
+            "",
+          )
           .split(/[\s,-]+/)[0]
           ?.replace(/[^a-zA-Z0-9]/g, "")
           .trim();
@@ -114,8 +134,8 @@ export async function resolveAuditTarget(query: string): Promise<ResolvedAuditTa
           try {
             const serpRes = await fetch(
               `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(
-                `${brand} official website`
-              )}&api_key=${serpApiKey}`
+                `${brand} official website`,
+              )}&api_key=${serpApiKey}`,
             );
             if (serpRes.ok) {
               const serpData = (await serpRes.json()) as any;

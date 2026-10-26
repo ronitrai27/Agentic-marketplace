@@ -1,11 +1,17 @@
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { getChatModel } from "./graph/model.js";
 import type { FullAuditWorkflowResult } from "./temporal/workflows/full-audit.workflow.js";
+import type { UsageTracker } from "./core/usage.js";
+
+const PRIMARY_MODEL = "gpt-4.1-mini";
 
 /**
  * Synthesize Executive Report from Verified Audit Data
  */
-export async function generateVerifiedExecutiveReport(data: FullAuditWorkflowResult): Promise<string> {
+export async function generateVerifiedExecutiveReport(
+  data: FullAuditWorkflowResult,
+  usage?: UsageTracker,
+): Promise<string> {
   const model = getChatModel();
 
   const prompt = `You are an Autonomous Technical SEO & GEO Senior Director.
@@ -56,10 +62,26 @@ INSTRUCTIONS:
 
   try {
     const res = await model.invoke([new SystemMessage(prompt)]);
-    return typeof res.content === "string" ? res.content : JSON.stringify(res.content);
+    usage?.addLangChain(PRIMARY_MODEL, res);
+    return typeof res.content === "string"
+      ? res.content
+      : JSON.stringify(res.content);
   } catch {
     const fallback = getChatModel("gpt-4o-mini");
     const res = await fallback.invoke([new SystemMessage(prompt)]);
-    return typeof res.content === "string" ? res.content : JSON.stringify(res.content);
+    usage?.addLangChain("gpt-4o-mini", res);
+    return typeof res.content === "string"
+      ? res.content
+      : JSON.stringify(res.content);
   }
+}
+
+const CHAT_SYSTEM_PROMPT = `You are the Technical SEO & GEO Intelligence Agent. You audit websites for technical SEO, Core Web Vitals, SERP rank and AI-engine citations.
+The user's message is not an audit request, so just reply conversationally and briefly. If it fits, mention that they can send a domain (e.g. "wekraft.xyz") or "Audit github.com" to get a full audit.`;
+
+/** Plain conversational reply for messages that are not audit requests (no Temporal workflow). */
+export async function generateChatReply(query: string, usage?: UsageTracker): Promise<string> {
+  const res = await getChatModel().invoke([new SystemMessage(CHAT_SYSTEM_PROMPT), new HumanMessage(query)]);
+  usage?.addLangChain(PRIMARY_MODEL, res);
+  return typeof res.content === "string" ? res.content : JSON.stringify(res.content);
 }
