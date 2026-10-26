@@ -23,7 +23,7 @@ export const agent = createAgent<JobFitInput, JobFitOutput>({
 
   async execute({ input, stream, signal, log, metric }) {
     const t0 = Date.now();
-    log.info("Job search started", { has_resume: !!input.resume_base64, query: input.query });
+    log.info("Job search started", { has_resume: !!input.resume_base64, query: input.prompt });
     metric.count("runs");
     if (input.resume_base64) metric.count("resumes_uploaded");
 

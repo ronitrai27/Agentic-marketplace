@@ -23,7 +23,7 @@ const consoleStream: AgentStream = {
 };
 
 const resumeText = resumePath ? await parseResumeFile(resumePath) : undefined;
-const { output, telemetry } = await runJobFit({ query: q, resumeText }, consoleStream);
+const { output, telemetry } = await runJobFit({ prompt: q, resumeText }, consoleStream);
 console.log(JSON.stringify(output, null, 2));
 console.error(
   `model=${telemetry?.model_used} tokens=${telemetry?.llm_tokens?.total} (in ${telemetry?.llm_tokens?.prompt} / out ${telemetry?.llm_tokens?.completion}) cost=$${telemetry?.cost_usd?.toFixed(4)}`,

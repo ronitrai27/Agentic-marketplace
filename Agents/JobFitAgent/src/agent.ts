@@ -5,7 +5,7 @@ import { MAX_RESUME_BYTES, parseResume, ResumeError } from "./parse.js";
 
 export const InputSchema = z
   .object({
-    query: z.string().min(1).max(1000).describe("What kind of job you want, e.g. 'remote backend roles in Europe'"),
+    prompt: z.string().min(1).max(1000).describe("What kind of job you want, e.g. 'remote backend roles in Europe'"),
     resume_base64: z.string().optional().describe("Optional resume file (.pdf or .docx), base64-encoded"),
     resume_filename: z.string().optional().describe("Original file name, e.g. 'cv.pdf' (required with resume_base64)"),
   })
@@ -42,7 +42,7 @@ Rules:
 const { $schema: _omit, ...OUTPUT_JSON_SCHEMA } = z.toJSONSchema(OutputSchema) as Record<string, unknown>;
 
 export interface JobFitRequest {
-  query: string;
+  prompt: string;
   resume_base64?: string;
   resume_filename?: string;
   /** Already-parsed resume text (CLI path). Takes priority over resume_base64. */
@@ -65,7 +65,7 @@ async function buildQuery(req: JobFitRequest) {
   }
 
   return query({
-    prompt: `Query: ${req.query}\n\n${resume ? `Resume:\n"""\n${resume}\n"""` : "(no resume provided)"}`,
+    prompt: `Query: ${req.prompt}\n\n${resume ? `Resume:\n"""\n${resume}\n"""` : "(no resume provided)"}`,
     options: {
       model: process.env.JOBFIT_MODEL ?? "claude-haiku-5-5",
       systemPrompt: SYSTEM,
