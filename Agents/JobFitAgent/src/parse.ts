@@ -5,6 +5,9 @@ import { unzipSync, strFromU8 } from "fflate";
 
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 const MAX_CHARS = 12_000;
+/** Guards against decompression bombs / absurd files: real resumes are far below these. */
+const MAX_DOCX_XML_BYTES = 10 * 1024 * 1024;
+const MAX_PDF_PAGES = 40;
 
 export class ResumeError extends Error {
   readonly code = "INVALID_INPUT";
@@ -24,7 +27,8 @@ export async function parseResume(buf: Buffer, filename: string): Promise<string
   let text: string;
   try {
     text = ext === ".pdf" ? await pdfText(buf) : docxText(buf);
-  } catch {
+  } catch (err) {
+    if (err instanceof ResumeError) throw err;
     throw new ResumeError(`Could not read the ${ext} file; it may be corrupt or password-protected`);
   }
   text = text.replace(/\s+\n/g, "\n").replace(/[ \t]+/g, " ").trim();
@@ -43,7 +47,13 @@ export async function parseResumeFile(filePath: string): Promise<string> {
  * so it also survives serverless bundlers that break CommonJS packages like mammoth.
  */
 function docxText(buf: Buffer): string {
-  const files = unzipSync(new Uint8Array(buf), { filter: (f) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(f.name) });
+  const files = unzipSync(new Uint8Array(buf), {
+    filter: (f) => {
+      if (f.name !== "word/document.xml") return false;
+      if (f.originalSize > MAX_DOCX_XML_BYTES) throw new ResumeError("Resume content is too large to process");
+      return true;
+    },
+  });
   const xml = strFromU8(files["word/document.xml"] ?? new Uint8Array());
   return xml
     .replace(/<w:tab\/>/g, "\t")
@@ -58,6 +68,7 @@ function docxText(buf: Buffer): string {
 
 async function pdfText(buf: Buffer): Promise<string> {
   const pdf = await getDocumentProxy(new Uint8Array(buf));
+  if (pdf.numPages > MAX_PDF_PAGES) throw new ResumeError(`Resume has too many pages (max ${MAX_PDF_PAGES})`);
   const { text } = await extractText(pdf, { mergePages: true });
   return text;
 }
