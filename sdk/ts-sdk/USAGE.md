@@ -19,6 +19,8 @@
    - [LangGraph / LangChain](#53-langgraph--langchain)
    - [CrewAI / Custom Generators](#54-crewaicustom-async-generator)
    - [Vanilla TypeScript](#55-vanilla-typescript-no-framework)
+   - [Claude Agent SDK](#56-claude-agent-sdk)
+   - [Do I need a separate server?](#57-do-i-need-a-separate-server)
 6. [Streaming Helpers](#6-streaming-helpers)
 7. [Schema Definition](#7-schema-definition)
 8. [API Keys](#8-api-keys)
@@ -427,6 +429,8 @@ agent.listen(3000);
 - Final `usage` chunk → captured as `telemetry.llm_tokens`
 - Model name → captured as `telemetry.model_used`
 
+Using the Responses API (e.g. built-in web search)? Use `pipeOpenAiResponsesStream(await openai.responses.create({ model, input, tools: [{ type: "web_search" }] }), stream)`. It emits `web_search` activity events and token telemetry.
+
 ---
 
 ### 5.2 Vercel AI SDK
@@ -605,6 +609,119 @@ const agent = createAgent({
 
 agent.listen(3000);
 ```
+
+---
+
+### 5.6 Claude Agent SDK
+
+`@anthropic-ai/claude-agent-sdk` runs Claude with built-in tools (`WebSearch`, `WebFetch`, `Read`, `Bash`...). One line connects it to Catelog:
+
+```ts
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { createAgent, pipeClaudeAgentStream } from "catelog";
+import { z } from "zod";
+
+const agent = createAgent({
+  name: "Claude Researcher",
+  mode: "async",                                     // Claude runs take 10-60s
+  inputSchema: z.object({ prompt: z.string() }),
+
+  async execute({ input, stream, signal, metric }) {
+    const run = query({
+      prompt: input.prompt,
+      options: {
+        model: "claude-haiku-5-5",                    // cheap model
+        tools: ["WebSearch", "WebFetch"],
+        allowedTools: ["WebSearch", "WebFetch"],
+        permissionMode: "dontAsk",
+        settingSources: [], persistSession: false,
+        maxTurns: 10, maxBudgetUsd: 0.15,             // hard spend cap per run
+      },
+    });
+
+    return pipeClaudeAgentStream(run, stream, {
+      signal,                                         // client gone / timeout => query.interrupt()
+      onUsage: (t) => metric.gauge("cost_usd", t.cost_usd ?? 0),   // optional: cost kept even on failure
+    });
+    // => { output: { text: "..." }, telemetry: { model_used, llm_tokens, cost_usd, framework: {...} } }
+  },
+});
+
+agent.listen(3000);
+```
+
+**What you get from the adapter:**
+- Each tool call (`WebSearch`, `Read`...) → `task.activity` + a `task.progress` step
+- Assistant text → `task.delta`
+- `total_cost_usd`, per-model tokens, model name, turns, per-tool counts → `telemetry`
+- Aborting `signal` → `query.interrupt()`, so a cancelled run stops spending money
+- Failures → thrown errors with a Catelog `code` + `retryable`:
+
+| Claude Agent SDK problem | Catelog error code | Retryable |
+| :--- | :--- | :---: |
+| `rate_limit`, `overloaded` | `MODEL_RATE_LIMIT` | yes |
+| `server_error` | `UPSTREAM_TIMEOUT` | yes |
+| `error_max_budget_usd` | `BUDGET_EXCEEDED` | no |
+| `error_max_turns` | `TOOL_FAILURE` | yes |
+| bad structured output | `INTERNAL_CRASH` | yes |
+| `authentication_failed`, `billing_error` | `MODEL_AUTH_FAILED`, `MODEL_BILLING_ERROR` | no |
+
+**Typed JSON output instead of text:**
+
+```ts
+const Out = z.object({
+  response: z.string(),
+  jobs: z.array(z.object({ title: z.string(), company: z.string(), url: z.string() })),
+});
+// The Claude CLI rejects the "$schema" key that zod emits, so strip it.
+const { $schema, ...schema } = z.toJSONSchema(Out) as Record<string, unknown>;
+
+// in execute():
+const run = query({ prompt, options: { /* ...as above... */ outputFormat: { type: "json_schema", schema } } });
+return pipeClaudeAgentStream(run, stream, { signal, parse: (v) => Out.parse(v) });   // => { output: Out, telemetry }
+```
+
+**Adapter options**
+
+| Option | Purpose |
+| :--- | :--- |
+| `signal` | Pass `ctx.signal`; abort calls `query.interrupt()` |
+| `parse` | Validate/shape the structured output (e.g. `Out.parse`) |
+| `onUsage` | Called with final telemetry on success *and* failure |
+| `hideTools` | Internal tools not shown as activity (default `["StructuredOutput"]`) |
+
+A complete example lives in `Agents/JobFitAgent/`.
+
+---
+
+### 5.7 Do I need a separate server?
+
+**No.** `catelog` *is* the server. Choose one:
+
+| You have... | Do this |
+| :--- | :--- |
+| A new agent | `agent.listen(3000)` is the whole server |
+| An existing Express / Fastify / `http` / Next.js server | `agent.handleRequest(req, res)` inside it. Same port, same process |
+
+A `server.ts` is just a file where you call `createAgent()` + `listen()`. You can put it in your existing entry file.
+
+```ts
+import express from "express";
+import { agent } from "./my-agent.js";
+
+const app = express();
+app.get("/", (_req, res) => res.send("my existing app"));
+
+// Serves /agent/health, /agent/schema, /agent/execute, /agent/tasks/:id
+app.use("/agent", (req, res) => agent.handleRequest(req, res));
+app.use(express.json());          // your own body parser goes AFTER the agent mount
+
+app.listen(3000);
+```
+
+> **Gotcha:** `handleRequest` reads the raw body itself. A body parser such as `express.json()` placed **before** the mount consumes the stream and `/execute` will hang. Mount the agent first, or apply the parser only to your own routes.
+
+Register the URL that serves `/health` and `/schema` (here `https://your-host/agent`) on the marketplace.
 
 ---
 
@@ -1053,7 +1170,7 @@ The guide (`Catelog-TS.md`) is written to your project root. It covers setup, SS
 ## Quick Reference
 
 ```ts
-import { createAgent, pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream } from "catelog";
+import { createAgent, pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeClaudeAgentStream } from "catelog";
 
 const agent = createAgent({
   name: string,                    // Required

@@ -2,7 +2,7 @@
 
 > Installed by `npx catelog init`. Read it yourself, or point your coding assistant at it.
 
-`catelog` turns any AI agent (OpenAI, Vercel AI SDK, LangGraph, or plain TypeScript) into a marketplace-ready HTTP service. You write one `execute()` function; the SDK provides:
+`catelog` turns any AI agent (Claude Agent SDK, OpenAI, Vercel AI SDK, LangGraph, or plain TypeScript) into a marketplace-ready HTTP service. You write one `execute()` function; the SDK provides:
 
 | Endpoint | Purpose |
 | :--- | :--- |
@@ -69,6 +69,37 @@ agent.listen(3000);   // alias: agent.serve(3000)
 
 - **Return** a value → task completes. **Throw** → task fails. You never set task state by hand.
 - Returning `{ output, telemetry? }` or a plain object both work.
+
+---
+
+### Do I need a separate server file?
+
+**No.** `catelog` *is* the server. Pick one:
+
+| You have... | Do this |
+| :--- | :--- |
+| Nothing yet (new agent) | `agent.listen(3000)`. Done, that is the whole server. |
+| An existing Express / Fastify / `http` / Next.js server | `agent.handleRequest(req, res)` inside it. No second port, no second process. |
+
+A file like `server.ts` is just *where you call* `createAgent()` and `listen()`. Put them in your existing entry file if you like.
+
+```ts
+// Existing Express app: add the agent as one more route group
+import express from "express";
+import { agent } from "./my-agent.js";
+
+const app = express();
+app.get("/", (_req, res) => res.send("my existing app"));
+
+app.use("/agent", (req, res) => agent.handleRequest(req, res));   // /agent/health, /agent/schema, /agent/execute, /agent/tasks/:id
+app.use(express.json());                                           // your own body parser goes AFTER the mount
+
+app.listen(3000);
+```
+
+> **Gotcha:** `handleRequest` reads the raw request body itself. Do **not** run `express.json()` (or any body parser) before the mount, or `/execute` will hang because the body was already consumed. Mount the agent first, or only apply the parser to your own routes.
+
+When you register on the marketplace, give it the URL that serves `/health` and `/schema` (e.g. `https://api.example.com/agent`).
 
 ---
 
@@ -179,13 +210,105 @@ for (;;) {
 The adapters read the framework's stream and call `stream.delta` / `stream.activity` for you:
 
 ```ts
-import { pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeAsyncIterableStream } from "catelog";
+import { pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeClaudeAgentStream, pipeAsyncIterableStream } from "catelog";
 
 return pipeOpenAiStream(await openai.chat.completions.create({ model, messages, stream: true }), stream);
 return pipeAiSdkStream(streamText({ model, prompt }), stream);                 // Vercel AI SDK
 return pipeLangGraphStream(graph, { input }, stream, { signal });              // LangGraph
+return pipeClaudeAgentStream(query({ prompt, options }), stream, { signal });   // Claude Agent SDK
 return pipeAsyncIterableStream(myAsyncGenerator(), stream);                    // CrewAI, LlamaIndex, custom
 ```
+
+### Recipes: Claude Agent SDK, OpenAI, LangGraph
+
+All three live inside `execute()`. The agent file below is the *whole* integration (add `agent.listen(3000)` or mount it, see above).
+
+**Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), one line with the adapter. Tool calls become `task.activity`, and cost, tokens and model go into telemetry:
+
+```ts
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { createAgent, pipeClaudeAgentStream } from "catelog";
+import { z } from "zod";
+
+export const agent = createAgent({
+  name: "Claude Researcher",
+  mode: "async",                                   // Claude runs take 10-60s
+  inputSchema: z.object({ prompt: z.string() }),
+  async execute({ input, stream, signal, metric }) {
+    const run = query({
+      prompt: input.prompt,
+      options: {
+        model: "claude-haiku-5-5",
+        tools: ["WebSearch", "WebFetch"], allowedTools: ["WebSearch", "WebFetch"],
+        permissionMode: "dontAsk", settingSources: [], persistSession: false,
+        maxTurns: 10, maxBudgetUsd: 0.15,          // hard spend cap per run
+      },
+    });
+    return pipeClaudeAgentStream(run, stream, {
+      signal,                                      // client leaves / timeout => query.interrupt()
+      onUsage: (t) => metric.gauge("cost_usd", t.cost_usd ?? 0),   // optional: keep cost even when the run fails
+    });                                            // => { output: { text }, telemetry }
+  },
+});
+```
+
+Want typed JSON back instead of text? Add `outputFormat: { type: "json_schema", schema }` to the query options and pass `parse` to the adapter:
+
+```ts
+const Out = z.object({ answer: z.string() });
+const { $schema, ...schema } = z.toJSONSchema(Out) as Record<string, unknown>;   // the Claude CLI rejects "$schema"
+// query options: outputFormat: { type: "json_schema", schema }
+return pipeClaudeAgentStream(run, stream, { signal, parse: (v) => Out.parse(v) });   // => { output: { answer }, telemetry }
+```
+
+The adapter maps Claude failures to Catelog error codes: rate limit / overloaded → `MODEL_RATE_LIMIT` (retryable), budget cap → `BUDGET_EXCEEDED`, out of turns → `TOOL_FAILURE`, bad structured output → `INTERNAL_CRASH`. Full production example: `Agents/JobFitAgent/`.
+
+**OpenAI SDK**, one line with the adapter (streams tokens, captures model + usage):
+
+```ts
+import OpenAI from "openai";
+import { createAgent, pipeOpenAiStream } from "catelog";
+const client = new OpenAI();
+
+export const agent = createAgent({
+  name: "OpenAI Assistant",
+  inputSchema: z.object({ prompt: z.string() }),
+  async execute({ input, stream }) {
+    const res = await client.chat.completions.create({
+      model: "gpt-4o-mini", stream: true, stream_options: { include_usage: true },
+      messages: [{ role: "user", content: input.prompt }],
+    });
+    return pipeOpenAiStream(res, stream);          // => { output: { text }, telemetry }
+  },
+});
+```
+
+(Responses API / web search: use `pipeOpenAiResponsesStream(await client.responses.create({...}), stream)`.)
+
+**LangGraph (TypeScript)**, one line; each graph node becomes a `task.activity` event:
+
+```ts
+import { createAgent, pipeLangGraphStream } from "catelog";
+import { graph } from "./my-graph.js";             // your compiled StateGraph
+
+export const agent = createAgent({
+  name: "Research Graph",
+  mode: "async",
+  inputSchema: z.object({ topic: z.string() }),
+  async execute({ input, stream, signal }) {
+    return pipeLangGraphStream(graph, { messages: [input.topic] }, stream, { signal });
+  },
+});
+```
+
+| Framework | How | Telemetry you get for free |
+| :--- | :--- | :--- |
+| Claude Agent SDK | `pipeClaudeAgentStream` | model, tokens, cost, turns, per-tool counts |
+| OpenAI | `pipeOpenAiStream` / `pipeOpenAiResponsesStream` | model, tokens (+ cost for Responses) |
+| LangGraph | `pipeLangGraphStream` | nodes visited |
+| Vercel AI SDK | `pipeAiSdkStream` | tokens, tool calls |
+
+> Adapter output shape: OpenAI/AI SDK adapters return `{ text }`; LangGraph returns the last node's output. If your `outputSchema` needs a different shape, call the framework yourself and `return { output, telemetry }`.
 
 ### Events in `async` mode
 
@@ -300,6 +423,8 @@ In Docker/Kubernetes set the stop grace period to at least `shutdownTimeoutMs` (
 import http from "node:http";
 http.createServer((req, res) => agent.handleRequest(req, res)).listen(3000);
 ```
+
+Express under a prefix (`app.use("/agent", (req, res) => agent.handleRequest(req, res))`) works too. Mount it **before** `express.json()`. See "Do I need a separate server file?" in section 4.
 
 ## 9. Authentication
 

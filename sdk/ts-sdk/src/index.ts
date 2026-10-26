@@ -57,6 +57,8 @@ export {
   pipeOpenAiResponsesStream,
   pipeLangGraphStream,
   pipeAsyncIterableStream,
+  pipeClaudeAgentStream,
+  type ClaudeAgentStreamOptions,
 } from "./adapters.js";
 
 // Server
