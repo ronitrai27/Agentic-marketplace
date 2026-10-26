@@ -5,7 +5,7 @@ import { MAX_RESUME_BYTES, parseResume, ResumeError } from "./parse.js";
 
 export const InputSchema = z
   .object({
-    prompt: z.string().min(1).max(1000).describe("What kind of job you want, e.g. 'remote backend roles in Europe'"),
+    prompt: z.string().trim().min(1).max(1000).describe("What kind of job you want, e.g. 'remote backend roles in Europe'"),
     resume_base64: z.string().optional().describe("Optional resume file (.pdf or .docx), base64-encoded"),
     resume_filename: z.string().optional().describe("Original file name, e.g. 'cv.pdf' (required with resume_base64)"),
   })
@@ -35,11 +35,28 @@ const SYSTEM = `You are a job recommendation agent. Find REAL, currently open jo
 Rules:
 - Use WebSearch to find postings, WebFetch only to verify a promising posting. Do at most ~6 tool calls.
 - Return 5 jobs (fewer only if you truly cannot find more). Every url MUST come from a search/fetch result. Never invent jobs, companies, salaries or links.
-- match_reason is one short line. response is 2-3 sentences. No filler, no advice, no cover letters.
+- response: at most 2 short sentences (under 280 characters): how many jobs and which fits best. match_reason: one line, under 20 words.
+- If the user's message is not a job request (e.g. a greeting) and there is no resume, do not search: return an empty jobs array and a one-sentence response asking for role, location and seniority.
+- No filler, no advice, no cover letters, no caveats about the search process.
 - Infer skills, seniority and location preference from the resume when provided; the user's query takes priority.`;
 
 // The Claude CLI rejects the "$schema" URL zod emits, so drop it.
 const { $schema: _omit, ...OUTPUT_JSON_SCHEMA } = z.toJSONSchema(OutputSchema) as Record<string, unknown>;
+
+/** Drops repeat postings (same URL, or same company + title) and keeps the best-scored copy. */
+export function dedupeJobs(out: JobFitOutput): JobFitOutput {
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const seen = new Set<string>();
+  const jobs = [...out.jobs]
+    .sort((a, b) => b.match_score - a.match_score)
+    .filter((j) => {
+      const keys = [`u:${j.url.split("#")[0].replace(/\/$/, "")}`, `t:${norm(j.company)}|${norm(j.title)}`];
+      if (keys.some((k) => seen.has(k))) return false;
+      keys.forEach((k) => seen.add(k));
+      return true;
+    });
+  return { ...out, jobs };
+}
 
 export interface JobFitRequest {
   prompt: string;
@@ -88,6 +105,6 @@ async function buildQuery(req: JobFitRequest) {
 export async function runJobFit(req: JobFitRequest, stream: AgentStream, opts: RunOptions = {}) {
   return pipeClaudeAgentStream<JobFitOutput>(await buildQuery(req), stream, {
     ...opts,
-    parse: (raw) => OutputSchema.parse(raw),
+    parse: (raw) => dedupeJobs(OutputSchema.parse(raw)),
   });
 }
