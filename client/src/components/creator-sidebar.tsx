@@ -16,7 +16,7 @@ import {
   SidebarGroup,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, LayoutDashboard, Key } from "lucide-react";
+import { LogOut, LayoutDashboard, Key, Bot } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 import { usePathname } from "next/navigation";
@@ -77,6 +77,24 @@ export function CreatorSidebar({
                   <LayoutDashboard className="size-4 shrink-0" />
                   <span className="truncate group-data-[collapsible=icon]:hidden">
                     Overview
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem className="mt-3">
+                <SidebarMenuButton
+                  render={<Link href="/space/creator/my-agents" />}
+                  isActive={pathname.startsWith("/space/creator/my-agents")}
+                  tooltip="My agents"
+                  className={
+                    pathname.startsWith("/space/creator/my-agents")
+                      ? "bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
+                      : "text-muted-foreground hover:text-foreground py-2 px-3 rounded-lg"
+                  }
+                >
+                  <Bot className="size-4 shrink-0" />
+                  <span className="truncate group-data-[collapsible=icon]:hidden">
+                    My agents
                   </span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
