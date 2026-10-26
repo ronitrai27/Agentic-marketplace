@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Tester</title>
+<style>
+  body{font:14px system-ui,sans-serif;max-width:860px;margin:24px auto;padding:0 16px;background:#0f1419;color:#e6e6e6}
+  label{display:block;margin:12px 0 4px;color:#9aa4b2;font-size:12px;text-transform:uppercase}
+  input,textarea{width:100%;box-sizing:border-box;padding:8px;background:#1a212b;color:#fff;border:1px solid #2c3644;border-radius:6px;font:inherit}
+  button{padding:8px 14px;margin:8px 6px 0 0;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}
+  button.alt{background:#2c3644}
+  pre{background:#080b0f;padding:12px;border-radius:6px;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:320px}
+  .ok{color:#34d399}.bad{color:#f87171}.warn{color:#fbbf24}
+  #status{margin-top:12px;font-weight:600}
+</style>
+</head>
+<body>
+<h2>Agent Tester</h2>
+<label>Backend URL</label>
+<input id="url" placeholder="https://xxx.code.run" value="http://localhost:3000">
+<label>Bearer secret key (cat_sec_live_… or dev)</label>
+<input id="key" type="password" placeholder="optional in dev mode">
+<div>
+  <button class="alt" onclick="health()">Check /health</button>
+  <button class="alt" onclick="schema()">Fetch /schema</button>
+</div>
+<label>Prompt</label>
+<textarea id="prompt" rows="3">remote backend engineer roles in Europe</textarea>
+<button onclick="run()">POST /execute</button>
+<button class="alt" onclick="stopPoll=true">Stop polling</button>
+<div id="status"></div>
+<label>Response</label>
+<pre id="out">—</pre>
+
+<script>
+let stopPoll=false;
+const $=id=>document.getElementById(id);
+const base=()=>$('url').value.trim().replace(/\/$/,'');
+const hdrs=()=>{const h={'Content-Type':'application/json'};const k=$('key').value.trim();if(k)h.Authorization='Bearer '+k;return h};
+const status=(t,c='')=>{$('status').className=c;$('status').textContent=t};
+const show=o=>$('out').textContent=typeof o==='string'?o:JSON.stringify(o,null,2);
+
+async function call(path,opts){
+  const t=performance.now();
+  const r=await fetch(base()+path,{headers:hdrs(),...opts});
+  const text=await r.text();let body;try{body=JSON.parse(text)}catch{body=text}
+  return {ok:r.ok,code:r.status,ms:Math.round(performance.now()-t),body};
+}
+async function health(){
+  try{const r=await call('/health');status(`/health → ${r.code} (${r.ms}ms)`,r.ok?'ok':'bad');show(r.body)}
+  catch(e){status('Network/CORS error: '+e.message,'bad')}
+}
+async function schema(){
+  try{const r=await call('/schema');status(`/schema → ${r.code} (${r.ms}ms)`,r.ok?'ok':'bad');show(r.body)}
+  catch(e){status('Network/CORS error: '+e.message,'bad')}
+}
+async function run(){
+  stopPoll=false;show('…');
+  try{
+    const r=await call('/execute',{method:'POST',body:JSON.stringify({input:{prompt:$('prompt').value}})});
+    if(r.code===401||r.code===403){status(`Auth failed (${r.code}) — secret key is wrong`,'bad');return show(r.body)}
+    if(!r.ok){status(`/execute → ${r.code}`,'bad');return show(r.body)}
+    show(r.body);
+    const poll=r.body.poll_url||(r.body.run_id&&`/tasks/${r.body.run_id}`);
+    if(!poll){status('Completed (sync response)','ok');return}
+    const t0=Date.now();
+    while(!stopPoll){
+      await new Promise(s=>setTimeout(s,2000));
+      const p=await call(poll);const b=p.body||{};
+      const secs=Math.round((Date.now()-t0)/1000);
+      status(`${b.status} · ${b.current_step||''} · ${b.progress_pct??'?'}% · ${secs}s`,
+        b.status==='completed'?'ok':(b.status==='failed'?'bad':'warn'));
+      show(b);
+      if(!['working','pending','queued','submitted'].includes(b.status))break;
+      if(secs>200){status('Gave up after 200s — agent is stuck; check server logs for [claude-cli] / WATCHDOG','bad');break}
+    }
+  }catch(e){status('Network/CORS error: '+e.message,'bad')}
+}
+</script>
+</body>
+</html>

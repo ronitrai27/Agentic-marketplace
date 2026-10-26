@@ -122,9 +122,14 @@ async function buildQuery(req: JobFitRequest) {
     `[JobFitAgent] Initializing query with model: ${model}, maxBudget: $${maxBudget}`,
   );
 
+  // Surface the Claude CLI's own stderr (auth, network, startup errors) in container logs.
+  console.log(
+    `[JobFitAgent] ANTHROPIC_API_KEY set: ${!!process.env.ANTHROPIC_API_KEY}, HOME=${process.env.HOME}`,
+  );
   return query({
     prompt: `Query: ${req.prompt}\n\n${resume ? `Resume:\n"""\n${resume}\n"""` : "(no resume provided)"}`,
     options: {
+      stderr: (d: string) => console.error(`[claude-cli] ${d.trimEnd()}`),
       model,
       systemPrompt: SYSTEM,
       tools: ["WebSearch", "WebFetch"],
@@ -148,8 +153,18 @@ export async function runJobFit(
   stream: AgentStream,
   opts: RunOptions = {},
 ) {
-  return pipeClaudeAgentStream<JobFitOutput>(await buildQuery(req), stream, {
-    ...opts,
-    parse: (raw) => dedupeJobs(OutputSchema.parse(raw)),
-  });
+  const q = await buildQuery(req);
+  // If the CLI produces nothing (bad key, no egress, broken binary), fail loudly instead of hanging.
+  const watchdog = setTimeout(() => {
+    console.error("[JobFitAgent] WATCHDOG: no result after 120s, interrupting Claude query");
+    q.interrupt().catch(() => {});
+  }, 120_000);
+  try {
+    return await pipeClaudeAgentStream<JobFitOutput>(q, stream, {
+      ...opts,
+      parse: (raw) => dedupeJobs(OutputSchema.parse(raw)),
+    });
+  } finally {
+    clearTimeout(watchdog);
+  }
 }
