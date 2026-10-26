@@ -3,24 +3,39 @@ import path from "node:path";
 import { extractText, getDocumentProxy } from "unpdf";
 import mammoth from "mammoth";
 
-const MAX_BYTES = 5 * 1024 * 1024;
+export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 const MAX_CHARS = 12_000;
 
-/** Free, local parsing (unpdf for PDF, mammoth for DOCX). OCR only if a scanned PDF and OCR_SPACE_API_KEY is set. */
-export async function parseResume(filePath: string): Promise<string> {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext !== ".pdf" && ext !== ".docx") {
-    throw new Error("Resume must be a .pdf or .docx file");
+export class ResumeError extends Error {
+  readonly code = "INVALID_INPUT";
+  readonly retryable = false;
+  constructor(message: string) {
+    super(message);
+    this.name = "ResumeError";
   }
-  const buf = await readFile(filePath);
-  if (buf.length > MAX_BYTES) throw new Error("Resume file is larger than 5MB");
+}
 
-  let text = ext === ".pdf" ? await pdfText(buf) : (await mammoth.extractRawText({ buffer: buf })).value;
+/** Free, local parsing (unpdf for PDF, mammoth for DOCX). OCR only for scanned PDFs when OCR_SPACE_API_KEY is set. */
+export async function parseResume(buf: Buffer, filename: string): Promise<string> {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext !== ".pdf" && ext !== ".docx") throw new ResumeError("Resume must be a .pdf or .docx file");
+  if (buf.length > MAX_RESUME_BYTES) throw new ResumeError("Resume file is larger than 5MB");
+
+  let text: string;
+  try {
+    text = ext === ".pdf" ? await pdfText(buf) : (await mammoth.extractRawText({ buffer: buf })).value;
+  } catch {
+    throw new ResumeError(`Could not read the ${ext} file; it may be corrupt or password-protected`);
+  }
   text = text.replace(/\s+\n/g, "\n").replace(/[ \t]+/g, " ").trim();
 
-  if (!text && ext === ".pdf") text = await ocrSpace(buf, path.basename(filePath));
-  if (!text) throw new Error("Could not extract any text from the resume");
+  if (!text && ext === ".pdf") text = await ocrSpace(buf, filename);
+  if (!text) throw new ResumeError("Could not extract any text from the resume");
   return text.slice(0, MAX_CHARS);
+}
+
+export async function parseResumeFile(filePath: string): Promise<string> {
+  return parseResume(await readFile(filePath), path.basename(filePath));
 }
 
 async function pdfText(buf: Buffer): Promise<string> {
@@ -32,7 +47,7 @@ async function pdfText(buf: Buffer): Promise<string> {
 async function ocrSpace(buf: Buffer, name: string): Promise<string> {
   const key = process.env.OCR_SPACE_API_KEY;
   if (!key) {
-    throw new Error("Scanned PDF detected. Set OCR_SPACE_API_KEY to enable OCR, or upload a text-based PDF/DOCX");
+    throw new ResumeError("Scanned PDF detected. Upload a text-based PDF/DOCX (OCR is not enabled on this agent)");
   }
   const form = new FormData();
   form.set("isOverlayRequired", "false");
@@ -40,6 +55,11 @@ async function ocrSpace(buf: Buffer, name: string): Promise<string> {
   form.set("file", new Blob([new Uint8Array(buf)], { type: "application/pdf" }), name);
   const res = await fetch("https://api.ocr.space/parse/image", { method: "POST", headers: { apikey: key }, body: form });
   const json: any = await res.json();
-  if (json.IsErroredOnProcessing) throw new Error(`OCR failed: ${[].concat(json.ErrorMessage).join("; ")}`);
+  if (json.IsErroredOnProcessing) {
+    throw Object.assign(new Error(`OCR failed: ${[].concat(json.ErrorMessage).join("; ")}`), {
+      code: "TOOL_FAILURE",
+      retryable: true,
+    });
+  }
   return (json.ParsedResults ?? []).map((r: any) => r.ParsedText).join("\n");
 }
