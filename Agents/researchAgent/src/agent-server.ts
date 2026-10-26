@@ -181,14 +181,32 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
     console.log(`   - Answer: "${result?.answer?.slice(0, 120)}..."`);
     console.log(`======================================================\n`);
 
+    // Stream text deltas in chunks so chunks_streamed is tracked
+    if (result?.answer) {
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < result.answer.length; i += CHUNK_SIZE) {
+        stream.delta(result.answer.slice(i, i + CHUNK_SIZE));
+      }
+    }
+    stream.progress(100, "Research completed successfully");
+
+    // Deduplicate: Extract tokens & cost for top-level telemetry only
+    const { llm_tokens, cost_usd, ...cleanMetadata } = (result?.metadata || {}) as any;
+    const cleanOutput = {
+      ...result,
+      metadata: Object.keys(cleanMetadata).length > 0 ? cleanMetadata : undefined,
+    };
+
     return {
-      output: result,
+      output: cleanOutput,
       telemetry: {
         model_used: ENV.OPENAI_MODEL,
         execution_status: result?.status,
         sources_count: result?.sourcesCount,
         temporal_workflow_id: workflowId,
         execution_type: "temporal_workflow",
+        llm_tokens: result?.metadata?.llm_tokens,
+        cost_usd: result?.metadata?.cost_usd,
       },
     };
   },

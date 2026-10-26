@@ -425,7 +425,13 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       job.status = "completed";
       job.output = result.output;
       job.durationMs = durationMs;
-      job.telemetry = telemetryCollector.finalize(result.telemetry);
+      const outputBytes = JSON.stringify(result.output ?? {}).length;
+      job.telemetry = telemetryCollector.finalize({
+        ...result.telemetry,
+        duration_ms: durationMs,
+        output_bytes: outputBytes,
+        chunks_streamed: bufferedStream.chunksStreamed,
+      });
     } catch (err) {
       job.status = "failed";
       job.error = normalizeError(err);

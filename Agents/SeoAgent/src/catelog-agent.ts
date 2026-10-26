@@ -158,8 +158,11 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
 
     const report = await generateVerifiedExecutiveReport(verifiedResult);
 
-    // Stream the final report tokens via SSE delta
-    stream.delta(report, "text");
+    // Stream the final report in chunks via SSE deltas
+    const CHUNK_SIZE = 500;
+    for (let i = 0; i < report.length; i += CHUNK_SIZE) {
+      stream.delta(report.slice(i, i + CHUNK_SIZE), "text");
+    }
     stream.progress(100, "SEO & GEO Audit completed successfully");
 
     const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
