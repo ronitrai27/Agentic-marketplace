@@ -1,13 +1,32 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { pipeClaudeAgentStream, type AgentStream, type TelemetryData } from "catelog";
+import {
+  pipeClaudeAgentStream,
+  type AgentStream,
+  type TelemetryData,
+} from "catelog";
 import { z } from "zod";
 import { MAX_RESUME_BYTES, parseResume, ResumeError } from "./parse.js";
 
 export const InputSchema = z
   .object({
-    prompt: z.string().trim().min(1).max(1000).describe("What kind of job you want, e.g. 'remote backend roles in Europe'"),
-    resume_base64: z.string().optional().describe("Optional resume file (.pdf or .docx), base64-encoded"),
-    resume_filename: z.string().optional().describe("Original file name, e.g. 'cv.pdf' (required with resume_base64)"),
+    prompt: z
+      .string()
+      .trim()
+      .min(1)
+      .max(1000)
+      .describe(
+        "What kind of job you want, e.g. 'remote backend roles in Europe'",
+      ),
+    resume_base64: z
+      .string()
+      .optional()
+      .describe("Optional resume file (.pdf or .docx), base64-encoded"),
+    resume_filename: z
+      .string()
+      .optional()
+      .describe(
+        "Original file name, e.g. 'cv.pdf' (required with resume_base64)",
+      ),
   })
   .refine((v) => !v.resume_base64 || !!v.resume_filename, {
     message: "resume_filename is required when resume_base64 is provided",
@@ -19,13 +38,19 @@ export const JobSchema = z.object({
   company: z.string(),
   location: z.string(),
   salary: z.string().optional().describe("Only if stated in the posting"),
-  url: z.string().describe("Direct link to the posting, taken from search results"),
+  url: z
+    .string()
+    .describe("Direct link to the posting, taken from search results"),
   match_score: z.number().min(0).max(100),
-  match_reason: z.string().describe("One short line tying the job to the resume/query"),
+  match_reason: z
+    .string()
+    .describe("One short line tying the job to the resume/query"),
 });
 
 export const OutputSchema = z.object({
-  response: z.string().describe("2-3 sentence answer: what was found and who fits best"),
+  response: z
+    .string()
+    .describe("2-3 sentence answer: what was found and who fits best"),
   jobs: z.array(JobSchema),
 });
 export type JobFitInput = z.infer<typeof InputSchema>;
@@ -41,16 +66,25 @@ Rules:
 - Infer skills, seniority and location preference from the resume when provided; the user's query takes priority.`;
 
 // The Claude CLI rejects the "$schema" URL zod emits, so drop it.
-const { $schema: _omit, ...OUTPUT_JSON_SCHEMA } = z.toJSONSchema(OutputSchema) as Record<string, unknown>;
+const { $schema: _omit, ...OUTPUT_JSON_SCHEMA } = z.toJSONSchema(
+  OutputSchema,
+) as Record<string, unknown>;
 
 /** Drops repeat postings (same URL, or same company + title) and keeps the best-scored copy. */
 export function dedupeJobs(out: JobFitOutput): JobFitOutput {
-  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const norm = (v: string) =>
+    v
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
   const seen = new Set<string>();
   const jobs = [...out.jobs]
     .sort((a, b) => b.match_score - a.match_score)
     .filter((j) => {
-      const keys = [`u:${j.url.split("#")[0].replace(/\/$/, "")}`, `t:${norm(j.company)}|${norm(j.title)}`];
+      const keys = [
+        `u:${j.url.split("#")[0].replace(/\/$/, "")}`,
+        `t:${norm(j.company)}|${norm(j.title)}`,
+      ];
       if (keys.some((k) => seen.has(k))) return false;
       keys.forEach((k) => seen.add(k));
       return true;
@@ -77,14 +111,21 @@ async function buildQuery(req: JobFitRequest) {
   let resume = req.resumeText ?? "";
   if (!resume && req.resume_base64) {
     const buf = Buffer.from(req.resume_base64, "base64");
-    if (buf.length > MAX_RESUME_BYTES) throw new ResumeError("Resume file is larger than 5MB");
+    if (buf.length > MAX_RESUME_BYTES)
+      throw new ResumeError("Resume file is larger than 5MB");
     resume = await parseResume(buf, req.resume_filename ?? "");
   }
+
+  const model = process.env.JOBFIT_MODEL || "claude-haiku-5-5";
+  const maxBudget = Number(process.env.JOBFIT_MAX_BUDGET_USD ?? 0.15);
+  console.log(
+    `[JobFitAgent] Initializing query with model: ${model}, maxBudget: $${maxBudget}`,
+  );
 
   return query({
     prompt: `Query: ${req.prompt}\n\n${resume ? `Resume:\n"""\n${resume}\n"""` : "(no resume provided)"}`,
     options: {
-      model: process.env.JOBFIT_MODEL ?? "claude-haiku-5-5",
+      model,
       systemPrompt: SYSTEM,
       tools: ["WebSearch", "WebFetch"],
       allowedTools: ["WebSearch", "WebFetch"],
@@ -92,7 +133,7 @@ async function buildQuery(req: JobFitRequest) {
       settingSources: [],
       persistSession: false,
       maxTurns: 12,
-      maxBudgetUsd: Number(process.env.JOBFIT_MAX_BUDGET_USD ?? 0.15),
+      maxBudgetUsd: maxBudget,
       outputFormat: { type: "json_schema", schema: OUTPUT_JSON_SCHEMA },
     },
   });
@@ -102,7 +143,11 @@ async function buildQuery(req: JobFitRequest) {
  * Runs the agent. Catelog's Claude adapter turns tool calls into stream events, fills in
  * cost/tokens/model telemetry, and maps Claude failures to Catelog error codes.
  */
-export async function runJobFit(req: JobFitRequest, stream: AgentStream, opts: RunOptions = {}) {
+export async function runJobFit(
+  req: JobFitRequest,
+  stream: AgentStream,
+  opts: RunOptions = {},
+) {
   return pipeClaudeAgentStream<JobFitOutput>(await buildQuery(req), stream, {
     ...opts,
     parse: (raw) => dedupeJobs(OutputSchema.parse(raw)),

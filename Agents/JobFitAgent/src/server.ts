@@ -23,6 +23,11 @@ export const agent = createAgent<JobFitInput, JobFitOutput>({
 
   async execute({ input, stream, signal, log, metric }) {
     const t0 = Date.now();
+    console.log(`\n================== [JobFitAgent] INCOMING QUERY ==================`);
+    console.log(`[JobFitAgent] Prompt: "${input.prompt}"`);
+    console.log(`[JobFitAgent] Has Resume: ${!!input.resume_base64} (${input.resume_filename ?? "none"})`);
+    console.log(`==================================================================\n`);
+
     log.info("Job search started", { has_resume: !!input.resume_base64, query: input.prompt });
     metric.count("runs");
     if (input.resume_base64) metric.count("resumes_uploaded");
@@ -31,6 +36,7 @@ export const agent = createAgent<JobFitInput, JobFitOutput>({
     stream.progress(5, input.resume_base64 ? "Parsing resume" : "Preparing search");
 
     try {
+      console.log(`[JobFitAgent] Running Claude agent query...`);
       const { output, telemetry } = await runJobFit(input, stream, {
         signal,
         // Fires on success AND failure, so cost shows up even for failed runs.
@@ -40,6 +46,14 @@ export const agent = createAgent<JobFitInput, JobFitOutput>({
           metric.gauge("tokens_completion", t.llm_tokens?.completion ?? 0);
         },
       });
+
+      console.log(`[JobFitAgent] Agent execution finished in ${Date.now() - t0}ms`);
+      console.log(`[JobFitAgent] Output response: "${output.response}"`);
+      console.log(`[JobFitAgent] Jobs found: ${output.jobs?.length ?? 0}`);
+      if (output.jobs && output.jobs.length > 0) {
+        console.log(`[JobFitAgent] Top job: ${output.jobs[0].title} at ${output.jobs[0].company} (${output.jobs[0].url})`);
+      }
+      console.log(`[JobFitAgent] Telemetry: model=${telemetry?.model_used}, tokens=${telemetry?.llm_tokens?.total}, cost=$${telemetry?.cost_usd ?? 0}\n`);
 
       stream.progress(95, "Formatting results");
       for (const [i, job] of output.jobs.entries()) {
@@ -58,6 +72,8 @@ export const agent = createAgent<JobFitInput, JobFitOutput>({
       return { output, telemetry };
     } catch (err) {
       const e = err as Error & { code?: string };
+      console.error(`\n❌ [JobFitAgent] ERROR OCCURRED:`, e.message || err);
+      console.error(e.stack);
       log.error("Job search failed", { code: e.code ?? e.name, message: e.message, ms: Date.now() - t0 });
       metric.count("errors");
       throw err; // Catelog converts code/retryable into the structured error response
