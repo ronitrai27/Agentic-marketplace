@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Check, CircleAlert, CircleCheck, Loader2, Search } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  CircleCheck,
+  Loader2,
+  Search,
+  Brain,
+  Globe,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DryRunStep } from "./dry-run-step";
 
-const FLOW = ["Register", "Configure", "Publish", "Sign contract"];
+const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
 
 const CHECK_STAGES = [
   "Reaching your server",
@@ -225,9 +233,9 @@ export function RegisterAgentDialog({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="min-w-3xl max-w-3xl h-[76vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogContent className="min-w-3xl max-w-3xl h-[78vh] flex flex-col p-0 gap-0 overflow-hidden">
         {/* Fixed Top: Stepper */}
-        <div className="p-6 pb-4 border-b border-border shrink-0">
+        <div className="p-6 pb-4 border-b border-border shrink-0 mt-2">
           <div className="grid grid-cols-4 gap-2 pr-8">
             {FLOW.map((label, i) => (
               <div key={label} className="space-y-1.5">
@@ -268,148 +276,167 @@ export function RegisterAgentDialog({
           )}
 
           <div className={currentStep === 0 ? "space-y-6" : "hidden"}>
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">
-              Register your agent
-            </DialogTitle>
-            <DialogDescription>
-              Enter the public URL that serves{" "}
-              <code className="font-mono">/health</code> and{" "}
-              <code className="font-mono">/schema</code>. We only read these two
-              endpoints.
-            </DialogDescription>
-          </DialogHeader>
+            <DialogHeader className="space-y-1.5">
+              <DialogTitle className="text-base font-semibold flex items-center gap-2">
+                <div className="size-7 rounded-md border border-zinc-300 dark:border-zinc-700 bg-muted flex items-center justify-center shrink-0 shadow!">
+                  <Brain className="size-4 text-foreground" />
+                </div>
+                <span>Verify Agent Server</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+                Enter your agent&apos;s public URL to verify reachability, probe{" "}
+                <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
+                  /health
+                </code>
+                , and inspect{" "}
+                <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
+                  /schema
+                </code>{" "}
+                endpoints.
+              </DialogDescription>
+            </DialogHeader>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              check();
-            }}
-            className="flex gap-2"
-          >
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://my-agent.fly.dev"
-              spellCheck={false}
-              autoComplete="off"
-              className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm font-mono text-foreground placeholder:text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            />
-            <Button
-              type="submit"
-              disabled={!url.trim() || phase === "checking"}
-              className="h-9 cursor-pointer"
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                check();
+              }}
+              className="relative flex items-center rounded-lg border border-zinc-300 dark:border-zinc-700 bg-background shadow-2xs focus-within:border-foreground focus-within:ring-2 focus-within:ring-foreground/10 transition-all p-1 pl-3"
             >
-              {phase === "checking" ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Search className="size-3.5" />
-              )}
-              Check
-            </Button>
-          </form>
+              <Globe className="size-4 text-muted-foreground shrink-0 mr-2.5" />
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://my-agent.fly.dev"
+                spellCheck={false}
+                autoComplete="off"
+                className="flex-1 h-9 bg-transparent text-xs sm:text-sm font-mono text-foreground placeholder:text-muted-foreground/60 outline-none border-none pr-2"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!url.trim() || phase === "checking"}
+                className="h-8 px-4 rounded-md font-medium text-xs bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40 transition-all cursor-pointer shadow-xs shrink-0 gap-1.5"
+              >
+                {phase === "checking" ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    <span>Checking...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search className="size-3.5" />
+                    <span>Check Server</span>
+                  </>
+                )}
+              </Button>
+            </form>
 
-          {phase === "checking" && (
-            <ul className="space-y-2.5 rounded-lg border border-border p-4">
-              {CHECK_STAGES.map((label, i) => (
-                <li key={label} className="flex items-center gap-2.5 text-xs">
-                  {i < stage ? (
-                    <Check className="size-3.5 text-foreground" />
-                  ) : i === stage ? (
-                    <Loader2 className="size-3.5 animate-spin text-foreground" />
-                  ) : (
-                    <span className="size-3.5 flex items-center justify-center">
-                      <span className="size-1.5 rounded-full bg-border" />
-                    </span>
-                  )}
-                  <span
-                    className={
-                      i <= stage ? "text-foreground" : "text-muted-foreground"
-                    }
-                  >
-                    {label}
-                    {i === stage ? "…" : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {phase === "error" && (
-            <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
-              <CircleAlert className="size-4 text-destructive shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-medium text-foreground">
-                  Couldn&apos;t verify this server
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">{error}</p>
-              </div>
-            </div>
-          )}
-
-          {phase === "done" && m && result && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-border p-4 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {m.name ?? "Unnamed agent"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                      {m.description || "No description provided."}
-                    </p>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-foreground">
-                    {ready ? (
-                      <CircleCheck className="size-3.5" />
+            {phase === "checking" && (
+              <ul className="space-y-2.5 rounded-lg border border-border p-4">
+                {CHECK_STAGES.map((label, i) => (
+                  <li key={label} className="flex items-center gap-2.5 text-xs">
+                    {i < stage ? (
+                      <Check className="size-3.5 text-foreground" />
+                    ) : i === stage ? (
+                      <Loader2 className="size-3.5 animate-spin text-foreground" />
                     ) : (
-                      <CircleAlert className="size-3.5" />
+                      <span className="size-3.5 flex items-center justify-center">
+                        <span className="size-1.5 rounded-full bg-border" />
+                      </span>
                     )}
-                    {ready
-                      ? "Reachable · Ready"
-                      : (result.health.status ?? "Unknown")}
-                  </span>
-                </div>
+                    <span
+                      className={
+                        i <= stage ? "text-foreground" : "text-muted-foreground"
+                      }
+                    >
+                      {label}
+                      {i === stage ? "…" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-border">
-                  <Stat label="Version" value={m.version ?? "—"} />
-                  <Stat
-                    label="Protocol"
-                    value={
-                      m.protocol_version ?? result.health.protocol_version ?? "—"
-                    }
-                  />
-                  <Stat label="Latency" value={`${result.latencyMs} ms`} />
-                  <Stat
-                    label="Streaming"
-                    value={m.capabilities?.streaming ? "Supported" : "No"}
-                  />
-                  <Stat
-                    label="Execution modes"
-                    value={m.capabilities?.execution_modes?.join(", ") ?? "—"}
-                  />
-                  <Stat
-                    label="Max timeout"
-                    value={
-                      m.capabilities?.max_timeout_seconds
-                        ? `${m.capabilities.max_timeout_seconds}s`
-                        : "—"
-                    }
-                  />
-                  <Stat
-                    label="Environment"
-                    value={
-                      result.health.environment_ready ? "Ready" : "Not ready"
-                    }
-                  />
-                  <Stat label="Agent ID" value={m.id ?? "—"} />
+            {phase === "error" && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+                <CircleAlert className="size-4 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-medium text-foreground">
+                    Couldn&apos;t verify this server
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {error}
+                  </p>
                 </div>
               </div>
+            )}
 
-              <SchemaBlock title="Input schema" schema={m.input_schema} />
-              <SchemaBlock title="Output schema" schema={m.output_schema} />
-            </div>
-          )}
+            {phase === "done" && m && result && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-border p-4 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {m.name ?? "Unnamed agent"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                        {m.description || "No description provided."}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-foreground">
+                      {ready ? (
+                        <CircleCheck className="size-3.5" />
+                      ) : (
+                        <CircleAlert className="size-3.5" />
+                      )}
+                      {ready
+                        ? "Reachable · Ready"
+                        : (result.health.status ?? "Unknown")}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-border">
+                    <Stat label="Version" value={m.version ?? "—"} />
+                    <Stat
+                      label="Protocol"
+                      value={
+                        m.protocol_version ??
+                        result.health.protocol_version ??
+                        "—"
+                      }
+                    />
+                    <Stat label="Latency" value={`${result.latencyMs} ms`} />
+                    <Stat
+                      label="Streaming"
+                      value={m.capabilities?.streaming ? "Supported" : "No"}
+                    />
+                    <Stat
+                      label="Execution modes"
+                      value={m.capabilities?.execution_modes?.join(", ") ?? "—"}
+                    />
+                    <Stat
+                      label="Max timeout"
+                      value={
+                        m.capabilities?.max_timeout_seconds
+                          ? `${m.capabilities.max_timeout_seconds}s`
+                          : "—"
+                      }
+                    />
+                    <Stat
+                      label="Environment"
+                      value={
+                        result.health.environment_ready ? "Ready" : "Not ready"
+                      }
+                    />
+                    <Stat label="Agent ID" value={m.id ?? "—"} />
+                  </div>
+                </div>
+
+                <SchemaBlock title="Input schema" schema={m.input_schema} />
+                <SchemaBlock title="Output schema" schema={m.output_schema} />
+              </div>
+            )}
           </div>
         </div>
 
@@ -429,7 +456,9 @@ export function RegisterAgentDialog({
             type="button"
             size="sm"
             disabled={currentStep !== 0 || !(phase === "done" && ready)}
-            onClick={() => setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1))}
+            onClick={() =>
+              setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1))
+            }
             className="cursor-pointer"
           >
             {currentStep === FLOW.length - 1 ? "Complete" : "Next"}

@@ -243,8 +243,8 @@ export default function CreatorCredentialsPage() {
             Short-lived tokens for testing your own agents from Creator Space or
             tools like curl and Postman. They can&apos;t process buyer requests,
             can&apos;t move money, and expire after the time you choose. Your
-            secret keys are separate and are used for production
-            authentication. Agents need SDK 1.1.3 or newer.
+            secret keys are separate and are used for production authentication.
+            Agents need SDK 1.1.3 or newer.
           </p>
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 p-5">
             <TestTokenPanel />
