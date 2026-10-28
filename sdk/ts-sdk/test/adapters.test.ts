@@ -91,7 +91,7 @@ async function main() {
 
   console.log("5️⃣  End to end through createAgent (HTTP)");
   {
-    const agent = createAgent({
+    const agent = createAgent({ maxTimeoutMinute: 1,
       name: "Claude E2E",
       async execute({ stream, signal, metric }) {
         return pipeClaudeAgentStream(gen([toolUse("WebSearch"), result({ structured_output: { ok: true } })]), stream, {

@@ -4,6 +4,7 @@ import { SSEWriter, NoopStream, BufferedStream } from "./sse.js";
 import { toJsonSchema, validateSchemaData, type SchemaLike } from "./schema.js";
 import { buildExecutionContext } from "./context.js";
 import { TelemetryReporter } from "./telemetry.js";
+import { runWithTracker } from "./usage.js";
 import { MemoryJobStore, type JobStore, type StoredJob } from "./jobstore.js";
 import { BodyTooLargeError, LimitGuard, type LimitsConfig } from "./limits.js";
 import {
@@ -61,6 +62,13 @@ export interface CatelogAgentConfig<TInput = any, TOutput = any> {
    * - "conversational": Supports ctx.needInput() for HITL multi-turn.
    */
   mode?: ExecutionMode;
+  /**
+   * REQUIRED. Hard limit, in minutes, for a single run (sync, async and conversational).
+   * When it elapses the run fails with `EXECUTION_TIMEOUT` (retryable) and `signal` is aborted,
+   * even if your code ignores the signal. A caller's `deadline_ms` can only shorten it.
+   * Fractions are allowed (e.g. `0.5` = 30 seconds).
+   */
+  maxTimeoutMinute: number;
   /** Partial capabilities overrides */
   capabilities?: Partial<AgentCapabilities>;
   /**
@@ -128,6 +136,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   public readonly capabilities: AgentCapabilities;
   public readonly security: SecurityManager;
   private readonly config: CatelogAgentConfig<TInput, TOutput>;
+  private readonly maxTimeoutMs: number;
   private readonly startTime: number;
   private readonly telemetryReporter: TelemetryReporter;
   private readonly jobStore: JobStore;
@@ -140,7 +149,16 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   private idleWaiters: Array<() => void> = [];
 
   constructor(config: CatelogAgentConfig<TInput, TOutput>) {
+    const maxTimeoutMinute = config.maxTimeoutMinute as unknown;
+    if (typeof maxTimeoutMinute !== "number" || !Number.isFinite(maxTimeoutMinute) || maxTimeoutMinute <= 0) {
+      throw new Error(
+        `[catelog] maxTimeoutMinute missing or invalid in createAgent({ name: "${config.name}" }). ` +
+          `Set a positive number of minutes, e.g. maxTimeoutMinute: 5. ` +
+          `This hard limit stops runs that hang and is required for every agent.`,
+      );
+    }
     this.config = config;
+    this.maxTimeoutMs = Math.round(maxTimeoutMinute * 60_000);
     this.name = config.name;
     this.id = config.id || slugify(config.name);
     this.version = config.version || "1.0.0";
@@ -149,9 +167,10 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     this.capabilities = {
       streaming: true,
       delta_stream: true,
-      max_timeout_seconds: 300,
       execution_modes: [this.mode],
       ...config.capabilities,
+      // Derived from maxTimeoutMinute so the advertised limit is always the enforced one
+      max_timeout_seconds: Math.ceil(this.maxTimeoutMs / 1000),
     };
     this.security = new SecurityManager({
       secret: config.secretKey,
@@ -428,6 +447,46 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     }
   }
 
+  // ── Deadline enforcement (all modes) ──
+
+  /**
+   * Runs the agent's `execute` and rejects with `ExecutionTimeoutError` once
+   * `min(maxTimeoutMinute, caller deadline_ms)` elapses.
+   *
+   * The race guarantees the run ends on time even if the agent ignores `ctx.signal`.
+   * The signal is still aborted so well-behaved agents stop their work; code that
+   * ignores it keeps running in the background until it finishes on its own.
+   */
+  private async executeWithDeadline(
+    ctx: AgentExecutionContext<TInput>,
+    abortController: AbortController,
+    callerDeadlineMs?: number,
+  ): Promise<Awaited<ReturnType<CatelogAgentConfig<TInput, TOutput>["execute"]>>> {
+    let limitMs = this.maxTimeoutMs;
+    if (callerDeadlineMs && callerDeadlineMs > Date.now()) {
+      limitMs = Math.min(limitMs, callerDeadlineMs - Date.now());
+    }
+
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new ExecutionTimeoutError(limitMs);
+        abortController.abort(err);
+        reject(err);
+      }, limitMs);
+    });
+
+    // If the timeout wins, the agent's own promise may reject later; don't let that go unhandled.
+    const running = Promise.resolve().then(() => runWithTracker(ctx, () => this.config.execute(ctx)));
+    running.catch(() => {});
+
+    try {
+      return await Promise.race([running, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   // ── Async Mode: Return 202 immediately, run in background ──
 
   private async executeAsync(
@@ -464,8 +523,9 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     // Execute in background (fire-and-forget from HTTP perspective)
     const startTs = Date.now();
 
+    let telemetryCollector: ReturnType<typeof buildExecutionContext<TInput>>["telemetryCollector"] | undefined;
     try {
-      const { ctx, telemetryCollector } = buildExecutionContext({
+      const built = buildExecutionContext({
         runId,
         input,
         stream: bufferedStream,
@@ -475,8 +535,10 @@ export class CatelogAgent<TInput = any, TOutput = any> {
         resumeToken: payload.resume_token,
         inputBytes,
       });
+      const { ctx } = built;
+      telemetryCollector = built.telemetryCollector;
 
-      const rawResult = await this.config.execute(ctx);
+      const rawResult = await this.executeWithDeadline(ctx, abortController, payload.deadline_ms);
       const durationMs = Date.now() - startTs;
       const result = this.normalizeExecuteResult<TOutput>(rawResult);
 
@@ -497,6 +559,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
         job.status = "failed";
         job.error = normalizeError(err);
         job.durationMs = Date.now() - startTs;
+        job.telemetry = telemetryCollector?.finalize({ duration_ms: job.durationMs });
       }
     } finally {
       if (job.heartbeat) clearInterval(job.heartbeat);
@@ -547,22 +610,15 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     const startTs = Date.now();
     const acceptsSse = req.headers.accept?.includes("text/event-stream") ?? true;
 
-    // Abort controller for deadline / disconnect
+    // Abort controller for deadline / disconnect (the deadline itself is enforced in executeWithDeadline)
     const abortController = new AbortController();
-    let timeoutTimer: NodeJS.Timeout | undefined;
-    if (payload.deadline_ms && payload.deadline_ms > Date.now()) {
-      const waitTime = payload.deadline_ms - Date.now();
-      timeoutTimer = setTimeout(() => {
-        abortController.abort(new Error("EXECUTION_TIMEOUT"));
-      }, waitTime);
-    }
 
     this.activeRuns.set(runId, abortController);
     try {
       if (acceptsSse) {
-        await this.executeWithSSE(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
+        await this.executeWithSSE(runId, input, payload, inputBytes, startTs, res, abortController);
       } else {
-        await this.executeWithJSON(runId, input, payload, inputBytes, startTs, res, abortController, timeoutTimer);
+        await this.executeWithJSON(runId, input, payload, inputBytes, startTs, res, abortController);
       }
     } finally {
       this.activeRuns.delete(runId);
@@ -574,7 +630,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   private async executeWithSSE(
     runId: string, input: TInput, payload: ExecuteRequest<TInput>,
     inputBytes: number, startTs: number,
-    res: ServerResponse, abortController: AbortController, timeoutTimer?: NodeJS.Timeout,
+    res: ServerResponse, abortController: AbortController,
   ): Promise<void> {
     const sseWriter = new SSEWriter(runId, res, {
       onClientDisconnect: () => abortController.abort(new Error("CLIENT_DISCONNECTED")),
@@ -599,8 +655,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     });
 
     try {
-      const rawResult = await this.config.execute(ctx);
-      if (timeoutTimer) clearTimeout(timeoutTimer);
+      const rawResult = await this.executeWithDeadline(ctx, abortController, payload.deadline_ms);
       const durationMs = Date.now() - startTs;
 
       // Check if result is a needInput request
@@ -628,16 +683,17 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       sseWriter.sendTaskCompleted(result.output, durationMs, telemetry);
       this.reportTelemetry(runId, "completed", telemetry, durationMs);
     } catch (err) {
-      if (timeoutTimer) clearTimeout(timeoutTimer);
       const durationMs = Date.now() - startTs;
 
-      if (abortController.signal.aborted) {
-        sseWriter.sendTaskCanceled(durationMs);
-        this.reportTelemetry(runId, "canceled", telemetryCollector.finalize({ duration_ms: durationMs }), durationMs);
+      // Failed runs still spent tokens, so they carry whatever usage was captured
+      const failedTelemetry = telemetryCollector.finalize({ duration_ms: durationMs });
+      if (abortController.signal.aborted && !(err instanceof ExecutionTimeoutError)) {
+        sseWriter.sendTaskCanceled(durationMs, failedTelemetry);
+        this.reportTelemetry(runId, "canceled", failedTelemetry, durationMs);
       } else {
         const error = normalizeError(err);
-        sseWriter.sendTaskFailed(error, durationMs);
-        this.reportTelemetry(runId, "failed", telemetryCollector.finalize({ duration_ms: durationMs }), durationMs);
+        sseWriter.sendTaskFailed(error, durationMs, failedTelemetry);
+        this.reportTelemetry(runId, "failed", failedTelemetry, durationMs);
       }
     } finally {
       this.security.markRunCompleted(runId);
@@ -649,7 +705,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   private async executeWithJSON(
     runId: string, input: TInput, payload: ExecuteRequest<TInput>,
     inputBytes: number, startTs: number,
-    res: ServerResponse, abortController: AbortController, timeoutTimer?: NodeJS.Timeout,
+    res: ServerResponse, abortController: AbortController,
   ): Promise<void> {
     const noopStream = new NoopStream();
 
@@ -665,8 +721,7 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     });
 
     try {
-      const rawResult = await this.config.execute(ctx);
-      if (timeoutTimer) clearTimeout(timeoutTimer);
+      const rawResult = await this.executeWithDeadline(ctx, abortController, payload.deadline_ms);
       const durationMs = Date.now() - startTs;
 
       // Check needInput
@@ -706,16 +761,16 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       this.writeJson(res, 200, response);
       this.reportTelemetry(runId, "completed", telemetry, durationMs);
     } catch (err) {
-      if (timeoutTimer) clearTimeout(timeoutTimer);
       const durationMs = Date.now() - startTs;
       this.security.markRunCompleted(runId);
 
       const error = normalizeError(err);
       const response: ExecuteResponse<TOutput> = {
         run_id: runId,
-        status: abortController.signal.aborted ? "canceled" : "failed",
+        status: abortController.signal.aborted && !(err instanceof ExecutionTimeoutError) ? "canceled" : "failed",
         duration_ms: durationMs,
         error,
+        telemetry: telemetryCollector.finalize({ duration_ms: durationMs }),
       };
       this.writeJson(res, 200, response);
     }
@@ -975,6 +1030,17 @@ export type { CatelogAgentConfig as MarketplaceAgentConfig };
 // ─────────────────────────────────────────────────
 //  Utilities
 // ─────────────────────────────────────────────────
+
+/** Thrown when a run exceeds `maxTimeoutMinute` (or the caller's shorter `deadline_ms`). */
+class ExecutionTimeoutError extends Error {
+  readonly code = "EXECUTION_TIMEOUT";
+  readonly retryable = true;
+
+  constructor(limitMs: number) {
+    super(`Run exceeded its time limit of ${Math.round(limitMs / 100) / 10}s`);
+    this.name = "ExecutionTimeoutError";
+  }
+}
 
 function slugify(text: string): string {
   return text

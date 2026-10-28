@@ -182,13 +182,14 @@ export class SSEWriter implements AgentStream {
     this.close();
   }
 
-  public sendTaskFailed(error: StructuredError, durationMs: number): void {
+  public sendTaskFailed(error: StructuredError, durationMs: number, telemetry?: TelemetryData): void {
     if (this.closed) return;
     const payload: TaskFailedEvent = {
       event: "task.failed",
       run_id: this.runId,
       duration_ms: durationMs,
       error,
+      ...(telemetry ? { telemetry } : {}),
     };
     this.sendEvent("task.failed", payload);
     this.close();
@@ -208,10 +209,11 @@ export class SSEWriter implements AgentStream {
     this.close();
   }
 
-  public sendTaskCanceled(durationMs: number): void {
+  public sendTaskCanceled(durationMs: number, telemetry?: TelemetryData): void {
     this.sendTaskFailed(
       { code: "TASK_CANCELED", message: "Execution was canceled", retryable: false },
-      durationMs
+      durationMs,
+      telemetry,
     );
   }
 

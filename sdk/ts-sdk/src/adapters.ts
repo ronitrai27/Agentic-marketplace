@@ -15,8 +15,23 @@
 import type {
   AgentExecutionResult,
   AgentStream,
+  AgentUsage,
+  ModelUsage,
   TelemetryData,
 } from "./types.js";
+import { createLangChainUsageHandler } from "./usage.js";
+
+/** Awaits a value that may be a Promise (Vercel `streamText` exposes usage lazily); never throws. */
+async function settle<T>(v: T | Promise<T> | undefined): Promise<T | undefined> {
+  try {
+    return await v;
+  } catch {
+    return undefined;
+  }
+}
+
+const numOrUndef = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
 
 // ─────────────────────────────────────────────────
 //  Vercel AI SDK Adapter
@@ -72,13 +87,29 @@ export async function pipeAiSdkStream(
       }
     }
 
-    // Extract token usage if available
-    if (aiResult?.usage) {
+    // Token usage + model. On streamText these are Promises, so they must be awaited.
+    // Prefer totalUsage (all steps) over usage (last step).
+    const usage: any = await settle(aiResult?.totalUsage ?? aiResult?.usage);
+    if (usage) {
+      const prompt = numOrUndef(usage.inputTokens ?? usage.promptTokens ?? usage.prompt_tokens);
+      const completion = numOrUndef(usage.outputTokens ?? usage.completionTokens ?? usage.completion_tokens);
       telemetry.llm_tokens = {
-        prompt: aiResult.usage.promptTokens ?? aiResult.usage.prompt_tokens,
-        completion: aiResult.usage.completionTokens ?? aiResult.usage.completion_tokens,
-        total: aiResult.usage.totalTokens ?? aiResult.usage.total_tokens,
+        prompt,
+        completion,
+        total: numOrUndef(usage.totalTokens ?? usage.total_tokens) ?? (prompt ?? 0) + (completion ?? 0),
+        cached: numOrUndef(usage.cachedInputTokens),
+        reasoning: numOrUndef(usage.reasoningTokens),
       };
+    }
+    const response: any = await settle(aiResult?.response);
+    const modelId = response?.modelId ?? response?.model;
+    if (typeof modelId === "string" && modelId) telemetry.model_used = modelId;
+    // Gateways such as OpenRouter return the real cost in providerMetadata
+    const meta: any = await settle(aiResult?.providerMetadata);
+    const gatewayCost = numOrUndef(meta?.openrouter?.usage?.cost);
+    if (gatewayCost !== undefined) {
+      telemetry.cost_usd = gatewayCost;
+      telemetry.cost_source = "provider";
     }
 
     // Extract tool calls if present
@@ -130,7 +161,17 @@ export async function pipeOpenAiStream(
   let model: string | undefined;
   let promptTokens: number | undefined;
   let completionTokens: number | undefined;
+  let cached: number | undefined;
+  let reasoning: number | undefined;
+  let realCost: number | undefined;
   const telemetry: TelemetryData = { framework: { adapter: "openai" } };
+
+  // Optional extras: cached/reasoning tokens, and `usage.cost` (returned by OpenRouter). Never required.
+  const captureOpenAiExtras = (u: any) => {
+    cached = numOrUndef(u?.prompt_tokens_details?.cached_tokens) ?? cached;
+    reasoning = numOrUndef(u?.completion_tokens_details?.reasoning_tokens) ?? reasoning;
+    realCost = numOrUndef(u?.cost) ?? realCost;
+  };
 
   try {
     if (openaiStream && Symbol.asyncIterator in openaiStream) {
@@ -161,6 +202,7 @@ export async function pipeOpenAiStream(
         if (chunk?.usage) {
           promptTokens = chunk.usage.prompt_tokens;
           completionTokens = chunk.usage.completion_tokens;
+          captureOpenAiExtras(chunk.usage);
         }
       }
     }
@@ -172,6 +214,7 @@ export async function pipeOpenAiStream(
       if (openaiStream.usage) {
         promptTokens = openaiStream.usage.prompt_tokens;
         completionTokens = openaiStream.usage.completion_tokens;
+        captureOpenAiExtras(openaiStream.usage);
       }
     }
 
@@ -181,7 +224,13 @@ export async function pipeOpenAiStream(
         prompt: promptTokens,
         completion: completionTokens,
         total: (promptTokens ?? 0) + (completionTokens ?? 0),
+        cached,
+        reasoning,
       };
+    }
+    if (realCost !== undefined) {
+      telemetry.cost_usd = realCost;
+      telemetry.cost_source = "provider";
     }
   } catch (err) {
     if (fullText) {
@@ -213,24 +262,30 @@ export async function pipeLangGraphStream(
   graph: any,
   graphInput: Record<string, unknown>,
   stream: AgentStream,
-  options?: { signal?: AbortSignal }
+  options?: {
+    signal?: AbortSignal;
+    /** Pass `ctx.usage` to capture models and tokens of every LLM call in the graph automatically. */
+    usage?: AgentUsage;
+  }
 ): Promise<AgentExecutionResult> {
   let lastOutput: any = undefined;
   let nodeCount = 0;
   const nodesVisited: string[] = [];
   const telemetry: TelemetryData = { framework: { adapter: "langgraph" } };
+  const callbacks = options?.usage ? [createLangChainUsageHandler(options.usage)] : undefined;
 
   try {
     // LangGraph .stream() returns an async iterable of state snapshots
     const streamMethod = graph.stream || graph.streamEvents;
     if (!streamMethod) {
       // Fallback: invoke synchronously
-      const result = await graph.invoke(graphInput, { signal: options?.signal });
+      const result = await graph.invoke(graphInput, { signal: options?.signal, callbacks });
       return { output: result as any, telemetry };
     }
 
     const graphStream = await streamMethod.call(graph, graphInput, {
       signal: options?.signal,
+      callbacks,
       streamMode: "updates",
     });
 
@@ -378,18 +433,17 @@ export async function pipeOpenAiResponsesStream(
       completion: response.usage.output_tokens ?? response.usage.completion_tokens,
       total: response.usage.total_tokens ??
         ((response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0)),
+      cached: numOrUndef(response.usage.input_tokens_details?.cached_tokens),
+      reasoning: numOrUndef(response.usage.output_tokens_details?.reasoning_tokens),
     };
-    // Cost estimation (adjust per model pricing)
-    const promptTokens = telemetry.llm_tokens.prompt ?? 0;
-    const completionTokens = telemetry.llm_tokens.completion ?? 0;
-    const modelName: string = response.model ?? "";
-    if (modelName.includes("gpt-5") || modelName.includes("mini")) {
-      telemetry.cost_usd = parseFloat(((promptTokens * 0.00000015) + (completionTokens * 0.0000006)).toFixed(6));
-    } else {
-      telemetry.cost_usd = parseFloat(((promptTokens * 0.000005) + (completionTokens * 0.000015)).toFixed(6));
+    // No price list here: the marketplace prices tokens. Only a cost the API itself returned is kept.
+    const realCost = numOrUndef(response.usage.cost);
+    if (realCost !== undefined) {
+      telemetry.cost_usd = realCost;
+      telemetry.cost_source = "provider";
     }
-    telemetry.model_used = modelName;
   }
+  if (typeof response?.model === "string" && response.model) telemetry.model_used = response.model;
 
   return {
     output: { text: fullText } as any,
@@ -503,10 +557,28 @@ export async function pipeClaudeAgentStream<TOutput = any>(
       const sum = (f: (u: any) => number) => models.reduce((n, u) => n + (f(u) || 0), 0);
       const prompt = sum((u) => u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens);
       const completion = sum((u) => u.outputTokens);
+      // Per-model breakdown straight from the SDK, including the real cost it reports per model
+      const modelBreakdown: ModelUsage[] = Object.entries(usage).map(([id, u]: [string, any]) => {
+        const promptTokens = (u.inputTokens || 0) + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0);
+        const modelCost = numOrUndef(u.costUSD);
+        return {
+          id,
+          provider: "anthropic",
+          tokens: {
+            prompt: promptTokens,
+            completion: u.outputTokens || 0,
+            total: promptTokens + (u.outputTokens || 0),
+            cached: u.cacheReadInputTokens || undefined,
+          },
+          ...(modelCost !== undefined ? { cost_usd: modelCost, cost_source: "provider" as const } : {}),
+        };
+      });
+      const totalCost = numOrUndef(msg.total_cost_usd);
       const telemetry: TelemetryData = {
         llm_tokens: { prompt, completion, total: prompt + completion },
         model_used: Object.keys(usage).join(",") || undefined,
-        cost_usd: msg.total_cost_usd,
+        models: modelBreakdown.length ? modelBreakdown : undefined,
+        ...(totalCost !== undefined ? { cost_usd: totalCost, cost_source: "provider" as const } : {}),
         framework: {
           adapter: "claude-agent-sdk",
           num_turns: msg.num_turns,

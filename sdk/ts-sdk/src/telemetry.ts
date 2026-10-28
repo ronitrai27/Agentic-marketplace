@@ -1,4 +1,5 @@
 import type { AgentLogger, AgentMetric, TelemetryData } from "./types.js";
+import { resolveUsageTelemetry, type UsageTracker } from "./usage.js";
 
 // ─────────────────────────────────────────────────
 //  Layer 1: Universal Base Telemetry (Automatic)
@@ -24,6 +25,8 @@ export interface TelemetryCollector {
 
 export function createTelemetryCollector(opts: {
   inputBytes: number;
+  /** Models / tokens / cost captured during the run (spans, callbacks, ctx.usage). */
+  tracker?: UsageTracker;
 }): TelemetryCollector {
   const metrics = new Map<string, number>();
   let chunksStreamed = 0;
@@ -44,10 +47,20 @@ export function createTelemetryCollector(opts: {
     getMetrics: () => Object.fromEntries(metrics),
 
     finalize(overrides?: Partial<TelemetryData>): TelemetryData {
+      const usage = resolveUsageTelemetry(overrides, opts.tracker);
+      const base: Partial<TelemetryData> = { ...overrides };
+      if (usage.models) {
+        // One source of truth: drop the adapter's flat fields so source and numbers never disagree
+        delete base.llm_tokens;
+        delete base.model_used;
+        delete base.cost_usd;
+        delete base.cost_source;
+      }
       return {
         input_bytes: opts.inputBytes,
         chunks_streamed: chunksStreamed,
-        ...overrides,
+        ...base,
+        ...usage,
         // Merge framework-specific from overrides if present
         framework: {
           ...overrides?.framework,

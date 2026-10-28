@@ -57,14 +57,50 @@ export type ExecutionMode = "sync" | "async" | "conversational";
 //  Telemetry
 // ─────────────────────────────────────────────────
 
-export interface TelemetryData {
-  llm_tokens?: {
-    prompt?: number;
-    completion?: number;
-    total?: number;
-  };
-  model_used?: string;
+/** Token counts for one model. Every field is optional; missing means "not reported". */
+export interface TokenUsage {
+  prompt?: number;
+  completion?: number;
+  total?: number;
+  /** Prompt tokens served from the provider's cache (when reported). */
+  cached?: number;
+  /** Reasoning / thinking tokens (when reported). */
+  reasoning?: number;
+}
+
+/**
+ * Where a `cost_usd` figure came from. The SDK never estimates cost from a price list:
+ * - `provider`: returned by the provider/SDK itself (Claude Agent SDK, OpenRouter, ...)
+ * - `agent`:    reported by the agent's own code through `ctx.usage.record({ costUsd })`
+ * When there is no cost, the marketplace prices `models[].tokens` from its own price table.
+ */
+export type CostSource = "provider" | "agent";
+
+/** Usage of one model during a run (all calls to the same provider + model are merged). */
+export interface ModelUsage {
+  /** Model id as reported by the provider, e.g. "gpt-4o-2024-08-06" or "claude-sonnet-5-5". */
+  id: string;
+  provider?: string;
+  /** Number of LLM calls (when known). */
+  calls?: number;
+  tokens: TokenUsage;
+  /** Only present when EVERY call to this model reported a cost. */
   cost_usd?: number;
+  cost_source?: CostSource;
+  /** Summed LLM call latency in ms (when known). */
+  latency_ms?: number;
+}
+
+export interface TelemetryData {
+  /** Totals across all models. Kept for backward compatibility; see `models` for the breakdown. */
+  llm_tokens?: TokenUsage;
+  /** Comma-joined ids of `models`. Kept for backward compatibility. */
+  model_used?: string;
+  /** Per-model usage captured from adapters, OpenTelemetry spans, LangChain callbacks or `ctx.usage.record()`. */
+  models?: ModelUsage[];
+  /** Real cost when the provider reported it for every model. Never estimated by the SDK. */
+  cost_usd?: number;
+  cost_source?: CostSource;
   /** Base metrics auto-collected by the SDK */
   duration_ms?: number;
   input_bytes?: number;
@@ -227,6 +263,8 @@ export interface TaskFailedEvent {
   run_id: string;
   duration_ms: number;
   error: StructuredError;
+  /** Usage up to the failure, so cost of failed runs is still visible. */
+  telemetry?: TelemetryData;
 }
 
 export interface HeartbeatEvent {
@@ -401,6 +439,32 @@ export interface AgentMetric {
 }
 
 // ─────────────────────────────────────────────────
+//  Usage recording (models, tokens, cost)
+// ─────────────────────────────────────────────────
+
+export interface UsageRecord {
+  /** Model id, e.g. "gpt-4o", "claude-sonnet-5-5", "llama-3.3-70b-versatile". */
+  model: string;
+  provider?: string;
+  tokens?: TokenUsage;
+  /** Real cost of this call in USD, only if you actually know it (e.g. OpenRouter `usage.cost`). */
+  costUsd?: number;
+  latencyMs?: number;
+  /** Number of calls this record covers (default 1). */
+  calls?: number;
+}
+
+export interface AgentUsage {
+  /**
+   * Report an LLM call made by custom code. Never throws; bad values are ignored.
+   *
+   * @example
+   * ctx.usage.record({ model: res.model, provider: "groq", tokens: { prompt: u.prompt_tokens, completion: u.completion_tokens } });
+   */
+  record: (usage: UsageRecord) => void;
+}
+
+// ─────────────────────────────────────────────────
 //  NeedInput result (for conversational agents)
 // ─────────────────────────────────────────────────
 
@@ -471,6 +535,13 @@ export interface AgentExecutionContext<TInput = Record<string, unknown>> {
    * metric.timing("llm_duration", 1450);
    */
   metric: AgentMetric;
+
+  /**
+   * Report which models were used and how many tokens they consumed. Needed only for custom
+   * LLM code; the Catelog adapters, OpenTelemetry spans (`catelogSpanProcessor`) and the
+   * LangChain handler (`createLangChainUsageHandler`) report automatically.
+   */
+  usage: AgentUsage;
 
   /**
    * Optional metadata passed by the marketplace caller (e.g., caller user ID, organization, request trace IDs).

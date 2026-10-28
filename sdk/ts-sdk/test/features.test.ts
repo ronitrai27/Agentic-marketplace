@@ -44,7 +44,7 @@ async function main() {
   // ─── Async job survives an agent "restart" via a shared store ───
   console.log("1️⃣  Async job persisted in a shared store...");
   const store = new MemoryJobStore();
-  const a1 = createAgent({
+  const a1 = createAgent({ maxTimeoutMinute: 1,
     name: "Async A",
     mode: "async",
     jobStore: store,
@@ -63,7 +63,7 @@ async function main() {
   assert(Array.isArray(done.events) && done.events.length > 0, "Events included in poll");
   s1.server.close();
 
-  const a2 = createAgent({ name: "Async B", mode: "async", jobStore: store, async execute() { return {}; } });
+  const a2 = createAgent({ maxTimeoutMinute: 1, name: "Async B", mode: "async", jobStore: store, async execute() { return {}; } });
   const s2 = await start(a2);
   const afterRestart = await (await fetch(`${s2.base}/tasks/${accepted.run_id}`)).json();
   assert(afterRestart.status === "completed" && afterRestart.output?.ok === true, "New agent instance reads finished job");
@@ -102,12 +102,12 @@ async function main() {
 
   // ─── Limits ───
   console.log("\n4️⃣  Limits...");
-  const open = createAgent({ name: "Open", async execute() { return { ok: 1 }; } });
+  const open = createAgent({ maxTimeoutMinute: 1, name: "Open", async execute() { return { ok: 1 }; } });
   const so = await start(open);
   assert((await post(so.base, { input: { pad: "x".repeat(5000) } })).status === 200, "No limits by default");
   so.server.close();
 
-  const limited = createAgent({
+  const limited = createAgent({ maxTimeoutMinute: 1,
     name: "Limited",
     limits: { maxBodyBytes: 200, rateLimit: { max: 3, windowMs: 60_000 } },
     async execute() { return { ok: 1 }; },
@@ -126,7 +126,7 @@ async function main() {
 
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
-  const busy = createAgent({
+  const busy = createAgent({ maxTimeoutMinute: 1,
     name: "Busy",
     limits: { maxConcurrent: 1 },
     async execute() { await gate; return { ok: 1 }; },
@@ -143,7 +143,7 @@ async function main() {
 
   // ─── Graceful shutdown ───
   console.log("\n5️⃣  Graceful shutdown...");
-  const slow = createAgent({
+  const slow = createAgent({ maxTimeoutMinute: 1,
     name: "Slow",
     async execute() { await sleep(300); return { output: { done: true } }; },
   });
@@ -160,7 +160,7 @@ async function main() {
   assert(Date.now() - t0 < 2000, "Shutdown returns once idle (no full timeout wait)");
   ss.server.close();
 
-  const stuck = createAgent({
+  const stuck = createAgent({ maxTimeoutMinute: 1,
     name: "Stuck",
     mode: "async",
     async execute({ signal }) {
@@ -175,6 +175,62 @@ async function main() {
   const killed = await (await fetch(`${sk.base}/tasks/${acc.run_id}`)).json();
   assert(killed.status === "failed" && killed.error?.code === "TASK_INTERRUPTED", "Overdue async job marked TASK_INTERRUPTED");
   sk.server.close();
+
+  // ─── Enforced timeout (maxTimeoutMinute) ───
+  console.log("\n6️⃣  Timeout enforcement...");
+  let threw = "";
+  try {
+    createAgent({ name: "NoTimeout", async execute() { return {}; } } as any);
+  } catch (e) {
+    threw = (e as Error).message;
+  }
+  assert(threw.includes("maxTimeoutMinute missing"), "Missing maxTimeoutMinute throws a clear error");
+
+  // 0.01 min = 600ms; the agent ignores `signal` entirely, so only Promise.race can end the run
+  const hang = (extra: object = {}) =>
+    createAgent({
+      name: "Hang",
+      maxTimeoutMinute: 0.01,
+      ...extra,
+      async execute() { await sleep(5000); return { output: { late: true } }; },
+    });
+
+  const hs = await start(hang());
+  const tStart = Date.now();
+  const timedOut = await (await post(hs.base, { input: {} })).json();
+  assert(
+    timedOut.status === "failed" && timedOut.error?.code === "EXECUTION_TIMEOUT" && timedOut.error?.retryable === true,
+    "Sync JSON: ignored-signal agent fails with retryable EXECUTION_TIMEOUT",
+  );
+  assert(Date.now() - tStart < 2500, "Sync JSON: returns at the limit, not when the agent finishes");
+
+  const sseRes = await fetch(`${hs.base}/execute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ input: {} }),
+  });
+  const sseText = await sseRes.text();
+  assert(sseText.includes("EXECUTION_TIMEOUT") && sseText.includes("task.failed"), "SSE: emits task.failed with EXECUTION_TIMEOUT");
+  hs.server.close();
+
+  const ha = hang({ mode: "async" });
+  const as = await start(ha);
+  const hungJob = await (await post(as.base, { input: {} })).json();
+  await sleep(900);
+  const polled = await (await fetch(`${as.base}/tasks/${hungJob.run_id}`)).json();
+  assert(polled.status === "failed" && polled.error?.code === "EXECUTION_TIMEOUT", "Async: hung job ends as EXECUTION_TIMEOUT");
+  as.server.close();
+
+  const longAgent = createAgent({
+    name: "ShortDeadline",
+    maxTimeoutMinute: 5,
+    async execute() { await sleep(5000); return {}; },
+  });
+  const ls = await start(longAgent);
+  const dl = await (await post(ls.base, { input: {}, deadline_ms: Date.now() + 300 })).json();
+  assert(dl.error?.code === "EXECUTION_TIMEOUT", "Caller deadline_ms can shorten the limit");
+  assert(longAgent.capabilities.max_timeout_seconds === 300, "Manifest advertises maxTimeoutMinute in seconds");
+  ls.server.close();
 
   console.log(`\n${"─".repeat(50)}`);
   if (failed === 0) console.log(`🎉 All ${passed} feature tests passed!`);

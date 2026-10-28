@@ -50,6 +50,9 @@ export {
   type TelemetryReporterOptions,
 } from "./telemetry.js";
 
+// Usage capture (models, tokens, real cost)
+export { catelogSpanProcessor, createLangChainUsageHandler } from "./usage.js";
+
 // Framework Adapters
 export {
   pipeAiSdkStream,

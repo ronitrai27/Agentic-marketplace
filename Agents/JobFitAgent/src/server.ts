@@ -12,7 +12,7 @@ export const agent = createAgent<JobFitInput, JobFitOutput>({
   mode,
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
-  capabilities: { max_timeout_seconds: 180 },
+  maxTimeoutMinute: 3,
   limits: {
     maxConcurrent: Number(process.env.JOBFIT_MAX_CONCURRENT ?? 3),
     // base64 of a 5MB resume is ~6.7MB

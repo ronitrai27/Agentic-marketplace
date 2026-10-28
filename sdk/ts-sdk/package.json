@@ -1,6 +1,6 @@
 {
   "name": "catelog",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "description": "Official TypeScript SDK for Marketplace Agent Protocol Specification (MAPS)",
   "type": "module",
   "main": "./dist/cjs/index.js",
@@ -48,7 +48,7 @@
   "scripts": {
     "build": "node scripts/clean.js && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/postbuild.js",
     "dev": "tsc --watch",
-    "test": "tsx test/index.test.ts && tsx test/features.test.ts && tsx test/adapters.test.ts",
+    "test": "tsx test/index.test.ts && tsx test/features.test.ts && tsx test/adapters.test.ts && tsx test/usage.test.ts",
     "prepublishOnly": "npm run build",
     "postinstall": "node ./scripts/postinstall.js"
   },

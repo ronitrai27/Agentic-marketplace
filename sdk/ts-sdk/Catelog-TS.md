@@ -54,6 +54,7 @@ import { createAgent } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Summarizer",
   description: "Summarizes text",
   inputSchema: z.object({ text: z.string().min(1) }),
@@ -231,6 +232,7 @@ import { createAgent, pipeClaudeAgentStream } from "catelog";
 import { z } from "zod";
 
 export const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Claude Researcher",
   mode: "async",                                   // Claude runs take 10-60s
   inputSchema: z.object({ prompt: z.string() }),
@@ -271,6 +273,7 @@ import { createAgent, pipeOpenAiStream } from "catelog";
 const client = new OpenAI();
 
 export const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "OpenAI Assistant",
   inputSchema: z.object({ prompt: z.string() }),
   async execute({ input, stream }) {
@@ -292,6 +295,7 @@ import { createAgent, pipeLangGraphStream } from "catelog";
 import { graph } from "./my-graph.js";             // your compiled StateGraph
 
 export const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Research Graph",
   mode: "async",
   inputSchema: z.object({ topic: z.string() }),
@@ -340,6 +344,7 @@ Pass `last_seq` back as `?since=` to receive only new events. `step`, `progress`
 ```ts
 // Conversational: ask a question, then continue when the buyer answers
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "SQL Assistant",
   mode: "conversational",
   async execute({ input, needInput, session, stream }) {
@@ -381,6 +386,7 @@ Custom errors: `throw Object.assign(new Error("Out of credits"), { code: "MODEL_
 import { createAgent, RedisJobStore, SqliteJobStore } from "catelog";
 
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Deep Researcher",
   mode: "async",
   jobStore: new RedisJobStore(redisClient),                   // ioredis or node-redis client
@@ -395,6 +401,7 @@ Default is in-memory (lost on restart). With a store, finished results survive r
 
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "My Agent",
   limits: {
     maxConcurrent: 10,                         // over the cap → 429 SERVER_BUSY
@@ -462,12 +469,13 @@ curl -X POST http://localhost:3000/execute \
 
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: string,                         // required
   id?, version?, description?,
   mode?: "sync" | "async" | "conversational",
   secretKey?, publicKey?,               // default: CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY
   inputSchema?, outputSchema?,          // Zod or JSON Schema
-  capabilities?: { max_timeout_seconds? },
+  maxTimeoutMinute: number,   // REQUIRED — hard per-run limit (sync, async, conversational)
   telemetry?: { endpoint?, disabled? },
   jobStore?: JobStore,                  // async persistence
   limits?: { maxConcurrent?, maxBodyBytes?, rateLimit?, trustProxy? },

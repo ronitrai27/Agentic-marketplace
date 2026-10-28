@@ -125,10 +125,11 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
   secretKey: env.CATELOG_SECRET_KEY,
   publicKey: env.CATELOG_PUBLIC_KEY,
 
+  maxTimeoutMinute: 10, // matches WORKFLOW_EXECUTION_TIMEOUT
+
   capabilities: {
     streaming: true,
     delta_stream: true,
-    max_timeout_seconds: 600,
     execution_modes: ["async"],
   },
 
@@ -142,6 +143,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     runId,
     log,
     metric,
+    usage: ctxUsage,
   }: AgentExecutionContext<SeoAgentInput>) {
     const startTime = Date.now();
     log.info("Catelog task execution initiated", { runId, input });
@@ -158,7 +160,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
       );
     }
 
-    const usage = new UsageTracker();
+    const usage = new UsageTracker(ctxUsage);
     let resolved: Awaited<ReturnType<typeof resolveAuditTarget>>;
     try {
       resolved = await resolveAuditTarget(rawQuery, usage);

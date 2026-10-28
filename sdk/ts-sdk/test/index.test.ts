@@ -20,7 +20,7 @@ async function runTests() {
 
   // ─── Test 1: Minimal Agent (Zero Config) ───
   console.log("1️⃣  Minimal agent — no schema, no keys, just execute...");
-  const minimalAgent = createAgent({
+  const minimalAgent = createAgent({ maxTimeoutMinute: 1,
     name: "Minimal Agent",
     async execute({ input }) {
       return { greeting: `Hello, ${(input as any).name || "world"}!` };
@@ -50,7 +50,7 @@ async function runTests() {
     count: z.number(),
   });
 
-  const schemaAgent = createAgent({
+  const schemaAgent = createAgent({ maxTimeoutMinute: 1,
     name: "Schema Agent",
     inputSchema: InputSchema,
     outputSchema: OutputSchema,
@@ -74,7 +74,7 @@ async function runTests() {
 
   // ─── Test 3: Backward Compatibility (createMarketplaceAgent) ───
   console.log("\n3️⃣  Backward compat — createMarketplaceAgent still works...");
-  const legacyAgent = createMarketplaceAgent({
+  const legacyAgent = createMarketplaceAgent({ maxTimeoutMinute: 1,
     name: "Legacy Agent",
     async execute({ input, stream }) {
       stream.step("Processing");
@@ -87,7 +87,7 @@ async function runTests() {
   // ─── Test 4: Dual-Mode Security — Bearer Auth ───
   console.log("\n4️⃣  Dual-mode security — Bearer token auth...");
   const secretKey = "cat_sec_live_test123456789abcdef";
-  const securityAgent = createAgent({
+  const securityAgent = createAgent({ maxTimeoutMinute: 1,
     name: "Secure Agent",
     secretKey,
     async execute({ input }) {
@@ -183,14 +183,14 @@ async function runTests() {
 
   // ─── Test 8: Execution Modes ───
   console.log("\n8️⃣  Execution modes — sync, async, conversational...");
-  const syncAgent = createAgent({ name: "Sync", async execute() { return { ok: true }; } });
+  const syncAgent = createAgent({ maxTimeoutMinute: 1, name: "Sync", async execute() { return { ok: true }; } });
   assert(syncAgent.mode === "sync", "Default mode is sync");
 
-  const asyncAgent = createAgent({ name: "Async", mode: "async", async execute() { return { ok: true }; } });
+  const asyncAgent = createAgent({ maxTimeoutMinute: 1, name: "Async", mode: "async", async execute() { return { ok: true }; } });
   assert(asyncAgent.mode === "async", "Async mode set correctly");
   assert(asyncAgent.capabilities.execution_modes.includes("async"), "Capabilities include async");
 
-  const convAgent = createAgent({ name: "Conv", mode: "conversational", async execute() { return { ok: true }; } });
+  const convAgent = createAgent({ maxTimeoutMinute: 1, name: "Conv", mode: "conversational", async execute() { return { ok: true }; } });
   assert(convAgent.mode === "conversational", "Conversational mode set correctly");
 
   // ─── Test 9: Health Check includes capabilities ───

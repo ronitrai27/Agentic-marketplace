@@ -6,6 +6,7 @@ import type {
   NEED_INPUT_SYMBOL,
 } from "./types.js";
 import { createLogger, createTelemetryCollector, type TelemetryCollector } from "./telemetry.js";
+import { UsageTracker, bindTracker } from "./usage.js";
 
 // ─────────────────────────────────────────────────
 //  In-Memory Session Store (Multi-Turn Conversations)
@@ -78,7 +79,8 @@ export function buildExecutionContext<TInput>(
   const log = createLogger(runId);
 
   // Telemetry collector
-  const telemetryCollector = createTelemetryCollector({ inputBytes });
+  const tracker = new UsageTracker();
+  const telemetryCollector = createTelemetryCollector({ inputBytes, tracker });
   const metric = telemetryCollector.getMetricHelper();
 
   // Session (keyed by session_id from metadata, or runId as fallback)
@@ -114,6 +116,7 @@ export function buildExecutionContext<TInput>(
     signal,
     log,
     metric,
+    usage: tracker.facade(),
     metadata,
     deadlineMs,
     resumeToken,
@@ -127,5 +130,6 @@ export function buildExecutionContext<TInput>(
     },
   };
 
+  bindTracker(ctx, tracker);
   return { ctx, telemetryCollector };
 }

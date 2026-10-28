@@ -94,6 +94,7 @@ The absolute minimum to publish a working agent:
 import { createAgent } from "catelog";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Hello World",
   async execute({ input }) {
     return { message: `Hello, ${(input as any).name ?? "world"}!` };
@@ -130,6 +131,7 @@ import { createAgent } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Web Summarizer",
   mode: "sync", // default — can be omitted
 
@@ -198,6 +200,7 @@ import { createAgent } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Deep Research Agent",
   mode: "async",
 
@@ -299,6 +302,7 @@ import { createAgent } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "SQL Query Assistant",
   mode: "conversational",
 
@@ -396,6 +400,7 @@ import { z } from "zod";
 const openai = new OpenAI(); // Uses OPENAI_API_KEY from env
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "OpenAI Analyst",
   inputSchema: z.object({
     prompt: z.string(),
@@ -445,6 +450,7 @@ import { createAgent, pipeAiSdkStream } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Vercel AI Coding Assistant",
   inputSchema: z.object({
     prompt: z.string(),
@@ -503,6 +509,7 @@ const graph = new StateGraph(GraphState)
   .compile();
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "LangGraph Research Pipeline",
   inputSchema: z.object({
     topic: z.string(),
@@ -549,6 +556,7 @@ async function* myCrewAiAgent(input: string): AsyncGenerator<string> {
 }
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "CrewAI Research Crew",
   inputSchema: z.object({
     topic: z.string(),
@@ -579,6 +587,7 @@ import { createAgent } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Custom Logic Agent",
   inputSchema: z.object({
     data: z.array(z.number()),
@@ -622,6 +631,7 @@ import { createAgent, pipeClaudeAgentStream } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Claude Researcher",
   mode: "async",                                     // Claude runs take 10-60s
   inputSchema: z.object({ prompt: z.string() }),
@@ -754,6 +764,7 @@ Schemas are **optional** but recommended for marketplace listings. They generate
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Research Agent",
   inputSchema: z.object({
     query: z.string().min(3).describe("The research question"),
@@ -776,6 +787,7 @@ const agent = createAgent({
 
 ```ts
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Data Agent",
   inputSchema: {
     type: "object",
@@ -793,6 +805,7 @@ const agent = createAgent({
 
 ```ts
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Flexible Agent",
   // No inputSchema or outputSchema — accepts any JSON
   async execute({ input }) {
@@ -827,6 +840,7 @@ Or pass them explicitly in the constructor:
 
 ```ts
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "My Agent",
   secretKey: "cat_sec_live_your_key_here",
   publicKey: "cat_pub_live_your_key_here",
@@ -877,6 +891,21 @@ async execute({ input, metric }) {
 ```
 
 All custom metrics appear in the `telemetry.framework.custom_metrics` field of the final response.
+
+### Models, tokens & cost
+
+Every run reports `telemetry.models: [{ id, provider, calls, tokens, cost_usd? }]`. The SDK never estimates
+cost from a price list: `cost_usd` appears only when a provider or your code reported a real number
+(`cost_source: "provider" | "agent"`). Otherwise the marketplace prices `tokens` itself.
+
+| Your code uses | What to do |
+|---|---|
+| Catelog adapters (`pipe*Stream`) | Nothing. Models and tokens are captured. |
+| Vercel AI SDK / OpenTelemetry | Add `catelogSpanProcessor` to your OTel setup, and pass `experimental_telemetry: { isEnabled: true }`. |
+| LangChain / LangGraph | `graph.invoke(input, { callbacks: [createLangChainUsageHandler(ctx.usage)] })`, or `pipeLangGraphStream(..., { usage: ctx.usage })`. |
+| Custom code (Groq, Ollama, fine-tuned...) | `ctx.usage.record({ model, provider, tokens: { prompt, completion } })` |
+
+Capture never throws: missing or invalid data is skipped. Failed runs keep the usage they already spent.
 
 ### Returning Telemetry
 
@@ -1094,6 +1123,7 @@ import { createAgent, RedisJobStore, SqliteJobStore } from "catelog";
 import Redis from "ioredis";
 
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Deep Researcher",
   mode: "async",
   jobStore: new RedisJobStore(new Redis(process.env.REDIS_URL!), { ttlMs: 86_400_000 }),
@@ -1115,6 +1145,7 @@ createAgent({
 
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "My Agent",
   limits: {
     maxConcurrent: 10,
@@ -1173,6 +1204,7 @@ The guide (`Catelog-TS.md`) is written to your project root. It covers setup, SS
 import { createAgent, pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeClaudeAgentStream } from "catelog";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: string,                    // Required
   id?: string,                     // Auto-slugified from name
   version?: string,                // Default: "1.0.0"
@@ -1183,7 +1215,7 @@ const agent = createAgent({
   inputSchema?: ZodSchema | JSONSchema,  // Optional
   outputSchema?: ZodSchema | JSONSchema, // Optional
   telemetry?: { endpoint?: string; disabled?: boolean },
-  capabilities?: { max_timeout_seconds?: number },
+  maxTimeoutMinute: number, // REQUIRED — hard per-run limit; advertised as capabilities.max_timeout_seconds
   jobStore?: JobStore,             // async persistence (Redis / SQLite / custom)
   limits?: { maxConcurrent?, maxBodyBytes?, rateLimit?, trustProxy? },
 

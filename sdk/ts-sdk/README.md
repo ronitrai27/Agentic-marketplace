@@ -45,6 +45,7 @@ pnpm add catelog zod   # or npm / yarn / bun
 import { createAgent } from "catelog";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Hello Agent",
   async execute({ input }) {
     return { message: `Hello, ${(input as any).name ?? "world"}!` };
@@ -63,6 +64,7 @@ That's all. You get `/health`, `/schema`, and `/execute` — with streaming, hea
 ### Sync Agent — Fast responses (default)
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Summarizer",
   async execute({ input, stream }) {
     stream.progress(20, "Analyzing...");
@@ -75,6 +77,7 @@ createAgent({
 ### Async Agent — Long-running jobs (minutes)
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Deep Researcher",
   mode: "async",
   async execute({ input, log }) {
@@ -89,6 +92,7 @@ createAgent({
 ### Conversational Agent — Ask clarifying questions
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "SQL Assistant",
   mode: "conversational",
   async execute({ input, needInput }) {
@@ -113,6 +117,7 @@ All optional. Beginners can ignore this section.
 import { createAgent, RedisJobStore } from "catelog";
 
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Deep Researcher",
   mode: "async",
   jobStore: new RedisJobStore(redisClient),   // or SqliteJobStore({ path }) / your own JobStore
