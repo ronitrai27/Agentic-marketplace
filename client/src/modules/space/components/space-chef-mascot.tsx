@@ -136,12 +136,53 @@ const RECIPES: Recipe[] = [
   },
 ];
 
+const PLACEHOLDER_STRINGS = [
+  "Ask for Leads generation agent.",
+  "Ask for Outreach agent.",
+  "Find Jobs relevant to your Resume.",
+  "Give any Topic to research deep , and compare different agents.",
+];
+
 export function SpaceChefMascot() {
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [promptInput, setPromptInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Smooth, slow typewriter effect for placeholder
+  const [placeholderText, setPlaceholderText] = useState("");
+  const [stringIndex, setStringIndex] = useState(0);
+  const [charIndex, setCharIndex] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    const currentStr = PLACEHOLDER_STRINGS[stringIndex];
+
+    const typeSpeed = isDeleting ? 40 : 100; // Slow, deliberate typing speed
+
+    const timer = setTimeout(() => {
+      if (!isDeleting) {
+        if (charIndex < currentStr.length) {
+          setPlaceholderText(currentStr.slice(0, charIndex + 1));
+          setCharIndex((prev) => prev + 1);
+        } else {
+          // Pause at complete string before deleting
+          setTimeout(() => setIsDeleting(true), 2400);
+        }
+      } else {
+        if (charIndex > 0) {
+          setPlaceholderText(currentStr.slice(0, charIndex - 1));
+          setCharIndex((prev) => prev - 1);
+        } else {
+          setIsDeleting(false);
+          setStringIndex((prev) => (prev + 1) % PLACEHOLDER_STRINGS.length);
+        }
+      }
+    }, typeSpeed);
+
+    return () => clearTimeout(timer);
+  }, [charIndex, isDeleting, stringIndex]);
 
   const handleMascotClick = () => {
     setTooltipOpen(true);
@@ -228,7 +269,7 @@ export function SpaceChefMascot() {
               value={promptInput}
               onChange={(e) => setPromptInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything, describe a system architecture, or assign a task..."
+              placeholder={placeholderText}
               className="flex-1 bg-transparent text-xs 2xl:text-sm text-foreground placeholder:text-muted-foreground outline-none leading-none"
             />
 
