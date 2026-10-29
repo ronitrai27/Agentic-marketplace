@@ -372,11 +372,239 @@ On resume the client sends `POST /execute` with the new `input` and the `resume_
 | `signal` | `AbortSignal`: pass to `fetch` / LLM calls so cancellation stops the work |
 | `log` | `log.info/warn/error/debug(message, data?)` |
 | `metric` | `metric.count/gauge/timing(name, value)` → sent in telemetry |
+| `usage` | `usage.record({ model, provider?, tokens })` reports an LLM call to telemetry (see *Tracing and telemetry*) |
 | `runId`, `metadata`, `deadlineMs`, `resumeToken` | Run info from the marketplace |
 | `needInput(opts)` | Pause for buyer input (conversational mode) |
 | `session` | `get/set/getAll` state that persists across turns |
 
 Custom errors: `throw Object.assign(new Error("Out of credits"), { code: "MODEL_RATE_LIMIT", retryable: true })`.
+
+## Tracing and telemetry usage using catelog sdk
+
+The marketplace needs to see **which model your agent used and how many tokens it spent**. The dry run in the
+registration flow (Step 2) will not let you continue without it. Cost is calculated by the marketplace from
+tokens, so you never report prices.
+
+**What you must make visible, per LLM call:** model name and token counts (prompt + completion).
+Everything else (cached tokens, latency, cost) is optional. Nothing here can crash your agent.
+
+### Find your stack, copy the code
+
+| You use | Do this | Extra setup |
+| :--- | :--- | :--- |
+| Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) | [A](#a-claude-agent-sdk) | none |
+| Vercel AI SDK (`ai`) | [B](#b-vercel-ai-sdk) | none |
+| OpenAI SDK, chat completions | [C](#c-openai-sdk-chat-completions) | `stream_options` |
+| OpenAI SDK, Responses API | [D](#d-openai-sdk-responses-api) | none |
+| LangGraph | [E](#e-langgraph) | none |
+| LangChain (model, chain, `createReactAgent`) | [F](#f-langchain-without-langgraph) | none |
+| Anthropic SDK (`@anthropic-ai/sdk`), Groq, Ollama, Mistral, Gemini, fine-tuned, anything else | [G](#g-anything-else-one-line) | none |
+| Many calls inside libraries you can't edit (Mastra, LlamaIndex, ...) | [H](#h-opentelemetry-for-everything-else) | OpenTelemetry |
+
+Imports used below:
+
+```ts
+import {
+  createAgent,
+  pipeClaudeAgentStream,
+  pipeAiSdkStream,
+  pipeOpenAiStream,
+  pipeOpenAiResponsesStream,
+  pipeLangGraphStream,
+  createLangChainUsageHandler,
+  catelogSpanProcessor,
+} from "catelog";
+```
+
+### A. Claude Agent SDK
+
+```ts
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal }) {
+    const run = query({ prompt: input.prompt, options: { model: "claude-haiku-5-5" } });
+    return pipeClaudeAgentStream(run, stream, { signal });
+  },
+});
+```
+
+Captured automatically: every model used, tokens, cache tokens, and the **real cost** the Claude Agent SDK reports.
+
+### B. Vercel AI SDK
+
+```ts
+import { streamText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal }) {
+    const result = streamText({
+      model: openai("gpt-4o"),
+      prompt: input.prompt,
+      abortSignal: signal,
+    });
+    return pipeAiSdkStream(result, stream);
+  },
+});
+```
+
+Works the same with `generateText`. Multi-step runs (tools, `maxSteps`) report the total usage of all steps.
+
+### C. OpenAI SDK, chat completions
+
+```ts
+import OpenAI from "openai";
+const client = new OpenAI();
+
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal }) {
+    const completion = await client.chat.completions.create(
+      {
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: input.prompt }],
+        stream: true,
+        stream_options: { include_usage: true }, // REQUIRED when streaming, or OpenAI sends no token counts
+      },
+      { signal },
+    );
+    return pipeOpenAiStream(completion, stream);
+  },
+});
+```
+
+Without `stream_options: { include_usage: true }` OpenAI returns no usage while streaming and the dry run will fail
+the usage check. Non-streaming calls need nothing extra. OpenRouter, Groq, Together and any other
+OpenAI-compatible endpoint work the same way: point the client's `baseURL` at them.
+
+### D. OpenAI SDK, Responses API
+
+```ts
+const response = await client.responses.create({ model: "gpt-5", input: input.prompt });
+return pipeOpenAiResponsesStream(response, stream);
+```
+
+### E. LangGraph
+
+```ts
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal, usage }) {
+    return pipeLangGraphStream(compiledGraph, { messages: [{ role: "user", content: input.prompt }] }, stream, {
+      signal,
+      usage, // <- this one line captures the model and tokens of EVERY LLM call inside the graph
+    });
+  },
+});
+```
+
+If you call `graph.invoke()` yourself instead of the adapter, pass the handler:
+
+```ts
+async execute({ input, usage }) {
+  const result = await graph.invoke({ messages: [...] }, { callbacks: [createLangChainUsageHandler(usage)] });
+  return { output: { text: result.messages.at(-1).content } };
+}
+```
+
+### F. LangChain without LangGraph
+
+Same handler, passed as a callback to the model, chain or agent:
+
+```ts
+import { ChatOpenAI } from "@langchain/openai";
+
+async execute({ input, usage }) {
+  const model = new ChatOpenAI({ model: "gpt-4.1-mini" });
+  const res = await model.invoke(input.prompt, { callbacks: [createLangChainUsageHandler(usage)] });
+  return { output: { text: String(res.content) } };
+}
+```
+
+Or attach it once when you build the model: `new ChatOpenAI({ model: "...", callbacks: [createLangChainUsageHandler(usage)] })`.
+The handler reads `usage_metadata` and the provider's model name from every call, including inside chains and agents.
+
+### G. Anything else (one line)
+
+If you call a model with any other library, report the call yourself with `usage.record(...)` right after it returns.
+Take the numbers from the provider's response, never from your own estimate.
+
+```ts
+// Anthropic SDK
+const msg = await anthropic.messages.create({ model: "claude-sonnet-5-5", max_tokens: 1024, messages });
+usage.record({
+  model: msg.model,
+  provider: "anthropic",
+  tokens: {
+    prompt: msg.usage.input_tokens,
+    completion: msg.usage.output_tokens,
+    cached: msg.usage.cache_read_input_tokens ?? undefined,
+  },
+});
+
+// Groq / Ollama / Mistral / a fine-tuned model: same shape
+const res = await groq.chat.completions.create({ model: "llama-3.3-70b-versatile", messages });
+usage.record({
+  model: res.model,
+  provider: "groq",
+  tokens: { prompt: res.usage?.prompt_tokens, completion: res.usage?.completion_tokens },
+});
+```
+
+`usage` comes from `execute({ usage })`. Call it once per LLM call. Several models in one run are fine; each is listed separately.
+Pass `costUsd` only if the provider itself returned a price (for example OpenRouter's `usage.cost`).
+
+### H. OpenTelemetry (for everything else)
+
+If a library makes the LLM calls for you and already emits OpenTelemetry spans (Vercel AI SDK with telemetry on,
+OpenLLMetry, Mastra, ...), add our span processor once at startup, **before** `agent.listen()`:
+
+```ts
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { catelogSpanProcessor } from "catelog";
+
+new NodeSDK({ spanProcessors: [catelogSpanProcessor] }).start();
+```
+
+Vercel AI SDK needs telemetry switched on per call: `generateText({ ..., experimental_telemetry: { isEnabled: true } })`.
+Spans are matched to the right run automatically, so concurrent runs never mix. If a framework also uses an adapter
+above, the data is not counted twice.
+
+### Check it before you register
+
+1. Start your agent and open **Register New Agent**. Step 2 (Dry run) shows the **Telemetry** tab.
+2. You should see `models` with your model name and `tokens`, plus a cost line.
+3. A red box saying *"Marketplace is not able to get your trace / insights"* means no model or no tokens arrived.
+
+| Problem | Fix |
+| :--- | :--- |
+| Red box, streaming OpenAI | Add `stream_options: { include_usage: true }` (section C) |
+| Red box, LangGraph / LangChain | Pass `usage` to `pipeLangGraphStream`, or add the callback handler (E, F) |
+| Red box, Vercel AI SDK with your own code | Return `pipeAiSdkStream(result, stream)`, or turn on `experimental_telemetry` + section H |
+| Red box, a library you can't edit | Section H, or wrap the call and use `usage.record` (G) |
+| Model shows as `unknown` | Your code sent tokens without a model name: pass `model` in `usage.record` |
+| Cost shows "price unknown" | The model is not in the marketplace price table yet. Tokens are still recorded. |
+| Agent never calls an LLM | Not supported yet: the dry run requires at least one model with tokens. |
+
+What you get in `telemetry` (shortened):
+
+```json
+{
+  "models": [{ "id": "gpt-4.1-mini-2025-04-14", "provider": "openai", "calls": 1,
+               "tokens": { "prompt": 100, "completion": 73, "total": 173 } }],
+  "llm_tokens": { "prompt": 100, "completion": 73, "total": 173 },
+  "model_used": "gpt-4.1-mini-2025-04-14"
+}
+```
+
+Failed and timed-out runs also keep the usage they already spent.
 
 ## 8. Production options
 

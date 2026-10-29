@@ -1,8 +1,15 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TestTokenPanel } from "./test-token-panel";
+import {
+  analyzeUsage,
+  normalizeModelId,
+  priceFor,
+  PRICES_UPDATED,
+  type UsageReport,
+} from "@/lib/model-pricing";
 import {
   Activity,
   ArrowRight,
@@ -96,8 +103,13 @@ function companionNameKey(
   props: Record<string, JsonObj>,
 ): string | undefined {
   const stem = fileKey.replace(/[_-]?base64$/i, "");
-  return [`${stem}_filename`, `${stem}_name`, `${stem}Filename`, `${stem}FileName`, `${stem}Name`]
-    .find((c) => c in props);
+  return [
+    `${stem}_filename`,
+    `${stem}_name`,
+    `${stem}Filename`,
+    `${stem}FileName`,
+    `${stem}Name`,
+  ].find((c) => c in props);
 }
 
 /** Filename fields that are filled automatically from an upload, so the form hides them. */
@@ -114,9 +126,10 @@ function companionKeysOf(props: Record<string, JsonObj>): Set<string> {
 function acceptFor(p: JsonObj): string | undefined {
   const exts = Array.from(
     new Set(
-      ((p.description as string | undefined)?.match(/\.[a-z0-9]{2,5}\b/gi) ?? []).map(
-        (e) => e.toLowerCase(),
-      ),
+      (
+        (p.description as string | undefined)?.match(/\.[a-z0-9]{2,5}\b/gi) ??
+        []
+      ).map((e) => e.toLowerCase()),
     ),
   );
   return exts.length ? exts.join(",") : undefined;
@@ -155,7 +168,9 @@ function FileInput({
   const pick = async (f?: File) => {
     if (!f) return;
     if (f.size > MAX_FILE_BYTES) {
-      setError(`File is too large. Max ${fmtSize(MAX_FILE_BYTES)} for a dry run.`);
+      setError(
+        `File is too large. Max ${fmtSize(MAX_FILE_BYTES)} for a dry run.`,
+      );
       return;
     }
     setError("");
@@ -181,7 +196,9 @@ function FileInput({
       {file ? (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
           <FileText className="size-4 text-muted-foreground shrink-0" />
-          <span className="text-xs text-foreground truncate flex-1">{file.name}</span>
+          <span className="text-xs text-foreground truncate flex-1">
+            {file.name}
+          </span>
           <span className="text-[11px] text-muted-foreground shrink-0">
             {fmtSize(file.size)}
           </span>
@@ -226,7 +243,9 @@ function FieldInput({
   disabled: boolean;
 }) {
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
-  const options = Array.isArray(schema.enum) ? (schema.enum as unknown[]) : null;
+  const options = Array.isArray(schema.enum)
+    ? (schema.enum as unknown[])
+    : null;
 
   if (isFileField(name, schema)) {
     return (
@@ -332,7 +351,9 @@ function FieldInput({
       value={String(value ?? "")}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
-      placeholder={schema.examples?.[0] ?? (name === "url" ? "https://example.com" : "")}
+      placeholder={
+        schema.examples?.[0] ?? (name === "url" ? "https://example.com" : "")
+      }
     />
   );
 }
@@ -495,10 +516,11 @@ function NestedValue({ k, v }: { k: string; v: unknown }) {
     if (v.every((x) => !isComplex(x))) {
       return (
         <span className="text-foreground">
-          {v.map((x) => <Primitive key={String(x)} k={k} v={x} />).reduce<React.ReactNode[]>(
-            (acc, el, i) => (i ? [...acc, ", ", el] : [el]),
-            [],
-          )}
+          {v
+            .map((x) => <Primitive key={String(x)} k={k} v={x} />)
+            .reduce<
+              React.ReactNode[]
+            >((acc, el, i) => (i ? [...acc, ", ", el] : [el]), [])}
         </span>
       );
     }
@@ -534,7 +556,9 @@ function NestedValue({ k, v }: { k: string; v: unknown }) {
       )}
       {complex.map(([ek, ev]) => (
         <div key={ek}>
-          <p className="text-muted-foreground font-mono text-[11px] mb-1">{ek}</p>
+          <p className="text-muted-foreground font-mono text-[11px] mb-1">
+            {ek}
+          </p>
           <div className="pl-3 border-l border-border">
             <NestedValue k={ek} v={ev} />
           </div>
@@ -544,12 +568,71 @@ function NestedValue({ k, v }: { k: string; v: unknown }) {
   );
 }
 
+const SOURCE_LABEL = {
+  provider: "reported by provider",
+  agent: "reported by agent",
+  estimated: "estimated at market price",
+} as const;
+
+/** Shows what the run cost: a reported figure when there is one, else tokens x market price (labelled). */
+function CostCard({ report }: { report: UsageReport }) {
+  if (report.models.length === 0) return null;
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[11px] text-muted-foreground font-mono">cost</p>
+        <p className="text-sm font-semibold text-foreground">
+          {report.totalCostUsd !== undefined
+            ? fmtNumber(report.totalCostUsd, "cost_usd")
+            : "price unknown"}
+          {report.estimated && (
+            <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+              estimated
+            </span>
+          )}
+        </p>
+      </div>
+      <ul className="space-y-1">
+        {report.models.map((m) => {
+          const p = priceFor(m.id);
+          return (
+            <li
+              key={m.id}
+              className="text-[11px] text-muted-foreground flex flex-wrap justify-between gap-x-3"
+            >
+              <span className="font-mono text-foreground">{m.id}</span>
+              <span>
+                {m.totalTokens.toLocaleString()} tokens ·{" "}
+                {m.costUsd !== undefined && m.costSource
+                  ? `${fmtNumber(m.costUsd, "cost_usd")} (${SOURCE_LABEL[m.costSource]}${
+                      m.costSource === "estimated" && p
+                        ? `, $${p.input}/$${p.output} per 1M`
+                        : ""
+                    })`
+                  : `no price listed for ${normalizeModelId(m.id)}`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {report.estimated && (
+        <p className="text-[11px] text-muted-foreground">
+          No cost was reported, so it is calculated from tokens at market prices
+          (updated {PRICES_UPDATED}).
+        </p>
+      )}
+    </div>
+  );
+}
+
 function TelemetryView({ data }: { data: Record<string, unknown> }) {
   const entries = Object.entries(data);
   const simple = entries.filter(([, v]) => !isComplex(v));
   const complex = entries.filter(([, v]) => isComplex(v));
+  const report = analyzeUsage(data);
   return (
     <div className="p-4 space-y-5">
+      <CostCard report={report} />
       {simple.length > 0 && (
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {simple.map(([k, v]) => (
@@ -582,23 +665,28 @@ export function DryRunStep({
   url,
   inputSchema,
   agentName,
+  onUsageCheck,
 }: {
   url: string;
   inputSchema?: JsonObj;
   agentName?: string;
+  /** Called with true only after a completed run that reported a model AND tokens. */
+  onUsageCheck?: (ok: boolean) => void;
 }) {
   const props = inputSchema?.properties as Record<string, JsonObj> | undefined;
   const required = new Set<string>(inputSchema?.required ?? []);
   const fields = props ? Object.entries(props) : [];
   // The main question/prompt field is always visible; everything else optional is tucked away.
-  const PRIMARY = /^(prompt|query|message|question|input|text|task|instruction|q)$/i;
+  const PRIMARY =
+    /^(prompt|query|message|question|input|text|task|instruction|q)$/i;
   const companionKeys = props ? companionKeysOf(props) : new Set<string>();
   let requiredFields = fields.filter(
     ([k]) => !companionKeys.has(k) && (required.has(k) || PRIMARY.test(k)),
   );
   if (requiredFields.length === 0) {
     const firstString = fields.find(
-      ([k, p]) => p.type === "string" && !companionKeys.has(k) && !isFileField(k, p),
+      ([k, p]) =>
+        p.type === "string" && !companionKeys.has(k) && !isFileField(k, p),
     );
     if (firstString) requiredFields = [firstString];
   }
@@ -606,7 +694,6 @@ export function DryRunStep({
   const optionalFields = fields.filter(
     ([k]) => !shown.has(k) && !companionKeys.has(k),
   );
-
 
   const [values, setValues] = useState<Record<string, unknown>>(() =>
     Object.fromEntries(fields.map(([k, p]) => [k, defaultFor(p)])),
@@ -636,6 +723,13 @@ export function DryRunStep({
   const telemetry = completed?.telemetry;
   const hasTelemetry = !!telemetry && Object.keys(telemetry).length > 0;
   const running = state === "running";
+  const usageReport = analyzeUsage(telemetry);
+  const usageMissing = !!completed && !usageReport.ok;
+
+  useEffect(() => {
+    onUsageCheck?.(!!completed && usageReport.ok);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completed, usageReport.ok]);
 
   const canRun = !running && !!testToken;
 
@@ -840,7 +934,11 @@ export function DryRunStep({
           ) : (
             <Play className="size-3.5" />
           )}
-          {running ? "Running…" : state === "idle" ? "Run dry run" : "Run again"}
+          {running
+            ? "Running…"
+            : state === "idle"
+              ? "Run dry run"
+              : "Run again"}
         </Button>
       </section>
 
@@ -874,7 +972,11 @@ export function DryRunStep({
             <div className="flex flex-wrap gap-x-6 gap-y-2 px-4 py-3 border-b border-border bg-muted/40 text-xs">
               {(
                 [
-                  ["Streaming", streamTone, eventCount ? `${eventCount} events` : ""],
+                  [
+                    "Streaming",
+                    streamTone,
+                    eventCount ? `${eventCount} events` : "",
+                  ],
                   ["Completed", doneTone, ""],
                   ["Telemetry", teleTone, ""],
                 ] as const
@@ -885,7 +987,9 @@ export function DryRunStep({
                 >
                   <ToneIcon tone={tone} />
                   {label}
-                  {note && <span className="text-muted-foreground">· {note}</span>}
+                  {note && (
+                    <span className="text-muted-foreground">· {note}</span>
+                  )}
                 </span>
               ))}
             </div>
@@ -909,6 +1013,19 @@ export function DryRunStep({
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {usageMissing && (
+              <div className="px-4 py-2.5 border-b border-destructive/30 bg-destructive/10 flex items-start gap-2 text-xs text-destructive">
+                <CircleAlert className="size-3.5 shrink-0 mt-0.5" />
+                <p>
+                  Marketplace is not able to get your trace / insights. See the{" "}
+                  <Link href="/docs" className="underline font-medium">
+                    docs
+                  </Link>{" "}
+                  to set up the SDK correctly and try again.
+                </p>
               </div>
             )}
 
@@ -958,6 +1075,7 @@ export function DryRunStep({
                         {e.kind}
                       </span>
                       <span className="text-foreground min-w-0 break-words">
+                        {/* @ts-ignore */}
                         {e.label}
                         {e.kind === "progress" && e.percent !== undefined && (
                           <span className="text-muted-foreground">

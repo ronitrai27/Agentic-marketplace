@@ -24,8 +24,16 @@ export class UsageTracker {
   }
 
   /** Record a LangChain AIMessage's usage_metadata. */
-  addLangChain(model: string, res: { usage_metadata?: { input_tokens?: number; output_tokens?: number } }): void {
-    this.add(model, res.usage_metadata?.input_tokens ?? 0, res.usage_metadata?.output_tokens ?? 0);
+  addLangChain(
+    model: string,
+    res: {
+      usage_metadata?: { input_tokens?: number; output_tokens?: number };
+      response_metadata?: { model_name?: string; model?: string };
+    },
+  ): void {
+    // Prefer the model the provider reports it actually used over the one we asked for
+    const actual = res.response_metadata?.model_name ?? res.response_metadata?.model;
+    this.add(actual || model, res.usage_metadata?.input_tokens ?? 0, res.usage_metadata?.output_tokens ?? 0);
   }
 
   /** Record an OpenRouter-style `usage` object, if the response has one. */

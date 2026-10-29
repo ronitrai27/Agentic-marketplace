@@ -219,6 +219,7 @@ export function RegisterAgentDialog({
   };
 
   const [currentStep, setCurrentStep] = useState(0);
+  const [usageOk, setUsageOk] = useState(false);
   const m = result?.manifest;
   const ready = result?.health.status === "ready";
 
@@ -271,6 +272,7 @@ export function RegisterAgentDialog({
                 url={url}
                 inputSchema={m.input_schema}
                 agentName={m.name}
+                onUsageCheck={setUsageOk}
               />
             </div>
           )}
@@ -455,7 +457,13 @@ export function RegisterAgentDialog({
           <Button
             type="button"
             size="sm"
-            disabled={currentStep !== 0 || !(phase === "done" && ready)}
+            disabled={
+              currentStep === 0
+                ? !(phase === "done" && ready)
+                : currentStep === 1
+                  ? !usageOk
+                  : true
+            }
             onClick={() =>
               setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1))
             }
