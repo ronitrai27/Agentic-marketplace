@@ -32,6 +32,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
+import { RainbowButton } from "@/components/ui/rainbow-button";
+import { AgentPromptDialog } from "./agent-prompt-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -700,6 +702,7 @@ export function DryRunStep({
   );
   const [rawJson, setRawJson] = useState("{}");
   const [testToken, setTestToken] = useState<string | null>(null);
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const [state, setState] = useState<RunState>("idle");
   const [formError, setFormError] = useState("");
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -863,17 +866,35 @@ export function DryRunStep({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-base font-semibold text-foreground">Dry run</h3>
-        <p className="text-sm text-muted-foreground mt-1.5">
-          Run{" "}
-          {agentName ? (
-            <span className="text-foreground font-medium">{agentName}</span>
-          ) : (
-            "your agent"
-          )}{" "}
-          once to confirm it responds, streams events and reports telemetry.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <div className="size-7 rounded-md border border-zinc-300 dark:border-zinc-700 bg-muted flex items-center justify-center shrink-0 shadow!">
+              <Play className="size-4 text-foreground fill-current" />
+            </div>
+            <span>Dry run</span>
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1.5">
+            Run{" "}
+            {agentName ? (
+              <span className="text-foreground font-medium">{agentName}</span>
+            ) : (
+              "your agent"
+            )}{" "}
+            once to confirm it responds, streams events and reports telemetry.
+          </p>
+        </div>
+
+        <div className="shrink-0">
+          <RainbowButton
+            type="button"
+            size="sm"
+            onClick={() => setAiPromptOpen(true)}
+            className="h-8 rounded-md px-3 text-xs font-medium cursor-pointer"
+          >
+            Register with AI
+          </RainbowButton>
+        </div>
       </div>
 
       {/* ── Test token ── */}
@@ -1129,6 +1150,8 @@ export function DryRunStep({
           </div>
         </section>
       )}
+
+      <AgentPromptDialog open={aiPromptOpen} onOpenChange={setAiPromptOpen} />
     </div>
   );
 }

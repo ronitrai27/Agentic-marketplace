@@ -16,15 +16,27 @@ export default function MyAgentsPage() {
     <div className="flex-1 h-full overflow-y-auto scrollbar-thin px-10 py-8 bg-background flex flex-col">
       <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col space-y-8">
         {/* Header Heading & Subheading */}
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            Ready to Turn your AI agents into recurring revenue?
-          </h1>
-          <p className="text-sm text-muted-foreground mt-2 max-w-2xl leading-relaxed">
-            Bring your own server (BYOS) with zero code lock-in. Connect your
-            Catelog SDK endpoint, register in Catelog Marketplace, and start
-            monetizing calls from developers worldwide in minutes.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="max-w-2xl">
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+              Ready to Turn your AI agents into recurring revenue?
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+              Bring your own server (BYOS) with zero code lock-in. Connect your
+              Catelog SDK endpoint, register in Catelog Marketplace, and start
+              monetizing calls from developers worldwide in minutes.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <RainbowButton
+              type="button"
+              size="sm"
+              onClick={() => setOpen(true)}
+              className="h-9 rounded-md px-4 text-xs font-medium cursor-pointer"
+            >
+              Register with AI
+            </RainbowButton>
+          </div>
         </div>
 
         {/* Before you start - Top Empty State Banner with Dither Pixel Animation at right end */}

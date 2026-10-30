@@ -18,6 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { RainbowButton } from "@/components/ui/rainbow-button";
+import { AgentPromptDialog } from "./agent-prompt-dialog";
 import { DryRunStep } from "./dry-run-step";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
@@ -220,6 +222,7 @@ export function RegisterAgentDialog({
 
   const [currentStep, setCurrentStep] = useState(0);
   const [usageOk, setUsageOk] = useState(false);
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const m = result?.manifest;
   const ready = result?.health.status === "ready";
 
@@ -278,25 +281,38 @@ export function RegisterAgentDialog({
           )}
 
           <div className={currentStep === 0 ? "space-y-6" : "hidden"}>
-            <DialogHeader className="space-y-1.5">
-              <DialogTitle className="text-base font-semibold flex items-center gap-2">
-                <div className="size-7 rounded-md border border-zinc-300 dark:border-zinc-700 bg-muted flex items-center justify-center shrink-0 shadow!">
-                  <Brain className="size-4 text-foreground" />
-                </div>
-                <span>Verify Agent Server</span>
-              </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
-                Enter your agent&apos;s public URL to verify reachability, probe{" "}
-                <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
-                  /health
-                </code>
-                , and inspect{" "}
-                <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
-                  /schema
-                </code>{" "}
-                endpoints.
-              </DialogDescription>
-            </DialogHeader>
+            <div className="flex items-start justify-between gap-4">
+              <DialogHeader className="space-y-1.5 text-left">
+                <DialogTitle className="text-base font-semibold flex items-center gap-2">
+                  <div className="size-7 rounded-md border border-zinc-300 dark:border-zinc-700 bg-muted flex items-center justify-center shrink-0 shadow!">
+                    <Brain className="size-4 text-foreground" />
+                  </div>
+                  <span>Verify Agent Server</span>
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+                  Enter your agent&apos;s public URL to verify reachability, probe{" "}
+                  <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
+                    /health
+                  </code>
+                  , and inspect{" "}
+                  <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
+                    /schema
+                  </code>{" "}
+                  endpoints.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="shrink-0">
+                <RainbowButton
+                  type="button"
+                  size="sm"
+                  onClick={() => setAiPromptOpen(true)}
+                  className="h-8 rounded-md px-3 text-xs font-medium cursor-pointer"
+                >
+                  Register with AI
+                </RainbowButton>
+              </div>
+            </div>
 
             <form
               onSubmit={(e) => {
@@ -473,6 +489,8 @@ export function RegisterAgentDialog({
           </Button>
         </div>
       </DialogContent>
+
+      <AgentPromptDialog open={aiPromptOpen} onOpenChange={setAiPromptOpen} />
     </Dialog>
   );
 }
