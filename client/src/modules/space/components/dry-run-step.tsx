@@ -673,7 +673,7 @@ export function DryRunStep({
   inputSchema?: JsonObj;
   agentName?: string;
   /** Called with true only after a completed run that reported a model AND tokens. */
-  onUsageCheck?: (ok: boolean) => void;
+  onUsageCheck?: (ok: boolean, info?: { costUsd?: number }) => void;
 }) {
   const props = inputSchema?.properties as Record<string, JsonObj> | undefined;
   const required = new Set<string>(inputSchema?.required ?? []);
@@ -730,9 +730,10 @@ export function DryRunStep({
   const usageMissing = !!completed && !usageReport.ok;
 
   useEffect(() => {
-    onUsageCheck?.(!!completed && usageReport.ok);
+    const ok = !!completed && usageReport.ok;
+    onUsageCheck?.(ok, ok ? { costUsd: usageReport.totalCostUsd } : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completed, usageReport.ok]);
+  }, [completed, usageReport.ok, usageReport.totalCostUsd]);
 
   const canRun = !running && !!testToken;
 

@@ -22,6 +22,9 @@ import { RainbowButton } from "@/components/ui/rainbow-button";
 import { AgentPromptDialog } from "./agent-prompt-dialog";
 import { DryRunStep } from "./dry-run-step";
 import { TagsStep } from "./tags-step";
+import { PricingStep } from "./pricing-step";
+import { ContractStep } from "./contract-step";
+import type { PricingPlan } from "@/lib/pricing-plan";
 import { validateTags } from "@/lib/agent-tags";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
@@ -233,6 +236,10 @@ export function RegisterAgentDialog({
   const [currentStep, setCurrentStep] = useState(0);
   const [usageOk, setUsageOk] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [plan, setPlan] = useState<PricingPlan | null>(null);
+  const [planValid, setPlanValid] = useState(false);
+  const [contractOk, setContractOk] = useState(false);
+  const [dryRunCost, setDryRunCost] = useState<number | undefined>();
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const m = result?.manifest;
   const ready = result?.health.status === "ready";
@@ -286,14 +293,31 @@ export function RegisterAgentDialog({
                 url={url}
                 inputSchema={m.input_schema}
                 agentName={m.name}
-                onUsageCheck={setUsageOk}
+                onUsageCheck={(ok, info) => {
+                  setUsageOk(ok);
+                  setDryRunCost(info?.costUsd);
+                }}
               />
             </div>
           )}
 
           {result && m && currentStep === 2 && (
-            <TagsStep selected={tags} onChange={setTags} />
+            <div className="space-y-8">
+              <TagsStep selected={tags} onChange={setTags} />
+              <PricingStep
+                inputSchema={m.input_schema as Record<string, any> | undefined}
+                outputSchema={m.output_schema as Record<string, any> | undefined}
+                tags={tags}
+                dryRunCostUsd={dryRunCost}
+                onChange={(p, valid) => {
+                  setPlan(p);
+                  setPlanValid(valid);
+                }}
+              />
+            </div>
           )}
+
+          {currentStep === 3 && <ContractStep onAcceptedChange={setContractOk} />}
 
           <div className={currentStep === 0 ? "space-y-6" : "hidden"}>
             <div className="flex items-start justify-between gap-4">
@@ -474,8 +498,8 @@ export function RegisterAgentDialog({
                 : currentStep === 1
                   ? !usageOk
                   : currentStep === 2
-                    ? !validateTags(tags).ok
-                    : true
+                    ? !validateTags(tags).ok || !planValid
+                    : !contractOk
             }
             onClick={() =>
               setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1))
