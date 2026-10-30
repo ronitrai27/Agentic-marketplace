@@ -27,7 +27,7 @@ export default function MyAgentsPage() {
               monetizing calls from developers worldwide in minutes.
             </p>
           </div>
-          <div className="shrink-0">
+          {/* <div className="shrink-0">
             <RainbowButton
               type="button"
               size="sm"
@@ -36,7 +36,7 @@ export default function MyAgentsPage() {
             >
               Register with AI
             </RainbowButton>
-          </div>
+          </div> */}
         </div>
 
         {/* Before you start - Top Empty State Banner with Dither Pixel Animation at right end */}

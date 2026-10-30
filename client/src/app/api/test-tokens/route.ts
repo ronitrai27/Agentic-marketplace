@@ -13,7 +13,19 @@ const MAX_PER_WINDOW = 10;
 const hits = new Map<string, number[]>();
 
 export async function POST(req: Request) {
-  if (!(await isAuthenticated())) {
+  // The auth check calls out to Convex. If it throws (network blip) and is not caught, Next
+  // answers 500 with an EMPTY body, which the browser then fails to parse as JSON.
+  let authed = false;
+  try {
+    authed = await isAuthenticated();
+  } catch (e) {
+    console.error("test token auth check failed:", e);
+    return NextResponse.json(
+      { error: "Could not verify your session. Please try again." },
+      { status: 503 },
+    );
+  }
+  if (!authed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

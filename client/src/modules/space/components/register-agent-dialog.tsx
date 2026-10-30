@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { RainbowButton } from "@/components/ui/rainbow-button";
 import { AgentPromptDialog } from "./agent-prompt-dialog";
 import { DryRunStep } from "./dry-run-step";
+import { TagsStep } from "./tags-step";
+import { validateTags } from "@/lib/agent-tags";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
 
@@ -159,6 +161,14 @@ function SchemaBlock({ title, schema }: { title: string; schema?: JsonObj }) {
   );
 }
 
+/** The SDK sets the limit in minutes and advertises it in seconds; show it the way it was written. */
+function fmtTimeout(seconds?: number): string {
+  if (!seconds || seconds <= 0) return "—";
+  if (seconds < 60) return `${seconds} sec`;
+  const min = seconds / 60;
+  return `${Number.isInteger(min) ? min : min.toFixed(1)} min`;
+}
+
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
@@ -222,6 +232,7 @@ export function RegisterAgentDialog({
 
   const [currentStep, setCurrentStep] = useState(0);
   const [usageOk, setUsageOk] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const m = result?.manifest;
   const ready = result?.health.status === "ready";
@@ -278,6 +289,10 @@ export function RegisterAgentDialog({
                 onUsageCheck={setUsageOk}
               />
             </div>
+          )}
+
+          {result && m && currentStep === 2 && (
+            <TagsStep selected={tags} onChange={setTags} />
           )}
 
           <div className={currentStep === 0 ? "space-y-6" : "hidden"}>
@@ -409,26 +424,14 @@ export function RegisterAgentDialog({
                         <CircleAlert className="size-3.5" />
                       )}
                       {ready
-                        ? "Reachable · Ready"
+                        ? "Reachable"
                         : (result.health.status ?? "Unknown")}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-border">
                     <Stat label="Version" value={m.version ?? "—"} />
-                    <Stat
-                      label="Protocol"
-                      value={
-                        m.protocol_version ??
-                        result.health.protocol_version ??
-                        "—"
-                      }
-                    />
-                    <Stat label="Latency" value={`${result.latencyMs} ms`} />
-                    <Stat
-                      label="Streaming"
-                      value={m.capabilities?.streaming ? "Supported" : "No"}
-                    />
+                    <Stat label="Health ping" value={`${result.latencyMs} ms`} />
                     <Stat
                       label="Execution modes"
                       value={m.capabilities?.execution_modes?.join(", ") ?? "—"}
@@ -436,15 +439,7 @@ export function RegisterAgentDialog({
                     <Stat
                       label="Max timeout"
                       value={
-                        m.capabilities?.max_timeout_seconds
-                          ? `${m.capabilities.max_timeout_seconds}s`
-                          : "—"
-                      }
-                    />
-                    <Stat
-                      label="Environment"
-                      value={
-                        result.health.environment_ready ? "Ready" : "Not ready"
+                        fmtTimeout(m.capabilities?.max_timeout_seconds)
                       }
                     />
                     <Stat label="Agent ID" value={m.id ?? "—"} />
@@ -478,7 +473,9 @@ export function RegisterAgentDialog({
                 ? !(phase === "done" && ready)
                 : currentStep === 1
                   ? !usageOk
-                  : true
+                  : currentStep === 2
+                    ? !validateTags(tags).ok
+                    : true
             }
             onClick={() =>
               setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1))

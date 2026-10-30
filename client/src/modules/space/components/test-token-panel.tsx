@@ -89,13 +89,27 @@ export function TestTokenPanel({
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/test-tokens", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ttlSec: ttl }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not create a token.");
+      // Minting is harmless to repeat, so one quick retry hides a transient server hiccup.
+      let res!: Response;
+      let data: any = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        res = await fetch("/api/test-tokens", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ttlSec: ttl }),
+        });
+        data = await res.json().catch(() => null); // empty/non-JSON body on a server error
+        if (res.ok || res.status < 500) break;
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      if (!res.ok) {
+        throw new Error(
+          data?.error ??
+            (res.status >= 500
+              ? "The server had a temporary problem. Please try again."
+              : "Could not create a token."),
+        );
+      }
       setNow(Date.now());
       setReveal(false);
       setMinted(data as Minted);
