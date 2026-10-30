@@ -29,6 +29,17 @@ import { validateTags } from "@/lib/agent-tags";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
 
+// Dev mode: set to true to bypass all step validations and move through steps 1, 2, 3 without filling anything
+const DEV_MODE = true;
+
+const devFallbackManifest: Manifest = {
+  id: "dev-agent",
+  name: "Dev Mode Agent",
+  version: "1.0.0",
+  description: "Dev mode agent placeholder for UI testing",
+  capabilities: { streaming: true },
+};
+
 const CHECK_STAGES = [
   "Reaching your server",
   "Checking /health",
@@ -241,8 +252,8 @@ export function RegisterAgentDialog({
   const [contractOk, setContractOk] = useState(false);
   const [dryRunCost, setDryRunCost] = useState<number | undefined>();
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
-  const m = result?.manifest;
-  const ready = result?.health.status === "ready";
+  const m = result?.manifest ?? (DEV_MODE ? devFallbackManifest : undefined);
+  const ready = result?.health.status === "ready" || DEV_MODE;
 
   return (
     <Dialog
@@ -286,13 +297,13 @@ export function RegisterAgentDialog({
 
         {/* Scrollable Middle: Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {result && m && (
+          {(DEV_MODE || (result && m)) && (
             <div className={currentStep === 1 ? "block" : "hidden"}>
               <DryRunStep
-                key={`${url}-${m.id ?? ""}-${result.latencyMs}`}
-                url={url}
-                inputSchema={m.input_schema}
-                agentName={m.name}
+                key={`${url}-${m?.id ?? ""}-${result?.latencyMs ?? 0}`}
+                url={url || "http://localhost:4000"}
+                inputSchema={m?.input_schema}
+                agentName={m?.name}
                 onUsageCheck={(ok, info) => {
                   setUsageOk(ok);
                   setDryRunCost(info?.costUsd);
@@ -301,12 +312,18 @@ export function RegisterAgentDialog({
             </div>
           )}
 
-          {result && m && currentStep === 2 && (
+          {(DEV_MODE || (result && m)) && currentStep === 2 && (
             <div className="space-y-8">
-              <TagsStep selected={tags} onChange={setTags} />
+              <TagsStep
+                selected={tags}
+                onChange={setTags}
+                onRegisterAi={() => setAiPromptOpen(true)}
+              />
               <PricingStep
-                inputSchema={m.input_schema as Record<string, any> | undefined}
-                outputSchema={m.output_schema as Record<string, any> | undefined}
+                inputSchema={m?.input_schema as Record<string, any> | undefined}
+                outputSchema={
+                  m?.output_schema as Record<string, any> | undefined
+                }
                 tags={tags}
                 dryRunCostUsd={dryRunCost}
                 onChange={(p, valid) => {
@@ -317,7 +334,9 @@ export function RegisterAgentDialog({
             </div>
           )}
 
-          {currentStep === 3 && <ContractStep onAcceptedChange={setContractOk} />}
+          {currentStep === 3 && (
+            <ContractStep onAcceptedChange={setContractOk} />
+          )}
 
           <div className={currentStep === 0 ? "space-y-6" : "hidden"}>
             <div className="flex items-start justify-between gap-4">
@@ -329,7 +348,8 @@ export function RegisterAgentDialog({
                   <span>Verify Agent Server</span>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
-                  Enter your agent&apos;s public URL to verify reachability, probe{" "}
+                  Enter your agent&apos;s public URL to verify reachability,
+                  probe{" "}
                   <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
                     /health
                   </code>
@@ -455,16 +475,17 @@ export function RegisterAgentDialog({
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-border">
                     <Stat label="Version" value={m.version ?? "—"} />
-                    <Stat label="Health ping" value={`${result.latencyMs} ms`} />
+                    <Stat
+                      label="Health ping"
+                      value={`${result.latencyMs} ms`}
+                    />
                     <Stat
                       label="Execution modes"
                       value={m.capabilities?.execution_modes?.join(", ") ?? "—"}
                     />
                     <Stat
                       label="Max timeout"
-                      value={
-                        fmtTimeout(m.capabilities?.max_timeout_seconds)
-                      }
+                      value={fmtTimeout(m.capabilities?.max_timeout_seconds)}
                     />
                     <Stat label="Agent ID" value={m.id ?? "—"} />
                   </div>
@@ -493,17 +514,22 @@ export function RegisterAgentDialog({
             type="button"
             size="sm"
             disabled={
-              currentStep === 0
+              !DEV_MODE &&
+              (currentStep === 0
                 ? !(phase === "done" && ready)
                 : currentStep === 1
                   ? !usageOk
                   : currentStep === 2
                     ? !validateTags(tags).ok || !planValid
-                    : !contractOk
+                    : !contractOk)
             }
-            onClick={() =>
-              setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1))
-            }
+            onClick={() => {
+              if (currentStep === FLOW.length - 1) {
+                onOpenChange(false);
+                return;
+              }
+              setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1));
+            }}
             className="cursor-pointer"
           >
             {currentStep === FLOW.length - 1 ? "Complete" : "Next"}

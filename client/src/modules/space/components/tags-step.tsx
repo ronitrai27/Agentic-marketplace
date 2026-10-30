@@ -3,6 +3,8 @@
 import React, { useMemo, useState } from "react";
 import { Check, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { RainbowButton } from "@/components/ui/rainbow-button";
+import { AgentPromptDialog } from "./agent-prompt-dialog";
 import {
   AGENT_TAGS,
   MAX_TAGS,
@@ -16,11 +18,14 @@ import {
 export function TagsStep({
   selected,
   onChange,
+  onRegisterAi,
 }: {
   selected: string[];
   onChange: (ids: string[]) => void;
+  onRegisterAi?: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const full = selected.length >= MAX_TAGS;
 
   const matches = useMemo(() => searchTags(query), [query]);
@@ -43,16 +48,16 @@ export function TagsStep({
         disabled={blocked}
         onClick={() => toggle(id)}
         title={blocked ? `You can pick up to ${MAX_TAGS} tags` : undefined}
-        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
           on
             ? "border-foreground bg-foreground text-background"
             : "border-border text-foreground hover:bg-muted"
         }`}
       >
-        {on && <Check className="size-3" />}
+        {on && <Check className="size-2.5" />}
         {label}
         {via && !on && (
-          <span className="text-[10px] text-muted-foreground">· {via}</span>
+          <span className="text-[9px] text-muted-foreground">· {via}</span>
         )}
       </button>
     );
@@ -60,15 +65,31 @@ export function TagsStep({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h3 className="text-base font-semibold text-foreground">
-          Describe your agent
-        </h3>
-        <p className="text-sm text-muted-foreground mt-1.5">
-          Pick {MIN_TAGS} to {MAX_TAGS} tags so buyers can find it. Search by
-          what it does, for example &quot;plagiarism&quot;, &quot;cold
-          email&quot; or &quot;invoice&quot;.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-foreground">
+            Describe your agent
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1.5">
+            Pick {MIN_TAGS} to {MAX_TAGS} tags so buyers can find it. Search by
+            what it does, for example &quot;plagiarism&quot;, &quot;cold
+            email&quot; or &quot;invoice&quot;.
+          </p>
+        </div>
+
+        <div className="shrink-0">
+          <RainbowButton
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (onRegisterAi) onRegisterAi();
+              else setAiPromptOpen(true);
+            }}
+            className="h-8 rounded-md px-3 text-xs font-medium cursor-pointer"
+          >
+            Register with AI
+          </RainbowButton>
+        </div>
       </div>
 
       <div className="relative">
@@ -144,6 +165,8 @@ export function TagsStep({
           ))
         )}
       </div>
+
+      <AgentPromptDialog open={aiPromptOpen} onOpenChange={setAiPromptOpen} />
     </div>
   );
 }
