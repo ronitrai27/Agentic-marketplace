@@ -8,8 +8,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { toast } from "sonner";
+import { RecipeCards } from "./recipe-cards";
 import {
-  Sparkles,
+  Copy,
   ArrowUp,
   Bot,
   Search,
@@ -18,9 +20,6 @@ import {
   BarChart3,
   ShieldCheck,
   TrendingUp,
-  Cpu,
-  Layers,
-  Zap,
 } from "lucide-react";
 
 interface AgentItem {
@@ -74,67 +73,29 @@ const AGENTS: AgentItem[] = [
   },
 ];
 
-interface Recipe {
+interface AgentTarget {
   id: string;
-  title: string;
-  prompt: string;
-  tag: string;
-  icon: React.ElementType;
-  gradient: string;
-  borderHover: string;
-  glowColor: string;
+  name: string;
+  src: string;
+  invertOnDark?: boolean;
 }
 
-const RECIPES: Recipe[] = [
-  {
-    id: "ai-trends",
-    title: "AI Trends & Citations",
-    prompt:
-      "Conduct a comprehensive research analysis on the latest generative AI breakthroughs with verified citations and benchmarks.",
-    tag: "Deep Research",
-    icon: TrendingUp,
-    gradient:
-      "from-violet-500/10 via-purple-500/5 to-transparent hover:from-violet-500/15 hover:via-purple-500/10",
-    borderHover: "hover:border-violet-500/40 dark:hover:border-violet-400/40",
-    glowColor: "group-hover:text-violet-500 dark:group-hover:text-violet-400",
-  },
-  {
-    id: "system-design",
-    title: "Event Microservices",
-    prompt:
-      "Draft an end-to-end event-driven architecture with Kafka, Redis caching layers, and database sharding strategy.",
-    tag: "Architecture",
-    icon: Cpu,
-    gradient:
-      "from-cyan-500/10 via-blue-500/5 to-transparent hover:from-cyan-500/15 hover:via-blue-500/10",
-    borderHover: "hover:border-cyan-500/40 dark:hover:border-cyan-400/40",
-    glowColor: "group-hover:text-cyan-500 dark:group-hover:text-cyan-400",
-  },
-  {
-    id: "landing-page",
-    title: "SaaS Launch Blueprint",
-    prompt:
-      "Build a modern launch strategy including product positioning, telemetry tracking setup, and onboarding conversion funnels.",
-    tag: "Strategy",
-    icon: Layers,
-    gradient:
-      "from-amber-500/10 via-orange-500/5 to-transparent hover:from-amber-500/15 hover:via-orange-500/10",
-    borderHover: "hover:border-amber-500/40 dark:hover:border-amber-400/40",
-    glowColor: "group-hover:text-amber-500 dark:group-hover:text-amber-400",
-  },
-  {
-    id: "audit-perf",
-    title: "Perf & Security Audit",
-    prompt:
-      "Run an automated security vulnerability scan, identify potential memory leaks, and propose zero-downtime fixes.",
-    tag: "Security",
-    icon: Zap,
-    gradient:
-      "from-emerald-500/10 via-teal-500/5 to-transparent hover:from-emerald-500/15 hover:via-teal-500/10",
-    borderHover: "hover:border-emerald-500/40 dark:hover:border-emerald-400/40",
-    glowColor: "group-hover:text-emerald-500 dark:group-hover:text-emerald-400",
-  },
+const AGENT_TARGETS: AgentTarget[] = [
+  { id: "codex", name: "Codex", src: "/codex-color.svg" },
+  { id: "claude-code", name: "Claude Code", src: "/claudecode-color.svg" },
+  { id: "cursor", name: "Cursor", src: "/cursor.svg", invertOnDark: true },
+  { id: "hermes", name: "Hermes Agent", src: "/hermesagent.svg" },
 ];
+
+// Demo only: copies an empty prompt for now.
+const copyAgentPrompt = async (target?: string) => {
+  try {
+    await navigator.clipboard.writeText("");
+  } catch {
+    // clipboard unavailable; still show feedback in demo mode
+  }
+  toast.success(target ? `Prompt copied for ${target}` : "Prompt copied");
+};
 
 const PLACEHOLDER_STRINGS = [
   "Ask for Leads generation agent.",
@@ -255,40 +216,96 @@ export function SpaceChefMascot() {
             </Tooltip>
           </TooltipProvider>
 
-          <h2 className="mt-1 text-sm md:text-base 2xl:text-lg font-medium text-foreground tracking-tight">
-            What are we cooking up today?
-          </h2>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+            {/* <h2 className="text-sm md:text-base 2xl:text-lg font-medium text-foreground tracking-tight">
+              What are we cooking up today?
+            </h2> */}
+            <button
+              type="button"
+              onClick={() => copyAgentPrompt()}
+              className="inline-flex items-center gap-2 rounded-full border border-border dark:border-neutral-800 bg-linear-to-br from-white via-white to-neutral-300 px-3 py-1 text-[11px] 2xl:text-xs font-medium text-foreground tracking-tight shadow-2xs transition-all duration-150 hover:bg-neutral-100/60 dark:hover:bg-neutral-900 active:scale-[0.98]"
+            >
+              Plug your agent into catelog
+              <span className="flex items-center gap-1.5">
+                {AGENT_TARGETS.map((t) => (
+                  <img
+                    key={t.id}
+                    src={t.src}
+                    alt={t.name}
+                    className={`size-5 ${t.invertOnDark ? "dark:invert" : ""}`}
+                  />
+                ))}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Ultra-slim Linear-Style Input Bar */}
-        <div className="w-full max-w-xl 2xl:max-w-2xl mb-5 2xl:mb-7">
-          <div className="relative group rounded-full border border-border/80 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 pl-4 pr-1.5 py-2 2xl:py-2.5 shadow-2xs transition-all duration-200 focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:bg-background focus-within:shadow-xs flex items-center gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={promptInput}
-              onChange={(e) => setPromptInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholderText}
-              className="flex-1 bg-transparent text-xs 2xl:text-sm text-foreground placeholder:text-muted-foreground outline-none leading-none"
-            />
+        <div
+          className={`relative w-full mb-5 mt-4 transition-[max-width] duration-1000 ease-in-out ${
+            promptInput.length > 0 ? "max-w-3xl" : "max-w-2xl"
+          }`}
+        >
+          {/* Outer ring (Cloudflare-style) */}
+          <div className="rounded-lg border border-border/30 dark:border-neutral-800/80 bg-gray-100 dark:bg-neutral-900/40 p-1">
+            <div className="relative group rounded-md border border-border/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-4 pr-1.5 py-2 2xl:py-2.5 shadow-2xs transition-all duration-200 focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:bg-background focus-within:shadow-xs flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={promptInput}
+                onChange={(e) => setPromptInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholderText}
+                className="flex-1 bg-transparent text-xs 2xl:text-sm text-foreground placeholder:text-muted-foreground outline-none leading-none"
+              />
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[10px] 2xl:text-xs text-muted-foreground hidden sm:inline font-mono pr-0.5">
-                ↵
-              </span>
-              <button
-                type="button"
-                disabled={!promptInput.trim()}
-                className="size-6 2xl:size-7 rounded-full bg-foreground text-background inline-flex items-center justify-center transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed hover:opacity-90 active:scale-95"
-              >
-                <ArrowUp className="size-3.5 2xl:size-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-lg text-muted-foreground hidden sm:inline font-mono pr-0.5">
+                  ↵
+                </span>
+                <button
+                  type="button"
+                  disabled={!promptInput.trim()}
+                  className="size-6 2xl:size-7 rounded-md bg-foreground text-background inline-flex items-center justify-center transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed hover:opacity-90 active:scale-95"
+                >
+                  <ArrowUp className="size-3.5 2xl:size-4" />
+                </button>
+
+                {/* Copy prompt: inside input bar to the right of the send button */}
+                <div className="group/copy flex items-center">
+                  <button
+                    type="button"
+                    aria-label="Copy prompt"
+                    onClick={() => copyAgentPrompt()}
+                    className="size-6 2xl:size-7 rounded-md border border-border/80 dark:border-neutral-800 bg-background dark:bg-neutral-800/80 inline-flex items-center justify-center text-muted-foreground transition-colors hover:bg-neutral-200/70 dark:hover:bg-neutral-800 hover:text-foreground active:scale-95"
+                  >
+                    <Copy className="size-3.5 2xl:size-4" />
+                  </button>
+                  <div className="flex items-center gap-0.5 overflow-hidden max-w-0 opacity-0 transition-all duration-300 ease-out group-hover/copy:max-w-32 group-hover/copy:opacity-100 group-hover/copy:ml-1">
+                    {AGENT_TARGETS.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        title={`Copy prompt for ${t.name}`}
+                        aria-label={`Copy prompt for ${t.name}`}
+                        onClick={() => copyAgentPrompt(t.name)}
+                        className="size-6 2xl:size-7 shrink-0 rounded-md inline-flex items-center justify-center transition-colors hover:bg-neutral-200/70 dark:hover:bg-neutral-800 active:scale-95"
+                      >
+                        <img
+                          src={t.src}
+                          alt=""
+                          className={`size-5 ${t.invertOnDark ? "dark:invert" : ""}`}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* 6 Trending Agents in grid-cols-3 */}
+        {/* 3 Trending Agents in grid-cols-3 */}
         <div className="w-full mb-5 2xl:mb-7">
           <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
             <span className="text-[10px] 2xl:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -298,7 +315,7 @@ export function SpaceChefMascot() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 2xl:gap-3">
-            {AGENTS.map((agent) => {
+            {AGENTS.slice(0, 3).map((agent) => {
               const Icon = agent.icon;
               return (
                 <div
@@ -338,39 +355,7 @@ export function SpaceChefMascot() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 2xl:gap-4.5">
-            {RECIPES.map((recipe) => {
-              const Icon = recipe.icon;
-              return (
-                <div
-                  key={recipe.id}
-                  onClick={() => handleSelectRecipe(recipe.prompt)}
-                  className={`group cursor-pointer rounded-lg border border-border/70 dark:border-neutral-800 bg-gradient-to-br ${recipe.gradient} p-4 2xl:p-4.5 transition-all duration-200 hover:shadow-2xs hover:-translate-y-0.5 flex flex-col justify-between ${recipe.borderHover}`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-1.5 mb-1.5 2xl:mb-2">
-                      <span className="text-[9px] 2xl:text-[10px] font-mono tracking-wider uppercase text-muted-foreground font-medium">
-                        {recipe.tag}
-                      </span>
-                      <Icon
-                        className={`size-3 2xl:size-3.5 text-muted-foreground transition-colors duration-200 ${recipe.glowColor}`}
-                      />
-                    </div>
-                    <h3 className="text-xs 2xl:text-sm font-medium text-foreground tracking-tight line-clamp-1 leading-snug">
-                      {recipe.title}
-                    </h3>
-                  </div>
-
-                  <div className="mt-2 2xl:mt-3 pt-1.5 border-t border-border/40 dark:border-neutral-800/50 flex items-center justify-between text-[10px] 2xl:text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">
-                    <span>Use recipe</span>
-                    <span className="transition-transform group-hover:translate-x-0.5 font-mono">
-                      →
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <RecipeCards onSelect={handleSelectRecipe} />
         </div>
       </div>
     </div>

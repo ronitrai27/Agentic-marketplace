@@ -27,6 +27,7 @@ import { DryRunStep, type DetectedModel } from "./dry-run-step";
 import { TagsStep } from "./tags-step";
 import { PricingStep, type PricingDraft } from "./pricing-step";
 import { ContractStep } from "./contract-step";
+import { LogoUpload } from "./logo-upload";
 import type { PricingPlan } from "@/lib/pricing-plan";
 import { validateTags } from "@/lib/agent-tags";
 import { modelIcon } from "@/lib/agent-display";
@@ -41,6 +42,7 @@ interface Draft {
   url: string;
   result: InspectResult | null;
   tags: string[];
+  logoUrl?: string;
   usageOk: boolean;
   dryRunCost?: number;
   models: DetectedModel[];
@@ -288,6 +290,7 @@ export function RegisterAgentDialog({
   const [currentStep, setCurrentStep] = useState(0);
   const [usageOk, setUsageOk] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [logoUrl, setLogoUrl] = useState<string | undefined>();
   const [plan, setPlan] = useState<PricingPlan | null>(null);
   const [planValid, setPlanValid] = useState(false);
   const [contractOk, setContractOk] = useState(false);
@@ -313,6 +316,7 @@ export function RegisterAgentDialog({
       setPhase(d.result ? "done" : "idle");
       setStage(CHECK_STAGES.length);
       setTags(d.tags ?? []);
+      setLogoUrl(d.logoUrl);
       setUsageOk(!!d.usageOk);
       setDryRunCost(d.dryRunCost);
       setModels(d.models ?? []);
@@ -330,6 +334,7 @@ export function RegisterAgentDialog({
       url,
       result,
       tags,
+      logoUrl,
       usageOk,
       dryRunCost,
       models,
@@ -342,6 +347,7 @@ export function RegisterAgentDialog({
     url,
     result,
     tags,
+    logoUrl,
     usageOk,
     dryRunCost,
     models,
@@ -359,6 +365,7 @@ export function RegisterAgentDialog({
     setCurrentStep(0);
     setUsageOk(false);
     setTags([]);
+    setLogoUrl(undefined);
     setPlan(null);
     setPlanValid(false);
     setContractOk(false);
@@ -378,6 +385,7 @@ export function RegisterAgentDialog({
     const payload = {
       name: m.name ?? "",
       description: m.description ?? "",
+      logoUrl,
       baseUrl: url.trim() || (DEV_MODE ? "http://localhost:4000" : ""),
       version: m.version ?? "0.0.0",
       manifestAgentId: m.id,
@@ -469,6 +477,23 @@ export function RegisterAgentDialog({
 
           {(DEV_MODE || (result && m)) && currentStep === 2 && (
             <div className="space-y-8">
+              <section className="flex items-center gap-4">
+                <LogoUpload
+                  name={m?.name || "A"}
+                  logoUrl={logoUrl}
+                  onChange={setLogoUrl}
+                />
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">
+                    Agent logo
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Optional. Square images work best (PNG, JPG, WebP or SVG,
+                    resized to 256×256). Without one we show the first letter of
+                    the name.
+                  </p>
+                </div>
+              </section>
               <TagsStep
                 selected={tags}
                 onChange={setTags}

@@ -62,6 +62,8 @@ export default defineSchema({
     slug: v.string(),           // unique, derived from name
     name: v.string(),
     description: v.string(),
+    /** Public R2 URL of the 256x256 logo; the UI falls back to the name's first letter. */
+    logoUrl: v.optional(v.string()),
     baseUrl: v.string(),        // unique, normalised (no trailing slash)
     version: v.string(),
     manifestAgentId: v.optional(v.string()),

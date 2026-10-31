@@ -110,10 +110,19 @@ function planToMicros(plan: PricingPlan) {
   };
 }
 
+function cleanLogoUrl(url: string | undefined) {
+  if (!url) return undefined;
+  if (!/^https:\/\/[^\s]+\.png$/i.test(url) || url.length > 300) {
+    throw new Error("Invalid logo URL.");
+  }
+  return url;
+}
+
 export const register = mutation({
   args: {
     name: v.string(),
     description: v.string(),
+    logoUrl: v.optional(v.string()),
     baseUrl: v.string(),
     version: v.string(),
     manifestAgentId: v.optional(v.string()),
@@ -170,6 +179,7 @@ export const register = mutation({
       slug,
       name,
       description: args.description.trim(),
+      logoUrl: cleanLogoUrl(args.logoUrl),
       baseUrl,
       version: args.version,
       manifestAgentId: args.manifestAgentId,
@@ -225,6 +235,21 @@ export const listMine = query({
           .first(),
       })),
     );
+  },
+});
+
+/** Owner-only: set or clear (omit logoUrl) the agent's logo. */
+export const setLogo = mutation({
+  args: { agentId: v.id("agents"), logoUrl: v.optional(v.string()) },
+  handler: async (ctx, { agentId, logoUrl }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Please sign in.");
+
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.ownerId !== identity.subject) throw new Error("Agent not found.");
+
+    await ctx.db.patch(agentId, { logoUrl: cleanLogoUrl(logoUrl), updatedAt: Date.now() });
+    return { agentId };
   },
 });
 

@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useMutation } from "convex/react";
+import { toast } from "sonner";
+import { api } from "../../../../convex/_generated/api";
 import { Brain, Check, Copy, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +31,7 @@ import {
   type PlanMicros,
 } from "@/lib/agent-display";
 import { StatusText, type AgentWithPricing } from "./agent-card";
+import { LogoUpload } from "./logo-upload";
 import { AgentRating, demoRatingFor } from "./agent-rating";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -173,6 +177,7 @@ export function AgentDetailSheet({
   onOpenChange: (open: boolean) => void;
   onDelete: (agent: AgentWithPricing) => void;
 }) {
+  const setLogo = useMutation(api.agents.setLogo);
   // Keep showing the last agent while the sheet slides out, otherwise the content vanishes mid-animation
   const [last, setLast] = useState<AgentWithPricing | null>(null);
   useEffect(() => {
@@ -194,9 +199,15 @@ export function AgentDetailSheet({
           <>
             <SheetHeader className="p-6 pb-5 border-b border-border pr-14">
               <div className="flex items-center gap-3">
-                <span className="size-10 rounded-lg border border-border bg-muted flex items-center justify-center text-base font-semibold text-foreground shrink-0">
-                  {agent.name.charAt(0).toUpperCase()}
-                </span>
+                <LogoUpload
+                  name={agent.name}
+                  logoUrl={agent.logoUrl}
+                  className="size-10 text-base"
+                  onChange={async (url) => {
+                    await setLogo({ agentId: agent._id, logoUrl: url });
+                    toast.success("Logo updated");
+                  }}
+                />
                 <div className="min-w-0">
                   <SheetTitle className="text-base truncate">{agent.name}</SheetTitle>
                   <div className="flex items-center gap-2 mt-1">
