@@ -59,11 +59,26 @@ function Money({
   );
 }
 
+/** Raw form values, kept so the creator can leave the step (or reload) without losing them. */
+export interface PricingDraft {
+  picked: PricingShape | null;
+  price: string;
+  negotiate: boolean;
+  minPrice: string;
+  unitLabel: string;
+  unitPrice: string;
+  minCharge: string;
+  maxUnits: string;
+  tierPrices: Record<string, string>;
+}
+
 export function PricingStep({
   inputSchema,
   outputSchema,
   tags,
   dryRunCostUsd,
+  initialDraft,
+  onDraftChange,
   onChange,
 }: {
   inputSchema?: JsonObj;
@@ -71,24 +86,33 @@ export function PricingStep({
   tags: string[];
   /** LLM cost of the dry run, shown as a floor hint. */
   dryRunCostUsd?: number;
+  initialDraft?: PricingDraft;
+  onDraftChange?: (draft: PricingDraft) => void;
   onChange: (plan: PricingPlan | null, valid: boolean) => void;
 }) {
   const options = useMemo(() => resolvePricing(inputSchema, outputSchema, tags), [inputSchema, outputSchema, tags]);
 
   // null = follow the rule-based suggestion until the creator picks a shape themselves
-  const [picked, setPicked] = useState<PricingShape | null>(null);
+  const [picked, setPicked] = useState<PricingShape | null>(initialDraft?.picked ?? null);
   const shape = picked && options.available.includes(picked) ? picked : options.suggested;
   const negotiation = negotiationFor(shape, tags);
 
   const [touched, setTouched] = useState(false);
-  const [price, setPrice] = useState("");
-  const [negotiate, setNegotiate] = useState(false);
-  const [minPrice, setMinPrice] = useState("");
-  const [unitLabel, setUnitLabel] = useState("");
-  const [unitPrice, setUnitPrice] = useState("");
-  const [minCharge, setMinCharge] = useState("");
-  const [maxUnits, setMaxUnits] = useState(options.unit?.countMax ? String(options.unit.countMax) : "");
-  const [tierPrices, setTierPrices] = useState<Record<string, string>>({});
+  const [price, setPrice] = useState(initialDraft?.price ?? "");
+  const [negotiate, setNegotiate] = useState(initialDraft?.negotiate ?? false);
+  const [minPrice, setMinPrice] = useState(initialDraft?.minPrice ?? "");
+  const [unitLabel, setUnitLabel] = useState(initialDraft?.unitLabel ?? "");
+  const [unitPrice, setUnitPrice] = useState(initialDraft?.unitPrice ?? "");
+  const [minCharge, setMinCharge] = useState(initialDraft?.minCharge ?? "");
+  const [maxUnits, setMaxUnits] = useState(
+    initialDraft?.maxUnits ?? (options.unit?.countMax ? String(options.unit.countMax) : ""),
+  );
+  const [tierPrices, setTierPrices] = useState<Record<string, string>>(initialDraft?.tierPrices ?? {});
+
+  useEffect(() => {
+    onDraftChange?.({ picked, price, negotiate, minPrice, unitLabel, unitPrice, minCharge, maxUnits, tierPrices });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked, price, negotiate, minPrice, unitLabel, unitPrice, minCharge, maxUnits, tierPrices]);
 
   const plan: PricingPlan = useMemo(() => {
     const base = emptyPlan(shape, options);

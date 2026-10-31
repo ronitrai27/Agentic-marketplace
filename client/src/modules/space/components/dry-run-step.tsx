@@ -7,6 +7,7 @@ import {
   analyzeUsage,
   normalizeModelId,
   priceFor,
+  providerOf,
   PRICES_UPDATED,
   type UsageReport,
 } from "@/lib/model-pricing";
@@ -663,17 +664,32 @@ function TelemetryView({ data }: { data: Record<string, unknown> }) {
 
 type ResultTab = "events" | "output" | "telemetry";
 
+export interface DetectedModel {
+  id: string;
+  provider?: string;
+  totalTokens: number;
+  costUsd?: number;
+}
+
 export function DryRunStep({
   url,
   inputSchema,
   agentName,
+  initialValues,
+  onValuesChange,
   onUsageCheck,
 }: {
   url: string;
   inputSchema?: JsonObj;
   agentName?: string;
+  /** Previously typed form values (restored after a reload). */
+  initialValues?: Record<string, unknown>;
+  onValuesChange?: (values: Record<string, unknown>) => void;
   /** Called with true only after a completed run that reported a model AND tokens. */
-  onUsageCheck?: (ok: boolean, info?: { costUsd?: number }) => void;
+  onUsageCheck?: (
+    ok: boolean,
+    info?: { costUsd?: number; models: DetectedModel[] },
+  ) => void;
 }) {
   const props = inputSchema?.properties as Record<string, JsonObj> | undefined;
   const required = new Set<string>(inputSchema?.required ?? []);
@@ -697,9 +713,20 @@ export function DryRunStep({
     ([k]) => !shown.has(k) && !companionKeys.has(k),
   );
 
-  const [values, setValues] = useState<Record<string, unknown>>(() =>
-    Object.fromEntries(fields.map(([k, p]) => [k, defaultFor(p)])),
-  );
+  const [values, setValues] = useState<Record<string, unknown>>(() => ({
+    ...Object.fromEntries(fields.map(([k, p]) => [k, defaultFor(p)])),
+    ...initialValues,
+  }));
+
+  useEffect(() => {
+    // Uploaded files (base64) are too big for localStorage, so only plain values are kept
+    onValuesChange?.(
+      Object.fromEntries(
+        Object.entries(values).filter(([, v]) => v === null || typeof v !== "object"),
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values]);
   const [rawJson, setRawJson] = useState("{}");
   const [testToken, setTestToken] = useState<string | null>(null);
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
@@ -730,10 +757,25 @@ export function DryRunStep({
   const usageMissing = !!completed && !usageReport.ok;
 
   useEffect(() => {
+    // Before the first run, stay silent so a restored result isn't wiped on mount
+    if (state === "idle") return;
     const ok = !!completed && usageReport.ok;
-    onUsageCheck?.(ok, ok ? { costUsd: usageReport.totalCostUsd } : undefined);
+    onUsageCheck?.(
+      ok,
+      ok
+        ? {
+            costUsd: usageReport.totalCostUsd,
+            models: usageReport.models.map((m) => ({
+              id: m.id,
+              provider: m.provider ?? providerOf(m.id),
+              totalTokens: m.totalTokens,
+              costUsd: m.costUsd,
+            })),
+          }
+        : undefined,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completed, usageReport.ok, usageReport.totalCostUsd]);
+  }, [state, completed, usageReport.ok, usageReport.totalCostUsd]);
 
   const canRun = !running && !!testToken;
 

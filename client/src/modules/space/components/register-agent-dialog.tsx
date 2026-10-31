@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useMutation } from "convex/react";
+import { toast } from "sonner";
+import { api } from "../../../../convex/_generated/api";
 import {
   Check,
   CircleAlert,
@@ -20,17 +23,50 @@ import {
 import { Button } from "@/components/ui/button";
 import { RainbowButton } from "@/components/ui/rainbow-button";
 import { AgentPromptDialog } from "./agent-prompt-dialog";
-import { DryRunStep } from "./dry-run-step";
+import { DryRunStep, type DetectedModel } from "./dry-run-step";
 import { TagsStep } from "./tags-step";
-import { PricingStep } from "./pricing-step";
+import { PricingStep, type PricingDraft } from "./pricing-step";
 import { ContractStep } from "./contract-step";
 import type { PricingPlan } from "@/lib/pricing-plan";
 import { validateTags } from "@/lib/agent-tags";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
 
+const DRAFT_KEY = "catelog:register-agent-draft:v1";
+
+/** Everything the creator has entered so far, so closing or reloading never loses their work. */
+interface Draft {
+  step: number;
+  url: string;
+  result: InspectResult | null;
+  tags: string[];
+  usageOk: boolean;
+  dryRunCost?: number;
+  models: DetectedModel[];
+  dryInput?: Record<string, unknown>;
+  pricing?: PricingDraft;
+}
+
+function loadDraft(): Draft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as Draft) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(draft: Draft | null) {
+  try {
+    if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // storage full or blocked: the draft just won't survive a reload
+  }
+}
+
 // Dev mode: set to true to bypass all step validations and move through steps 1, 2, 3 without filling anything
-const DEV_MODE = true;
+const DEV_MODE = false;
 
 const devFallbackManifest: Manifest = {
   id: "dev-agent",
@@ -236,6 +272,10 @@ export function RegisterAgentDialog({
       if (!res.ok) throw new Error(data.error ?? "Check failed.");
       setStage(CHECK_STAGES.length);
       setResult(data as InspectResult);
+      // A new check means a new agent: the old dry-run outcome no longer applies
+      setUsageOk(false);
+      setDryRunCost(undefined);
+      setModels([]);
       setPhase("done");
     } catch (e) {
       stop();
@@ -252,17 +292,128 @@ export function RegisterAgentDialog({
   const [contractOk, setContractOk] = useState(false);
   const [dryRunCost, setDryRunCost] = useState<number | undefined>();
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
+  const [models, setModels] = useState<DetectedModel[]>([]);
+  const [dryInput, setDryInput] = useState<
+    Record<string, unknown> | undefined
+  >();
+  const [pricingDraft, setPricingDraft] = useState<PricingDraft | undefined>();
+  const [formNonce, setFormNonce] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+  const registerAgent = useMutation(api.agents.register);
   const m = result?.manifest ?? (DEV_MODE ? devFallbackManifest : undefined);
   const ready = result?.health.status === "ready" || DEV_MODE;
+
+  // Restore the draft once after mount (localStorage doesn't exist during SSR)
+  useEffect(() => {
+    const d = loadDraft();
+    if (d) {
+      setUrl(d.url ?? "");
+      setResult(d.result ?? null);
+      setPhase(d.result ? "done" : "idle");
+      setStage(CHECK_STAGES.length);
+      setTags(d.tags ?? []);
+      setUsageOk(!!d.usageOk);
+      setDryRunCost(d.dryRunCost);
+      setModels(d.models ?? []);
+      setDryInput(d.dryInput);
+      setPricingDraft(d.pricing);
+      setCurrentStep(Math.min(Math.max(d.step ?? 0, 0), FLOW.length - 2));
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveDraft({
+      step: currentStep,
+      url,
+      result,
+      tags,
+      usageOk,
+      dryRunCost,
+      models,
+      dryInput,
+      pricing: pricingDraft,
+    });
+  }, [
+    hydrated,
+    currentStep,
+    url,
+    result,
+    tags,
+    usageOk,
+    dryRunCost,
+    models,
+    dryInput,
+    pricingDraft,
+  ]);
+
+  const resetAll = () => {
+    saveDraft(null);
+    setUrl("");
+    setPhase("idle");
+    setStage(0);
+    setError("");
+    setResult(null);
+    setCurrentStep(0);
+    setUsageOk(false);
+    setTags([]);
+    setPlan(null);
+    setPlanValid(false);
+    setContractOk(false);
+    setDryRunCost(undefined);
+    setModels([]);
+    setDryInput(undefined);
+    setPricingDraft(undefined);
+    setFormNonce((n) => n + 1);
+  };
+
+  const complete = () => {
+    if (!m || !plan || !validateTags(tags).ok) {
+      toast.error("Add 2 to 4 tags and a valid price before completing.");
+      return;
+    }
+    const caps = m.capabilities;
+    const payload = {
+      name: m.name ?? "",
+      description: m.description ?? "",
+      baseUrl: url.trim() || (DEV_MODE ? "http://localhost:4000" : ""),
+      version: m.version ?? "0.0.0",
+      manifestAgentId: m.id,
+      capabilities: caps && {
+        streaming: caps.streaming,
+        delta_stream: caps.delta_stream,
+        max_timeout_seconds: caps.max_timeout_seconds,
+        execution_modes: caps.execution_modes,
+      },
+      inputSchemaJson: JSON.stringify(m.input_schema ?? {}),
+      outputSchemaJson: JSON.stringify(m.output_schema ?? {}),
+      tags,
+      plan: JSON.parse(JSON.stringify(plan)) as PricingPlan,
+      models: models.map((mod) => ({ id: mod.id, provider: mod.provider })),
+      latencyMs: result?.latencyMs ?? 0,
+    };
+
+    // Close right away; the toast carries progress. On failure the draft is kept for a retry.
+    onOpenChange(false);
+    toast.promise(registerAgent(payload), {
+      loading: "Verifying and saving your agent…",
+      success: (r) => {
+        resetAll();
+        return `${r.name} is live on the marketplace`;
+      },
+      error: (e) =>
+        (e instanceof Error
+          ? e.message.replace(/^[\s\S]*Uncaught Error:\s*/, "").split("\n")[0]
+          : "") || "Could not register the agent.",
+    });
+  };
 
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) {
-          stop();
-          setCurrentStep(0);
-        }
+        if (!o) stop(); // the draft stays in localStorage so reopening resumes where they left off
         onOpenChange(o);
       }}
     >
@@ -300,13 +451,16 @@ export function RegisterAgentDialog({
           {(DEV_MODE || (result && m)) && (
             <div className={currentStep === 1 ? "block" : "hidden"}>
               <DryRunStep
-                key={`${url}-${m?.id ?? ""}-${result?.latencyMs ?? 0}`}
+                key={`${url}-${m?.id ?? ""}-${result?.latencyMs ?? 0}-${formNonce}`}
                 url={url || "http://localhost:4000"}
                 inputSchema={m?.input_schema}
                 agentName={m?.name}
+                initialValues={dryInput}
+                onValuesChange={setDryInput}
                 onUsageCheck={(ok, info) => {
                   setUsageOk(ok);
                   setDryRunCost(info?.costUsd);
+                  setModels(info?.models ?? []);
                 }}
               />
             </div>
@@ -319,7 +473,36 @@ export function RegisterAgentDialog({
                 onChange={setTags}
                 onRegisterAi={() => setAiPromptOpen(true)}
               />
+              {models.length > 0 && (
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">
+                      Models used
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1.5">
+                      Detected from your dry run and saved with your agent.
+                    </p>
+                  </div>
+                  <ul className="flex flex-wrap gap-2">
+                    {models.map((mod) => (
+                      <li
+                        key={mod.id}
+                        className="rounded-lg border border-border px-3 py-2 text-xs"
+                      >
+                        <p className="font-mono font-medium text-foreground">
+                          {mod.id}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {mod.provider ?? "Unknown provider"}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <PricingStep
+                initialDraft={pricingDraft}
+                onDraftChange={setPricingDraft}
                 inputSchema={m?.input_schema as Record<string, any> | undefined}
                 outputSchema={
                   m?.output_schema as Record<string, any> | undefined
@@ -525,7 +708,7 @@ export function RegisterAgentDialog({
             }
             onClick={() => {
               if (currentStep === FLOW.length - 1) {
-                onOpenChange(false);
+                complete();
                 return;
               }
               setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1));

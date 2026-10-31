@@ -54,6 +54,91 @@ export default defineSchema({
     // Filtered active keys by owner
     .index("by_userId_status", ["userId", "status"]),
 
+  // ─── Registered Agents (BYOS) ──────────────────────────────────────
+  // Money is stored as integer micro-USD (1 = $0.000001), never floats.
+  // JSON schemas are stored as strings: Convex field names cannot start with "$" or "_".
+  agents: defineTable({
+    ownerId: v.string(),        // BetterAuth subject ID
+    slug: v.string(),           // unique, derived from name
+    name: v.string(),
+    description: v.string(),
+    baseUrl: v.string(),        // unique, normalised (no trailing slash)
+    version: v.string(),
+    manifestAgentId: v.optional(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("suspended"),
+      v.literal("archived"),
+    ),
+    tags: v.array(v.string()),  // denormalised for display; filtering uses agent_tags
+    /** Models seen during the dry run (auto-filled from telemetry). */
+    models: v.array(
+      v.object({
+        id: v.string(),
+        provider: v.optional(v.string()),
+      }),
+    ),
+    capabilities: v.optional(
+      v.object({
+        streaming: v.optional(v.boolean()),
+        delta_stream: v.optional(v.boolean()),
+        max_timeout_seconds: v.optional(v.number()),
+        execution_modes: v.optional(v.array(v.string())),
+      }),
+    ),
+    inputSchemaJson: v.string(),
+    outputSchemaJson: v.string(),
+    verification: v.object({
+      verifiedAt: v.number(),
+      latencyMs: v.number(),
+    }),
+    contractAcceptedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_owner", ["ownerId"])
+    .index("by_slug", ["slug"])
+    .index("by_baseUrl", ["baseUrl"])
+    .index("by_status", ["status", "createdAt"]),
+
+  // Join table so the marketplace can filter by tag (Convex cannot index arrays)
+  agent_tags: defineTable({
+    agentId: v.id("agents"),
+    tagId: v.string(),
+  })
+    .index("by_tag", ["tagId"])
+    .index("by_agent", ["agentId"]),
+
+  // Append-only price history. The newest row is the current price;
+  // billing records reference the row a run was charged under.
+  agent_pricing: defineTable({
+    agentId: v.id("agents"),
+    plan: v.union(
+      v.object({
+        shape: v.literal("per_run"),
+        priceMicros: v.number(),
+        /** Creator's private floor. NEVER return this from buyer-facing queries. */
+        negotiation: v.optional(v.object({ minPriceMicros: v.number() })),
+      }),
+      v.object({
+        shape: v.literal("per_unit"),
+        unitLabel: v.string(),
+        countKey: v.string(),
+        outputKey: v.string(),
+        pricePerUnitMicros: v.number(),
+        minChargeMicros: v.number(),
+        maxUnitsPerRun: v.optional(v.number()),
+      }),
+      v.object({
+        shape: v.literal("tiered"),
+        fieldKey: v.string(),
+        tiers: v.array(v.object({ value: v.string(), priceMicros: v.number() })),
+      }),
+    ),
+    createdAt: v.number(),
+  }).index("by_agent_created", ["agentId", "createdAt"]),
+
   // ─── Rate Limit Sliding Window ──────────────────────────────────────
   // One document per (keyId, windowMinute). TTL-cleaned by a scheduled job.
   api_key_rate_windows: defineTable({
