@@ -3,14 +3,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TestTokenPanel } from "./test-token-panel";
+import { DRY_RUN_TIMEOUT_SECONDS } from "@/lib/dry-run-limits";
 import {
   analyzeUsage,
   normalizeModelId,
   priceFor,
   providerOf,
-  PRICES_UPDATED,
   type UsageReport,
 } from "@/lib/model-pricing";
+import { modelIcon } from "@/lib/agent-display";
 import {
   Activity,
   ArrowRight,
@@ -19,9 +20,11 @@ import {
   CircleAlert,
   CircleCheck,
   Circle,
+  Cpu,
   KeyRound,
   Loader2,
   FileText,
+  Info,
   Play,
   SlidersHorizontal,
   Upload,
@@ -198,11 +201,11 @@ function FileInput({
       />
       {file ? (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
-          <FileText className="size-4 text-muted-foreground shrink-0" />
+          <FileText className="size-4 text-foreground shrink-0" />
           <span className="text-xs text-foreground truncate flex-1">
             {file.name}
           </span>
-          <span className="text-[11px] text-muted-foreground shrink-0">
+          <span className="text-[11px] text-foreground shrink-0">
             {fmtSize(file.size)}
           </span>
           <button
@@ -210,7 +213,7 @@ function FileInput({
             title="Remove file"
             disabled={disabled}
             onClick={() => onChange("")}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+            className="p-0.5 rounded text-foreground hover:text-foreground cursor-pointer"
           >
             <X className="size-3.5" />
           </button>
@@ -445,7 +448,7 @@ function buildInput(
 type Tone = "idle" | "running" | "ok" | "fail";
 
 const toneText: Record<Tone, string> = {
-  idle: "text-muted-foreground",
+  idle: "text-foreground",
   running: "text-blue-600 dark:text-blue-400",
   ok: "text-green-600 dark:text-green-400",
   fail: "text-destructive",
@@ -547,7 +550,7 @@ function NestedValue({ k, v }: { k: string; v: unknown }) {
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {simple.map(([ek, ev]) => (
             <span key={ek} className="text-xs">
-              <span className="text-muted-foreground font-mono text-[11px]">
+              <span className="text-foreground font-mono text-[11px]">
                 {ek}
               </span>{" "}
               <span className="text-foreground font-medium">
@@ -559,7 +562,7 @@ function NestedValue({ k, v }: { k: string; v: unknown }) {
       )}
       {complex.map(([ek, ev]) => (
         <div key={ek}>
-          <p className="text-muted-foreground font-mono text-[11px] mb-1">
+          <p className="text-foreground font-mono text-[11px] mb-1">
             {ek}
           </p>
           <div className="pl-3 border-l border-border">
@@ -568,6 +571,26 @@ function NestedValue({ k, v }: { k: string; v: unknown }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Model id with its logo from /public in front. */
+function ModelChip({ id, provider }: { id: string; provider?: string }) {
+  const icon = modelIcon(id, provider);
+  return (
+    <span className="inline-flex items-center gap-1.5 min-w-0">
+      {icon ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={icon.src}
+          alt={icon.name}
+          className={`size-4 shrink-0 ${icon.theme ?? ""}`}
+        />
+      ) : (
+        <Cpu className="size-4 shrink-0 text-foreground" />
+      )}
+      <span className="font-mono text-foreground truncate">{id}</span>
+    </span>
   );
 }
 
@@ -583,13 +606,13 @@ function CostCard({ report }: { report: UsageReport }) {
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-[11px] text-muted-foreground font-mono">cost</p>
+        <p className="text-[11px] text-foreground font-mono">cost</p>
         <p className="text-sm font-semibold text-foreground">
           {report.totalCostUsd !== undefined
             ? fmtNumber(report.totalCostUsd, "cost_usd")
             : "price unknown"}
           {report.estimated && (
-            <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+            <span className="ml-2 text-[11px] font-normal text-foreground">
               estimated
             </span>
           )}
@@ -601,9 +624,9 @@ function CostCard({ report }: { report: UsageReport }) {
           return (
             <li
               key={m.id}
-              className="text-[11px] text-muted-foreground flex flex-wrap justify-between gap-x-3"
+              className="text-[11px] text-foreground flex flex-wrap justify-between gap-x-3"
             >
-              <span className="font-mono text-foreground">{m.id}</span>
+              <ModelChip id={m.id} provider={m.provider} />
               <span>
                 {m.totalTokens.toLocaleString()} tokens ·{" "}
                 {m.costUsd !== undefined && m.costSource
@@ -618,33 +641,45 @@ function CostCard({ report }: { report: UsageReport }) {
           );
         })}
       </ul>
-      {report.estimated && (
-        <p className="text-[11px] text-muted-foreground">
-          No cost was reported, so it is calculated from tokens at market prices
-          (updated {PRICES_UPDATED}).
-        </p>
-      )}
     </div>
   );
 }
 
 function TelemetryView({ data }: { data: Record<string, unknown> }) {
-  const entries = Object.entries(data);
+  // `framework` holds SDK internals (custom metrics); developers don't need it here.
+  const entries = Object.entries(data).filter(([k]) => k !== "framework");
   const simple = entries.filter(([, v]) => !isComplex(v));
   const complex = entries.filter(([, v]) => isComplex(v));
   const report = analyzeUsage(data);
+  const providerOfId = (id: string) =>
+    report.models.find((m) => m.id === id)?.provider;
   return (
     <div className="p-4 space-y-5">
       <CostCard report={report} />
       {simple.length > 0 && (
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {simple.map(([k, v]) => (
-            <div key={k} className="min-w-0">
-              <dt className="text-[11px] text-muted-foreground font-mono truncate">
+            <div
+              key={k}
+              className={`min-w-0 ${k === "model_used" ? "col-span-full" : ""}`}
+            >
+              <dt className="text-[11px] text-foreground font-mono truncate">
                 {k}
               </dt>
               <dd className="text-xs font-medium text-foreground mt-0.5 break-words">
-                <Primitive k={k} v={v} />
+                {k === "model_used" && typeof v === "string" ? (
+                  <span className="flex flex-wrap gap-x-4 gap-y-1">
+                    {v
+                      .split(",")
+                      .map((id) => id.trim())
+                      .filter(Boolean)
+                      .map((id) => (
+                        <ModelChip key={id} id={id} provider={providerOfId(id)} />
+                      ))}
+                  </span>
+                ) : (
+                  <Primitive k={k} v={v} />
+                )}
               </dd>
             </div>
           ))}
@@ -652,10 +687,41 @@ function TelemetryView({ data }: { data: Record<string, unknown> }) {
       )}
       {complex.map(([k, v]) => (
         <div key={k} className="space-y-1.5">
-          <p className="text-[11px] text-muted-foreground font-mono">{k}</p>
-          <div className="rounded-md border border-border p-3">
-            <NestedValue k={k} v={v} />
-          </div>
+          <p className="text-[11px] text-foreground font-mono">{k}</p>
+          {k === "models" && Array.isArray(v) ? (
+            <ul className="space-y-2">
+              {v.map((m, i) => {
+                const { id, ...rest } = (m ?? {}) as Record<string, unknown>;
+                if (typeof id !== "string") {
+                  return (
+                    <li key={i} className="rounded-md border border-border p-3">
+                      <NestedValue k={k} v={m} />
+                    </li>
+                  );
+                }
+                return (
+                  <li
+                    key={`${id}-${i}`}
+                    className="rounded-md border border-border p-3 space-y-2 text-xs"
+                  >
+                    <ModelChip
+                      id={id}
+                      provider={
+                        typeof rest.provider === "string"
+                          ? rest.provider
+                          : undefined
+                      }
+                    />
+                    <NestedValue k={k} v={rest} />
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="rounded-md border border-border p-3">
+              <NestedValue k={k} v={v} />
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -722,7 +788,9 @@ export function DryRunStep({
     // Uploaded files (base64) are too big for localStorage, so only plain values are kept
     onValuesChange?.(
       Object.fromEntries(
-        Object.entries(values).filter(([, v]) => v === null || typeof v !== "object"),
+        Object.entries(values).filter(
+          ([, v]) => v === null || typeof v !== "object",
+        ),
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -866,7 +934,7 @@ export function DryRunStep({
             )}
           </Label>
           {p.description && (
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-[11px] text-foreground mt-0.5">
               {p.description}
             </p>
           )}
@@ -917,7 +985,7 @@ export function DryRunStep({
             </div>
             <span>Dry run</span>
           </h3>
-          <p className="text-sm text-muted-foreground mt-1.5">
+          <p className="text-sm text-foreground mt-1.5">
             Run{" "}
             {agentName ? (
               <span className="text-foreground font-medium">{agentName}</span>
@@ -926,6 +994,17 @@ export function DryRunStep({
             )}{" "}
             once to confirm it responds, streams events and reports telemetry.
           </p>
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+            <Info className="size-3.5 text-foreground shrink-0 mt-0.5" />
+            <p className="text-xs text-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Note:</span> Dry run
+              should be quick and is only for testing your agent&apos;s streams
+              and viewing telemetry. It will time out after{" "}
+              <span className="font-medium text-foreground">
+                {DRY_RUN_TIMEOUT_SECONDS} seconds.
+              </span>
+            </p>
+          </div>
         </div>
 
         <div className="shrink-0">
@@ -943,7 +1022,7 @@ export function DryRunStep({
       {/* ── Test token ── */}
       <section className="space-y-3">
         <SectionTitle icon={KeyRound}>Test token</SectionTitle>
-        <p className="text-xs text-muted-foreground -mt-1">
+        <p className="text-xs text-foreground -mt-1">
           A short-lived token for quick testing by you only. It can&apos;t
           process buyer requests and expires on its own.
         </p>
@@ -963,7 +1042,7 @@ export function DryRunStep({
                 disabled={running}
                 className="font-mono text-xs min-h-24"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-foreground">
                 No input schema declared, so any JSON is accepted.
               </p>
             </div>
@@ -974,7 +1053,7 @@ export function DryRunStep({
                 <Collapsible className="group/opt">
                   <CollapsibleTrigger className="group/trig flex w-full items-center justify-between rounded-md bg-muted/60 hover:bg-muted px-3 py-2 text-xs font-medium text-foreground transition-colors cursor-pointer">
                     <span>Optional fields ({optionalFields.length})</span>
-                    <ChevronDown className="size-3.5 text-muted-foreground transition-transform group-data-[panel-open]/trig:rotate-180" />
+                    <ChevronDown className="size-3.5 text-foreground transition-transform group-data-[panel-open]/trig:rotate-180" />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pt-4 space-y-4">
                     {optionalFields.map(renderField)}
@@ -1022,7 +1101,7 @@ export function DryRunStep({
                     ? "Completed"
                     : "Failed"}
                 {completed?.durationMs ? (
-                  <span className="text-muted-foreground font-normal">
+                  <span className="text-foreground font-normal">
                     · {completed.durationMs} ms
                   </span>
                 ) : null}
@@ -1052,7 +1131,7 @@ export function DryRunStep({
                   <ToneIcon tone={tone} />
                   {label}
                   {note && (
-                    <span className="text-muted-foreground">· {note}</span>
+                    <span className="text-foreground">· {note}</span>
                   )}
                 </span>
               ))}
@@ -1067,11 +1146,11 @@ export function DryRunStep({
                   <p className={`font-medium ${toneText.fail}`}>
                     {failed.error.code ?? "Run failed"}
                   </p>
-                  <p className="text-muted-foreground mt-0.5 break-words">
+                  <p className="text-foreground mt-0.5 break-words">
                     {failed.error.message}
                   </p>
                   {failed.error.code?.startsWith("AUTH") && (
-                    <p className="text-muted-foreground mt-1">
+                    <p className="text-foreground mt-1">
                       Make sure your agent runs SDK 1.1.3 or newer and has
                       CATELOG_PUBLIC_KEY set, then generate a fresh token.
                     </p>
@@ -1102,7 +1181,7 @@ export function DryRunStep({
                   className={`px-3 py-1.5 text-xs rounded-t-md capitalize transition-colors cursor-pointer ${
                     tab === t
                       ? "bg-muted text-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-foreground hover:text-foreground"
                   }`}
                 >
                   {t}
@@ -1181,7 +1260,7 @@ export function DryRunStep({
                 (hasTelemetry ? (
                   <TelemetryView data={telemetry as Record<string, unknown>} />
                 ) : (
-                  <p className="p-4 text-xs text-muted-foreground">
+                  <p className="p-4 text-xs text-foreground">
                     {running
                       ? "Telemetry appears when the run completes."
                       : completed

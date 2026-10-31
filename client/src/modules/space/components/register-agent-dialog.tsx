@@ -29,6 +29,7 @@ import { PricingStep, type PricingDraft } from "./pricing-step";
 import { ContractStep } from "./contract-step";
 import type { PricingPlan } from "@/lib/pricing-plan";
 import { validateTags } from "@/lib/agent-tags";
+import { modelIcon } from "@/lib/agent-display";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
 
@@ -484,19 +485,34 @@ export function RegisterAgentDialog({
                     </p>
                   </div>
                   <ul className="flex flex-wrap gap-2">
-                    {models.map((mod) => (
-                      <li
-                        key={mod.id}
-                        className="rounded-lg border border-border px-3 py-2 text-xs"
-                      >
-                        <p className="font-mono font-medium text-foreground">
-                          {mod.id}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {mod.provider ?? "Unknown provider"}
-                        </p>
-                      </li>
-                    ))}
+                    {models.map((mod) => {
+                      const icon = modelIcon(mod.id, mod.provider);
+                      return (
+                        <li
+                          key={mod.id}
+                          className="rounded-lg border border-border px-3 py-2 text-xs flex items-center gap-2.5"
+                        >
+                          {icon ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={icon.src}
+                              alt={icon.name}
+                              className={`size-5 shrink-0 ${icon.theme ?? ""}`}
+                            />
+                          ) : (
+                            <Brain className="size-5 shrink-0 text-foreground" />
+                          )}
+                          <div>
+                            <p className="font-mono font-medium text-foreground">
+                              {mod.id}
+                            </p>
+                            <p className="text-[11px] text-foreground mt-0.5">
+                              {mod.provider ?? "Unknown provider"}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               )}

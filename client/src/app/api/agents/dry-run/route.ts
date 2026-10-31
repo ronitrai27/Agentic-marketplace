@@ -1,9 +1,10 @@
 import { isAuthenticated } from "@/lib/auth-server";
 import { resolveAgentRoot } from "@/lib/agent-url";
+import { DRY_RUN_TIMEOUT_MS } from "@/lib/dry-run-limits";
 
 export const maxDuration = 300;
 
-const MAX_RUN_MS = 120_000;
+const MAX_RUN_MS = DRY_RUN_TIMEOUT_MS;
 const POLL_MS = 1000;
 
 type Out =

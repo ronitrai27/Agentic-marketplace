@@ -319,7 +319,7 @@ export default function CreatorCredentialsPage() {
                 setRevealedNewKey(null);
                 setShowCreateModal(true);
               }}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 hover:text-neutral-950 dark:text-neutral-300 dark:hover:text-white transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-sm! font-medium text-black dark:text-white hover:bg-neutral-100 px-4 py-0.5 rounded-md transition-colors cursor-pointer"
             >
               <Plus className="size-3.5" />
               <span>New Secret key</span>
