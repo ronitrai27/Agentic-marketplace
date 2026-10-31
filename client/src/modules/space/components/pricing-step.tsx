@@ -22,7 +22,7 @@ type JsonObj = Record<string, any>;
 const SHAPE_HINT: Record<PricingShape, string> = {
   per_run: "One price for each successful run",
   per_unit: "A price for each delivered item",
-  tiered: "A price for each option, like fast or deep",
+  tiered: "A price for each option of an input field",
 };
 
 const SHAPE_NEEDS: Record<PricingShape, string> = {

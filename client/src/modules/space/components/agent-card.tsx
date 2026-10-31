@@ -6,10 +6,14 @@ import { Button } from "@/components/ui/button";
 import { tagById } from "@/lib/agent-tags";
 import {
   priceSummary,
+  tierPrices,
   uniqueModelIcons,
   type PlanMicros,
 } from "@/lib/agent-display";
-import { AgentLogo } from "./agent-logo";
+import { useMutation } from "convex/react";
+import { toast } from "sonner";
+import { api } from "../../../../convex/_generated/api";
+import { LogoUpload } from "./logo-upload";
 import { AgentRating, demoRatingFor } from "./agent-rating";
 import type { Doc } from "../../../../convex/_generated/dataModel";
 
@@ -71,6 +75,9 @@ export function AgentCard({
   onOpen: () => void;
   onDelete: () => void;
 }) {
+  const setLogo = useMutation(api.agents.setLogo);
+  const plan = agent.pricing?.plan as PlanMicros | undefined;
+  const tiers = tierPrices(plan);
   const tags = agent.tags.slice(0, 3);
   const extra = agent.tags.length - tags.length;
 
@@ -80,7 +87,15 @@ export function AgentCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <AgentLogo name={agent.name} logoUrl={agent.logoUrl} />
+          <LogoUpload
+            name={agent.name}
+            logoUrl={agent.logoUrl}
+            showBadge
+            onChange={async (url) => {
+              await setLogo({ agentId: agent._id, logoUrl: url });
+              toast.success("Logo updated");
+            }}
+          />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground truncate">
               {agent.name}
@@ -113,10 +128,27 @@ export function AgentCard({
 
       <div className="flex items-center justify-between gap-3 pt-4 mt-auto border-t border-border">
         <ModelLogos models={agent.models} />
-        <div className="text-right">
-          <p className="text-xs font-semibold text-foreground">
-            {priceSummary(agent.pricing?.plan as PlanMicros | undefined)}
-          </p>
+        <div className="text-right min-w-0">
+          {tiers.length > 0 ? (
+            <p
+              className="text-xs text-foreground flex items-center justify-end gap-x-2 whitespace-nowrap"
+              title={tiers.map((t) => `${t.label} ${t.price}`).join(" · ")}
+            >
+              {tiers.map((t, i) => (
+                <React.Fragment key={t.label}>
+                  {i > 0 && <span className="text-muted-foreground">·</span>}
+                  <span>
+                    <span className="text-muted-foreground">{t.label}</span>{" "}
+                    <span className="font-semibold">{t.price}</span>
+                  </span>
+                </React.Fragment>
+              ))}
+            </p>
+          ) : (
+            <p className="text-xs font-semibold text-foreground">
+              {priceSummary(plan)}
+            </p>
+          )}
         </div>
       </div>
 

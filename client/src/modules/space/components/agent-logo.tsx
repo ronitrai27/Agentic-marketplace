@@ -17,7 +17,7 @@ export function AgentLogo({
 
   return (
     <span
-      className={`rounded-lg border border-border bg-muted flex items-center justify-center shrink-0 font-semibold text-foreground overflow-hidden ${className}`}
+      className={`rounded-lg border border-border ${showImage ? "bg-[#f8f7f4]" : "bg-muted"} flex items-center justify-center shrink-0 font-semibold text-foreground overflow-hidden ${className}`}
     >
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element

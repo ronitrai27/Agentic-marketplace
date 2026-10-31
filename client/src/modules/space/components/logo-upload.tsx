@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Camera, Loader2 } from "lucide-react";
+import { Camera, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { AgentLogo } from "./agent-logo";
 
@@ -44,12 +44,15 @@ export function LogoUpload({
   logoUrl,
   onChange,
   className = "size-14 text-lg",
+  showBadge = false,
 }: {
   name: string;
   logoUrl?: string | null;
   /** Called with the uploaded public URL. */
   onChange: (url: string) => void | Promise<void>;
   className?: string;
+  /** Always-visible small upload icon at the bottom-right corner. */
+  showBadge?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -96,6 +99,11 @@ export function LogoUpload({
       <span className="absolute inset-0 rounded-lg bg-black/45 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
         <Camera className="size-4" />
       </span>
+      {showBadge && (
+        <span className="absolute -bottom-1 -right-1 size-4 rounded-full border border-border bg-background text-muted-foreground flex items-center justify-center shadow-2xs group-hover:text-foreground transition-colors">
+          <Upload className="size-2.5" />
+        </span>
+      )}
       {busy && (
         <span className="absolute inset-0 rounded-lg bg-background/70 flex items-center justify-center">
           <Loader2 className="size-4 animate-spin" />
