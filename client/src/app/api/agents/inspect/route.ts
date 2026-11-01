@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth-server";
 import { resolveAgentRoot } from "@/lib/agent-url";
 
-const TIMEOUT_MS = 8000;
+// Cold-starting hosts (e.g. Render free tier) can take ~2 min to wake up
+export const maxDuration = 130;
+const TIMEOUT_MS = 120_000;
 const MAX_BYTES = 512 * 1024;
 
 async function fetchJson(url: string) {

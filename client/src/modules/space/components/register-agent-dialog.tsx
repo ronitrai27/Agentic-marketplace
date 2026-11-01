@@ -27,7 +27,6 @@ import { DryRunStep, type DetectedModel } from "./dry-run-step";
 import { TagsStep } from "./tags-step";
 import { PricingStep, type PricingDraft } from "./pricing-step";
 import { ContractStep } from "./contract-step";
-import { LogoUpload } from "./logo-upload";
 import type { PricingPlan } from "@/lib/pricing-plan";
 import { validateTags } from "@/lib/agent-tags";
 import { modelIcon } from "@/lib/agent-display";
@@ -245,11 +244,15 @@ export function RegisterAgentDialog({
   const [stage, setStage] = useState(0);
   const [error, setError] = useState("");
   const [result, setResult] = useState<InspectResult | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(120);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdown = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stop = () => {
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
+    if (countdown.current) clearInterval(countdown.current);
+    countdown.current = null;
   };
 
   const check = async () => {
@@ -258,6 +261,11 @@ export function RegisterAgentDialog({
     setStage(0);
     setError("");
     setResult(null);
+    setSecondsLeft(120);
+    countdown.current = setInterval(
+      () => setSecondsLeft((n) => Math.max(n - 1, 0)),
+      1000,
+    );
 
     timer.current = setInterval(
       () => setStage((s) => Math.min(s + 1, CHECK_STAGES.length - 1)),
@@ -477,23 +485,6 @@ export function RegisterAgentDialog({
 
           {(DEV_MODE || (result && m)) && currentStep === 2 && (
             <div className="space-y-8">
-              <section className="flex items-center gap-4">
-                <LogoUpload
-                  name={m?.name || "A"}
-                  logoUrl={logoUrl}
-                  onChange={setLogoUrl}
-                />
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">
-                    Agent logo
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Optional. Square images work best (PNG, JPG, WebP or SVG,
-                    resized to 256×256). Without one we show the first letter of
-                    the name.
-                  </p>
-                </div>
-              </section>
               <TagsStep
                 selected={tags}
                 onChange={setTags}
@@ -656,6 +647,9 @@ export function RegisterAgentDialog({
                     </span>
                   </li>
                 ))}
+                <li className="pt-1 text-[11px] tabular-nums text-muted-foreground">
+                  {secondsLeft}s
+                </li>
               </ul>
             )}
 

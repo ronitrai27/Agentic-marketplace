@@ -10,4 +10,7 @@ crons.interval(
   internal.apiKeys.cleanupRateWindows,
 );
 
+// Fix any drift between Convex and the Typesense search index
+crons.daily("resync-search-index", { hourUTC: 3, minuteUTC: 0 }, internal.search.backfill);
+
 export default crons;

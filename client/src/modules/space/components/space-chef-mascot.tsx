@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { RecipeCards } from "./recipe-cards";
+import { TryAgents } from "./try-agents";
 import {
   Copy,
   ArrowUp,
@@ -247,8 +248,8 @@ export function SpaceChefMascot() {
           }`}
         >
           {/* Outer ring (Cloudflare-style) */}
-          <div className="rounded-lg border border-border/30 dark:border-neutral-800/80 bg-gray-100 dark:bg-neutral-900/40 p-1">
-            <div className="relative group rounded-md border border-border/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-4 pr-1.5 py-2 2xl:py-2.5 shadow-2xs transition-all duration-200 focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:bg-background focus-within:shadow-xs flex items-center gap-2">
+          <div className="rounded-2xl! border border-border/30 dark:border-neutral-800/80 bg-gray-100 dark:bg-neutral-900/40 p-1">
+            <div className="relative group rounded-xl! border border-border/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-4 pr-1.5 py-2 2xl:py-2.5 shadow-2xs transition-all duration-200 focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:bg-background focus-within:shadow-xs flex items-center gap-2">
               <input
                 ref={inputRef}
                 type="text"
@@ -305,47 +306,7 @@ export function SpaceChefMascot() {
           </div>
         </div>
 
-        {/* 3 Trending Agents in grid-cols-3 */}
-        <div className="w-full mb-5 2xl:mb-7">
-          <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
-            <span className="text-[10px] 2xl:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <TrendingUp className="size-3 2xl:size-3.5 text-muted-foreground" />
-              Trending Agents
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 2xl:gap-3">
-            {AGENTS.slice(0, 3).map((agent) => {
-              const Icon = agent.icon;
-              return (
-                <div
-                  key={agent.id}
-                  className="group relative text-left p-2.5 2xl:p-3.5 rounded-lg border border-border/70 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-neutral-950/40 hover:border-border dark:hover:border-neutral-700 hover:bg-neutral-100/50 dark:hover:bg-neutral-900/40 transition-all duration-150 flex flex-col justify-between"
-                >
-                  <div className="flex items-start justify-between gap-2 mb-1 2xl:mb-1.5">
-                    <div className="flex items-center gap-2 2xl:gap-2.5">
-                      <div className="size-5 2xl:size-6 rounded-md flex items-center justify-center bg-neutral-200/70 dark:bg-neutral-800 text-foreground group-hover:bg-foreground group-hover:text-background transition-colors shrink-0">
-                        <Icon className="size-3 2xl:size-3.5" />
-                      </div>
-                      <span className="text-xs 2xl:text-sm font-medium text-foreground tracking-tight">
-                        {agent.name}
-                      </span>
-                    </div>
-
-                    {agent.badge && (
-                      <span className="text-[9px] 2xl:text-[10px] px-1 py-0.2 2xl:px-1.5 2xl:py-0.5 rounded font-mono font-medium bg-neutral-200/60 dark:bg-neutral-800/80 text-muted-foreground border border-border/40 shrink-0">
-                        {agent.badge}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] 2xl:text-[11px] text-muted-foreground line-clamp-1 leading-normal">
-                    {agent.role}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <TryAgents />
 
         {/* Try These Recipes: 4 Compact Gradient Boxes */}
         <div className="w-full mt-6 2xl:mt-7">

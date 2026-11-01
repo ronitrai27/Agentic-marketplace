@@ -1,4 +1,5 @@
 import { mutation, query, type MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { validateTags } from "../src/lib/agent-tags";
 import {
@@ -194,9 +195,12 @@ export const register = mutation({
         latencyMs: args.latencyMs,
       },
       contractAcceptedAt: now,
+      ratingAvg: 0,
+      ratingCount: 0,
       createdAt: now,
       updatedAt: now,
     });
+    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
 
     await ctx.db.insert("agent_pricing", {
       agentId,
@@ -249,6 +253,7 @@ export const setLogo = mutation({
     if (!agent || agent.ownerId !== identity.subject) throw new Error("Agent not found.");
 
     await ctx.db.patch(agentId, { logoUrl: cleanLogoUrl(logoUrl), updatedAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
     return { agentId };
   },
 });
@@ -265,6 +270,32 @@ export const archive = mutation({
     if (agent.status === "archived") return { agentId };
 
     await ctx.db.patch(agentId, { status: "archived", updatedAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
     return { agentId };
+  },
+});
+
+/** Top 3 active agents for the Space home: highest rating first, ties go to the oldest. */
+export const listFeatured = query({
+  args: {},
+  handler: async (ctx) => {
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .collect();
+    return agents
+      .sort(
+        (a, b) =>
+          (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0) || a.createdAt - b.createdAt,
+      )
+      .slice(0, 3)
+      .map((a) => ({
+        _id: a._id,
+        name: a.name,
+        logoUrl: a.logoUrl,
+        tags: a.tags,
+        models: a.models,
+        ratingAvg: a.ratingAvg ?? 0,
+      }));
   },
 });

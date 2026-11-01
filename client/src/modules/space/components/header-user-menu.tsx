@@ -72,7 +72,7 @@ export function HeaderUserMenu() {
           render={
             <button
               type="button"
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-white dark:bg-neutral-950 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white dark:bg-neutral-950 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           }
         >
@@ -82,10 +82,6 @@ export function HeaderUserMenu() {
               {initials}
             </AvatarFallback>
           </Avatar>
-
-          <span className="text-xs font-medium text-foreground max-w-[100px] truncate hidden sm:inline-block">
-            {isGuestActive ? "Guest" : email || name}
-          </span>
 
           <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
         </DropdownMenuTrigger>

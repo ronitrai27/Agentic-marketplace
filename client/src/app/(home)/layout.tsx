@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/modules/space/components/theme-toggle";
 import { NotificationButton } from "@/modules/space/components/notification-button";
 import { WalletBadge } from "@/modules/space/components/wallet-badge";
 import { HeaderUserMenu } from "@/modules/space/components/header-user-menu";
+import { AgentSearch } from "@/modules/space/components/agent-search";
 import { SpaceBreadcrumbs } from "@/modules/space/components/space-breadcrumbs";
 
 export const metadata: Metadata = {
@@ -32,6 +33,11 @@ export default function Layout({
             {/* Left slot (breadcrumbs, etc.) */}
             <div className="flex items-center gap-2">
               <SpaceBreadcrumbs />
+            </div>
+
+            {/* Center slot: agent search */}
+            <div className="hidden md:flex flex-1 justify-center px-4">
+              <AgentSearch />
             </div>
 
             {/* Right slot: theme toggle, notification, wallet badge, and user avatar with dropdown */}

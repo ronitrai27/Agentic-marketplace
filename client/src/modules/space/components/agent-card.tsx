@@ -59,7 +59,7 @@ export function ModelLogos({ models }: { models: Doc<"agents">["models"] }) {
           src={icon.src}
           alt={icon.name}
           title={icon.name}
-          className={`size-6 ${icon.theme ?? ""}`}
+          className={`size-6 shrink-0 ${icon.theme ?? ""}`}
         />
       ))}
     </div>

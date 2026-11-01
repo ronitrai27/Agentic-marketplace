@@ -96,6 +96,9 @@ export default defineSchema({
       latencyMs: v.number(),
     }),
     contractAcceptedAt: v.number(),
+    /** Star rating (0 until buyer reviews exist). Missing = 0. Reviews will live in their own table. */
+    ratingAvg: v.optional(v.number()),
+    ratingCount: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

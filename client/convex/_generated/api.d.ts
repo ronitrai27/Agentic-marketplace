@@ -14,6 +14,7 @@ import type * as apiKeysActions from "../apiKeysActions.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
+import type * as search from "../search.js";
 import type * as wallet from "../wallet.js";
 
 import type {
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   crons: typeof crons;
   http: typeof http;
+  search: typeof search;
   wallet: typeof wallet;
 }>;
 
