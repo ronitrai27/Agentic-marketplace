@@ -69,6 +69,12 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
   name: "LangGraph Deep Research Agent",
   version: "1.0.0",
   mode: "async",
+  maxTimeoutMinute: 30, // hard limit per run (deep research can be long)
+  limits: {
+    maxConcurrent: 10, // over the cap -> 429 SERVER_BUSY
+    maxBodyBytes: 1_000_000,
+    rateLimit: { max: 60, windowMs: 60_000 },
+  },
   description:
     "Autonomous multi-node LangGraph deep research agent with TypeSafe JEV guardrails, Firecrawl search, Langfuse tracing, and Temporal durable workflow orchestration",
   secretKey: ENV.CATELOG_SECRET_KEY,
@@ -76,7 +82,7 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
   inputSchema: InputSchema as any,
   outputSchema: OutputSchema as any,
 
-  async execute({ input, stream, signal, runId }) {
+  async execute({ input, stream, signal, runId, usage }) {
     console.log(`\n======================================================`);
     console.log(`📥 [MAPS PROTOCOL INCOMING]`);
     console.log(`   - Run ID: ${runId}`);
@@ -146,6 +152,19 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       console.log(`   - Status: ${directResult.status}`);
       console.log(`   - Answer: "${directResult.answer.slice(0, 120)}..."`);
       console.log(`======================================================\n`);
+
+      // Report the Groq call so the marketplace sees model + tokens
+
+      usage.record({
+
+        model: ENV.GROQ_MODEL,
+
+        provider: "groq",
+
+        tokens: directResult.metadata?.llm_tokens,
+
+      });
+
 
       return {
         output: directResult,
@@ -218,6 +237,17 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       }
     }
     stream.progress(100, "Research completed successfully");
+
+    usage.record({
+
+      model: ENV.OPENAI_MODEL,
+
+      provider: "openai",
+
+      tokens: result?.metadata?.llm_tokens,
+
+    });
+
 
     // Deduplicate: Extract tokens & cost for top-level telemetry only
     const { llm_tokens, cost_usd, ...cleanMetadata } = (result?.metadata || {}) as any;
@@ -460,6 +490,13 @@ if (
   process.argv[1]?.endsWith("server.ts") ||
   process.argv[1]?.endsWith("server.js")
 ) {
+  // Graceful shutdown: refuse new runs (503), let in-flight tasks finish, then exit
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, async () => {
+      await agent.shutdown(25_000);
+      server.close(() => process.exit(0));
+    });
+  }
   server.listen(PORT, async () => {
     console.log(`\n======================================================`);
     console.log(`🚀 Unified Marketplace Agent & Realtime UI Server`);

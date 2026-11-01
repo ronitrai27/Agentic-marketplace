@@ -19,6 +19,7 @@ import {
   QuestionnaireNext,
   QuestionnaireSubmit,
 } from "@/components/ui/questionnaire";
+import { RainbowButton } from "@/components/ui/rainbow-button";
 import {
   CodeBlock,
   CodeBlockHeader,
@@ -37,6 +38,7 @@ import {
   Globe,
   Radio,
   Share2,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatedDitherBackground } from "@/components/ui/animated-dither-background";
@@ -150,7 +152,26 @@ const questionsConfig = [
   },
 ] as const;
 
-const sdkCommand = "pnpm add @marketplace/sdk";
+const sdkTabs = [
+  {
+    value: "ts",
+    label: "TypeScript",
+    image: "/typescript.png",
+    command: "npm install catelog zod",
+  },
+  {
+    value: "py",
+    label: "Python",
+    image: "/python.png",
+    command: "pip install catelog",
+  },
+] as const;
+
+const mcpClients = [
+  { label: "Claude Code", image: "/claudecode-color.svg" },
+  { label: "Codex", image: "/codex-color.svg" },
+  { label: "Hermes Agent", image: "/hermesagent.svg" },
+];
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -159,6 +180,19 @@ export default function WelcomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hearAboutUs, setHearAboutUs] = useState<string | undefined>();
   const [primaryUse, setPrimaryUse] = useState<string | undefined>();
+  const [sdkTab, setSdkTab] = useState<(typeof sdkTabs)[number]["value"]>("ts");
+  const sdkCommand = sdkTabs.find((t) => t.value === sdkTab)!.command;
+
+  const copyAgentPrompt = async () => {
+    try {
+      const res = await fetch("/Catelog-TS.md");
+      if (!res.ok) throw new Error("fetch failed");
+      await navigator.clipboard.writeText(await res.text());
+      toast.success("Agent prompt copied. Paste it into your coding agent.");
+    } catch {
+      toast.error("Could not copy the agent prompt");
+    }
+  };
 
   const handleFinishOnboarding = async (formData?: {
     referral_source?: string;
@@ -190,9 +224,10 @@ export default function WelcomePage() {
         console.warn("Convex mutation completeOnboarding fallback:", convexErr);
       }
 
-      const userName = session?.user?.name || session?.user?.email?.split("@")[0] || "there";
+      const userName =
+        session?.user?.name || session?.user?.email?.split("@")[0] || "there";
       toast.success(`Welcome ${userName}!`);
-      
+
       try {
         router.push("/space");
       } catch {
@@ -379,6 +414,30 @@ export default function WelcomePage() {
 
               {/* SDK Code Snippet */}
               <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-2">
+                  {sdkTabs.map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setSdkTab(t.value)}
+                      className={`flex items-center gap-2 h-9 px-3 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${
+                        sdkTab === t.value
+                          ? "border-primary bg-secondary text-foreground"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <Image
+                        src={t.image}
+                        alt={t.label}
+                        width={16}
+                        height={16}
+                        className="size-4 object-contain"
+                      />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
                 <CodeBlock
                   variant="default"
                   className="rounded-lg border border-border bg-card"
@@ -397,19 +456,36 @@ export default function WelcomePage() {
                   </CodeBlockContent>
                 </CodeBlock>
 
-                <div className="rounded-lg border border-border bg-card p-3.5 flex items-center gap-3.5">
-                  <div className="p-2.5 rounded-md bg-secondary text-secondary-foreground shrink-0">
-                    <DollarSign className="h-5 w-5" />
-                  </div>
-                  <div className="text-xs sm:text-sm leading-snug">
-                    <span className="font-medium text-foreground block">
-                      Instant Monetization Active
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <RainbowButton variant="outline"
+                    type="button"
+                    onClick={() => void copyAgentPrompt()}
+                    className="flex-1 h-10 rounded-lg text-sm font-medium cursor-pointer"
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy agent prompt: how to install
+                  </RainbowButton>
+                  <RainbowButton variant="outline"
+                    type="button"
+                    onClick={() =>
+                      toast("MCP connection is coming soon (demo)")
+                    }
+                    className="flex-1 h-10 rounded-lg bg-white! text-black text-sm font-medium cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {mcpClients.map((c) => (
+                        <Image
+                          key={c.label}
+                          src={c.image}
+                          alt={c.label}
+                          width={16}
+                          height={16}
+                          className="size-4 object-contain"
+                        />
+                      ))}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      Your developer keys are automatically provisioned for this
-                      account.
-                    </span>
-                  </div>
+                    Connect agents via Catelog MCP
+                  </RainbowButton>
                 </div>
               </div>
             </QuestionnaireItem>

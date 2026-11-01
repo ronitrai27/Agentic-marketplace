@@ -61,8 +61,14 @@ export type AgentOutput = {
 export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
   id: "langgraph-deep-research",
   name: "LangGraph Deep Research Agent",
-  version: "1.0.0",
+  version: "1.1.0",
   mode: "async",
+  maxTimeoutMinute: 10, // hard limit per run (deep research can be long)
+  limits: {
+    maxConcurrent: 1, // over the cap -> 429 SERVER_BUSY
+    maxBodyBytes: 1_000_000,
+    rateLimit: { max: 60, windowMs: 60_000 },
+  },
   description:
     "Autonomous multi-node LangGraph deep research agent with TypeSafe JEV guardrails, Firecrawl search, Langfuse tracing, and Temporal durable workflow orchestration",
   secretKey: ENV.CATELOG_SECRET_KEY,
@@ -70,7 +76,7 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
   inputSchema: InputSchema as any,
   outputSchema: OutputSchema as any,
 
-  async execute({ input, stream, signal, runId }) {
+  async execute({ input, stream, signal, runId, usage }) {
     console.log(`\n======================================================`);
     console.log(`📥 [MAPS PROTOCOL INCOMING]`);
     console.log(`   - Run ID: ${runId}`);
@@ -78,10 +84,14 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
     console.log(`   - User ID: ${input.userId || "anonymous"}`);
     console.log(`======================================================\n`);
 
-    stream.step("Evaluating prompt guardrails & intent with TypeSafe JEV-1.14...");
+    stream.step(
+      "Evaluating prompt guardrails & intent with TypeSafe JEV-1.14...",
+    );
 
     if (signal.aborted) {
-      console.error(`❌ [MAPS PROTOCOL] Run ID ${runId} aborted before dispatch.`);
+      console.error(
+        `❌ [MAPS PROTOCOL] Run ID ${runId} aborted before dispatch.`,
+      );
       throw new Error("EXECUTION_TIMEOUT");
     }
 
@@ -98,7 +108,8 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
         output: {
           status: "GUARDRAIL_BLOCKED",
           prompt: input.prompt,
-          answer: guard.rejectionReason || "Request blocked by safety guardrails.",
+          answer:
+            guard.rejectionReason || "Request blocked by safety guardrails.",
           sourcesCount: 0,
           durationSeconds: 1,
           metadata: { scores: guard.scores },
@@ -114,8 +125,12 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 
     // STEP 2: Chit-Chat / Direct Question -> Answer via Groq in 1-2s (NO Temporal Worker!)
     if (!guard.needsResearch) {
-      stream.step("Conversational question detected. Generating direct answer via Groq...");
-      console.log(`💬 [Chit-chat] Prompt is conversational. Answering directly via Groq (no background worker invoked).`);
+      stream.step(
+        "Conversational question detected. Generating direct answer via Groq...",
+      );
+      console.log(
+        `💬 [Chit-chat] Prompt is conversational. Answering directly via Groq (no background worker invoked).`,
+      );
 
       const directResult = await answerDirect(input.prompt, {
         userId: input.userId,
@@ -131,6 +146,16 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       console.log(`   - Answer: "${directResult.answer.slice(0, 120)}..."`);
       console.log(`======================================================\n`);
 
+      // Report the Groq call so the marketplace sees model + tokens
+
+      usage.record({
+        model: ENV.GROQ_MODEL,
+
+        provider: "groq",
+
+        tokens: directResult.metadata?.llm_tokens,
+      });
+
       return {
         output: directResult,
         telemetry: {
@@ -144,7 +169,9 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 
     // STEP 3: Deep Research -> Orchestrate via Temporal Workflow
     stream.step("Dispatching deep research workflow to Temporal Cluster...");
-    console.log(`🔬 [Deep Research] Topic requires investigation. Starting Temporal Workflow...`);
+    console.log(
+      `🔬 [Deep Research] Topic requires investigation. Starting Temporal Workflow...`,
+    );
 
     const { workflowId, handle } = await startResearchWorkflow({
       prompt: input.prompt,
@@ -153,7 +180,9 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       runId,
     });
 
-    stream.step(`Temporal workflow active [${workflowId}]. Synthesizing research...`);
+    stream.step(
+      `Temporal workflow active [${workflowId}]. Synthesizing research...`,
+    );
 
     // Poll events periodically to stream progress back to Catelog stream
     const progressTimer = setInterval(async () => {
@@ -190,11 +219,21 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
     }
     stream.progress(100, "Research completed successfully");
 
+    usage.record({
+      model: ENV.OPENAI_MODEL,
+
+      provider: "openai",
+
+      tokens: result?.metadata?.llm_tokens,
+    });
+
     // Deduplicate: Extract tokens & cost for top-level telemetry only
-    const { llm_tokens, cost_usd, ...cleanMetadata } = (result?.metadata || {}) as any;
+    const { llm_tokens, cost_usd, ...cleanMetadata } = (result?.metadata ||
+      {}) as any;
     const cleanOutput = {
       ...result,
-      metadata: Object.keys(cleanMetadata).length > 0 ? cleanMetadata : undefined,
+      metadata:
+        Object.keys(cleanMetadata).length > 0 ? cleanMetadata : undefined,
     };
 
     return {
@@ -216,7 +255,7 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 export const server = http.createServer(async (req, res) => {
   const url = new URL(
     req.url || "/",
-    `http://${req.headers.host || "localhost"}`
+    `http://${req.headers.host || "localhost"}`,
   );
 
   // Route 1: Catelog MAPS Protocol Endpoints (/health, /schema, /execute, /tasks/:id)
@@ -232,7 +271,9 @@ export const server = http.createServer(async (req, res) => {
     const workflowId = url.searchParams.get("workflowId");
     if (!workflowId) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "workflowId query parameter is required" }));
+      res.end(
+        JSON.stringify({ error: "workflowId query parameter is required" }),
+      );
       return;
     }
 
@@ -258,7 +299,7 @@ export const server = http.createServer(async (req, res) => {
           "/api/temporal/events?workflowId=...",
         ],
       },
-    })
+    }),
   );
 });
 
@@ -267,6 +308,13 @@ if (
   process.argv[1]?.endsWith("agent-server.ts") ||
   process.argv[1]?.endsWith("agent-server.js")
 ) {
+  // Graceful shutdown: refuse new runs (503), let in-flight tasks finish, then exit
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, async () => {
+      await agent.shutdown(25_000);
+      server.close(() => process.exit(0));
+    });
+  }
   server.listen(PORT, async () => {
     console.log(`\n======================================================`);
     console.log(`🤖 Catelog Marketplace Agent (Autonomous Microservice)`);
@@ -277,13 +325,13 @@ if (
     console.log(`   - Ping / Liveness:  GET  http://localhost:${PORT}/health`);
     console.log(`   - Schema Manifest:  GET  http://localhost:${PORT}/schema`);
     console.log(
-      `   - Async Execute:    POST http://localhost:${PORT}/execute (202 Accepted)`
+      `   - Async Execute:    POST http://localhost:${PORT}/execute (202 Accepted)`,
     );
     console.log(
-      `   - Task Polling:     GET  http://localhost:${PORT}/tasks/:run_id`
+      `   - Task Polling:     GET  http://localhost:${PORT}/tasks/:run_id`,
     );
     console.log(
-      `   - Temporal Events:  GET  http://localhost:${PORT}/api/temporal/events?workflowId=...`
+      `   - Temporal Events:  GET  http://localhost:${PORT}/api/temporal/events?workflowId=...`,
     );
     console.log(`======================================================\n`);
 
@@ -291,7 +339,10 @@ if (
     try {
       await startWorker();
     } catch (err: any) {
-      console.error(`⚠️ [Temporal Worker Auto-Start Warning]:`, err?.message || err);
+      console.error(
+        `⚠️ [Temporal Worker Auto-Start Warning]:`,
+        err?.message || err,
+      );
     }
   });
 }

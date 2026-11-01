@@ -36,8 +36,8 @@ importers:
         specifier: ^1.24.0
         version: 1.24.0
       catelog:
-        specifier: ^1.0.6
-        version: 1.0.6
+        specifier: ^1.2.0
+        version: 1.2.0
       dotenv:
         specifier: ^18.0.8
         version: 18.0.8
@@ -869,8 +869,9 @@ packages:
   caniuse-lite@1.0.30001819:
     resolution: {integrity: sha512-LFUqIIAwpzsIuevnKnsR9qnStBcgzPShTX61lBwN9uFkkf8o8zLiebEjbW8AYtZiF+1YKDWfdt/pWDtMuG8Xwg==}
 
-  catelog@1.0.6:
-    resolution: {integrity: sha512-jkji9KyhjN3aZuSfV+lQ1fDYPGpTjaoH3d6D4lv8G7m4EEcyea8F/15+cd+Dge4Nd65c3+1CNlOUpIqAJlyPXg==}
+  catelog@1.2.0:
+    resolution: {integrity: sha512-He8cajKG5gN0pM9XZSxe4cJymuHzxHLp4bOUjnkJl2PMw0xzMq58rpBkSPqwXu6T+2GUNGc7/qsdhRp5f6EmTQ==}
+    engines: {node: '>=18'}
     hasBin: true
 
   chalk@4.1.2:
@@ -2336,7 +2337,7 @@ snapshots:
 
   caniuse-lite@1.0.30001819: {}
 
-  catelog@1.0.6:
+  catelog@1.2.0:
     dependencies:
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)

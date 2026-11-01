@@ -7,18 +7,43 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
   SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, ArrowRight, Sparkles } from "lucide-react";
+import { usePathname } from "next/navigation";
+import {
+  ArrowRight,
+  Home,
+  History,
+  LogOut,
+  Receipt,
+  Sparkles,
+  Store,
+  Wallet,
+} from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
 
+const NAV_LINKS = [
+  { label: "Home", href: "/space", icon: Home },
+  { label: "Marketplace", href: "/marketplace", icon: Store },
+  { label: "Recent Runs", href: "/space/runs", icon: History },
+  { label: "Transactions", href: "/space/transactions", icon: Receipt },
+  { label: "Wallet", href: "/space/wallet", icon: Wallet },
+];
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { data: session } = authClient.useSession();
+  const pathname = usePathname();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
 
@@ -76,9 +101,69 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarTrigger className="text-foreground hover:bg-black/5 dark:hover:bg-white/10 shrink-0" />
         </SidebarHeader>
 
-        <SidebarContent className="p-2" />
+        <SidebarContent className="p-2 gap-3 font-sans">
+          <Link
+            href="/space/connect"
+            className={cn(
+              buttonVariants({ variant: "outline" }),
+              "h-9 w-full justify-start gap-2 rounded-lg border-neutral-200 bg-white px-3 text-[13px] font-medium text-black shadow-2xs hover:bg-white hover:border-neutral-300 dark:bg-white dark:text-black group-data-[collapsible=icon]:hidden",
+            )}
+          >
+            <span className="flex items-center gap-1.5 shrink-0">
+              <Image
+                src="/cursor.svg"
+                alt="Cursor"
+                width={16}
+                height={16}
+                className="size-4"
+              />
+              <Image
+                src="/claudecode-color.svg"
+                alt="Claude Code"
+                width={16}
+                height={16}
+                className="size-4"
+              />
+              <Image
+                src="/codex-color.svg"
+                alt="Cursor"
+                width={16}
+                height={16}
+                className="size-5"
+              />
+            </span>
+            <span className="truncate">Catelog MCP</span>
+          </Link>
 
-        <SidebarFooter className="p-2 pb-3 flex flex-col gap-2">
+          <SidebarGroup className="p-0 mt-4">
+            <SidebarMenu className="gap-0.5">
+              {NAV_LINKS.map(({ label, href, icon: Icon }) => {
+                const active =
+                  href === "/space"
+                    ? pathname === "/space"
+                    : pathname === href || pathname.startsWith(`${href}/`);
+                return (
+                  <SidebarMenuItem key={href}>
+                    <SidebarMenuButton
+                      isActive={active}
+                      tooltip={label}
+                      render={<Link href={href} />}
+                      className="h-9 gap-2.5 rounded-lg px-3 text-[13px] font-medium text-black hover:bg-black/5 hover:text-black data-active:bg-black/[0.07] data-active:text-black dark:text-white dark:hover:text-white dark:hover:bg-white/10"
+                    >
+                      <Icon
+                        className="size-4 text-neutral-600"
+                        strokeWidth={1.75}
+                      />
+                      <span>{label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
+
+        <SidebarFooter className="p-2 pb-3 flex flex-col gap-5">
           {/* Agent Space Card with Image 1 style Pixel Dither effect */}
           <div className="relative overflow-hidden py-4 px-3 rounded-lg border border-neutral-200/90 dark:border-neutral-800 shadow-2xs group-data-[collapsible=icon]:hidden bg-white dark:bg-[#0c0c0e]">
             {/* Pixel Dither Background: top white, middle to bottom dither pixels */}
