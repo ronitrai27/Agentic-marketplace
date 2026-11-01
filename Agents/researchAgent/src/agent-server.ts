@@ -59,9 +59,9 @@ export type AgentOutput = {
 
 // 2. Wrap LangGraph Research Agent with Catelog Marketplace SDK (Async Mode)
 export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
-  id: "langgraph-deep-research",
-  name: "LangGraph Deep Research Agent",
-  version: "1.1.0",
+  id: "deep-research",
+  name: "Deep Research Agent",
+  version: "1.2.0",
   mode: "async",
   maxTimeoutMinute: 10, // hard limit per run (deep research can be long)
   limits: {
