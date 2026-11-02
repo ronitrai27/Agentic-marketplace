@@ -2,6 +2,7 @@ import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import type { BetterAuthOptions } from "better-auth";
 import { betterAuth } from "better-auth";
+import { mcp } from "better-auth/plugins";
 import { components } from "../_generated/api";
 import type { DataModel } from "../_generated/dataModel";
 import authConfig from "../auth.config";
@@ -76,7 +77,29 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
         enabled: true,
       },
     },
-    plugins: [convex({ authConfig }) as any],
+    plugins: [
+      convex({ authConfig }) as any,
+      // OAuth 2.1 authorization server for MCP clients (Claude Code, Codex, ...).
+      // Users sign in at /auth, then approve the client on /oauth/consent.
+      mcp({
+        loginPage: "/auth",
+        resource: process.env.MCP_PUBLIC_URL,
+        oidcConfig: {
+          loginPage: "/auth",
+          consentPage: "/oauth/consent",
+          allowDynamicClientRegistration: true,
+          requirePKCE: true,
+          scopes: [
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+            "wallet:read",
+          ],
+          defaultScope: "wallet:read",
+        },
+      }) as any,
+    ],
   } satisfies BetterAuthOptions;
 };
 
