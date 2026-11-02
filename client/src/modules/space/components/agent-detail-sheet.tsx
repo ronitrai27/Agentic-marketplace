@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "../../../../convex/_generated/api";
-import { Brain, Check, Copy, Lightbulb } from "lucide-react";
+import { Brain, Check, Copy, Lightbulb, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -33,6 +33,7 @@ import {
 import { StatusText, type AgentWithPricing } from "./agent-card";
 import { LogoUpload } from "./logo-upload";
 import { AgentRating, demoRatingFor } from "./agent-rating";
+import { EditAgentDialog } from "./edit-agent-dialog";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -178,6 +179,7 @@ export function AgentDetailSheet({
   onDelete: (agent: AgentWithPricing) => void;
 }) {
   const setLogo = useMutation(api.agents.setLogo);
+  const [editing, setEditing] = useState(false);
   // Keep showing the last agent while the sheet slides out, otherwise the content vanishes mid-animation
   const [last, setLast] = useState<AgentWithPricing | null>(null);
   useEffect(() => {
@@ -186,6 +188,8 @@ export function AgentDetailSheet({
   const agent = current ?? last;
 
   return (
+    <>
+    {agent && <EditAgentDialog agent={agent} open={editing} onOpenChange={setEditing} />}
     <Sheet open={!!current} onOpenChange={onOpenChange}>
       <SheetContent
         className={[
@@ -231,9 +235,21 @@ export function AgentDetailSheet({
                   onClick={() => onDelete(agent)}
                   className="cursor-pointer"
                 >
+                  <Trash2 className="size-3.5" />
                   Delete Agent
                 </Button>
-                <Button type="button" variant="outline" size="sm" disabled title="Coming soon">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={agent.status === "archived"}
+                  onClick={() => {
+                    setEditing(true);
+                    onOpenChange(false);
+                  }}
+                  className="cursor-pointer"
+                >
+                  <Pencil className="size-3.5" />
                   Edit Agent
                 </Button>
                 <Button type="button" variant="outline" size="sm" disabled title="Coming soon">
@@ -250,6 +266,19 @@ export function AgentDetailSheet({
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {agent.keyCapabilities && agent.keyCapabilities.length > 0 && (
+                <Section title="Key Capabilities">
+                  <ul className="space-y-2">
+                    {agent.keyCapabilities.map((c) => (
+                      <li key={c} className="flex items-start gap-2.5 text-xs text-foreground">
+                        <Check className="size-3.5 shrink-0 mt-px text-emerald-600" />
+                        <span className="leading-relaxed">{c}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Section>
+              )}
+
               <Section title="Pricing">
                 <PricingBlock plan={agent.pricing?.plan as PlanMicros | undefined} />
               </Section>
@@ -333,5 +362,6 @@ export function AgentDetailSheet({
         )}
       </SheetContent>
     </Sheet>
+    </>
   );
 }

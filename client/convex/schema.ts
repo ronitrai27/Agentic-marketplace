@@ -74,6 +74,8 @@ export default defineSchema({
       v.literal("archived"),
     ),
     tags: v.array(v.string()),  // denormalised for display; filtering uses agent_tags
+    /** Short bullet points the creator adds after registering; shown in the agent sheet. */
+    keyCapabilities: v.optional(v.array(v.string())),
     /** Models seen during the dry run (auto-filled from telemetry). */
     models: v.array(
       v.object({

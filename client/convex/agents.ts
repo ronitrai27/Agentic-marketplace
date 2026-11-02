@@ -2,6 +2,7 @@ import { mutation, query, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { validateTags } from "../src/lib/agent-tags";
+import { cleanCapabilities } from "../src/lib/agent-capabilities";
 import {
   resolvePricing,
   validatePlan,
@@ -253,6 +254,40 @@ export const setLogo = mutation({
     if (!agent || agent.ownerId !== identity.subject) throw new Error("Agent not found.");
 
     await ctx.db.patch(agentId, { logoUrl: cleanLogoUrl(logoUrl), updatedAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
+    return { agentId };
+  },
+});
+
+/**
+ * Owner-only edit from the agent sheet: description, key capabilities, and
+ * active <-> paused. Suspended (marketplace) and archived (delete) are never set or lifted here.
+ */
+export const updateDetails = mutation({
+  args: {
+    agentId: v.id("agents"),
+    description: v.string(),
+    status: v.optional(v.union(v.literal("active"), v.literal("paused"))),
+    keyCapabilities: v.array(v.string()),
+  },
+  handler: async (ctx, { agentId, description, status, keyCapabilities }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Please sign in.");
+
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.ownerId !== identity.subject) throw new Error("Agent not found.");
+
+    const locked = agent.status === "suspended" || agent.status === "archived";
+    if (locked && status) {
+      throw new Error(`This agent is ${agent.status}; its status cannot be changed.`);
+    }
+
+    await ctx.db.patch(agentId, {
+      description: description.trim(),
+      ...(status && { status }),
+      keyCapabilities: cleanCapabilities(keyCapabilities),
+      updatedAt: Date.now(),
+    });
     await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
     return { agentId };
   },
