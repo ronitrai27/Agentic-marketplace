@@ -30,9 +30,9 @@ export function SpaceBreadcrumbs() {
   };
 
   return (
-    <Breadcrumb>
-      <BreadcrumbList className="text-xs sm:text-sm font-medium">
-        <BreadcrumbItem>
+    <Breadcrumb className="min-w-0">
+      <BreadcrumbList className="text-xs sm:text-sm font-medium flex-nowrap">
+        <BreadcrumbItem className="shrink-0">
           {subSegments.length === 0 ? (
             <BreadcrumbPage className="font-semibold text-foreground">
               Space
@@ -51,19 +51,27 @@ export function SpaceBreadcrumbs() {
           const isLast = idx === subSegments.length - 1;
           const href = `/space/${subSegments.slice(0, idx + 1).join("/")}`;
           const title = formatTitle(segment);
+          const isAgentOrLong = isLast && title.length > 8;
+          const displayTitle = isAgentOrLong
+            ? `${title.slice(0, 8)}...`
+            : title;
 
           return (
             <React.Fragment key={href}>
-              <BreadcrumbSeparator className="text-muted-foreground/60" />
-              <BreadcrumbItem>
+              <BreadcrumbSeparator className="text-muted-foreground/60 shrink-0" />
+              <BreadcrumbItem className="min-w-0">
                 {isLast ? (
-                  <BreadcrumbPage className="font-semibold text-foreground">
-                    {title}
+                  <BreadcrumbPage
+                    title={title}
+                    className="font-semibold text-foreground truncate max-w-[80px] sm:max-w-[100px] inline-block align-bottom"
+                  >
+                    {displayTitle}
                   </BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink
                     render={<Link href={href} />}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    title={title}
+                    className="text-muted-foreground hover:text-foreground transition-colors truncate max-w-[90px] sm:max-w-[110px] inline-block align-bottom"
                   >
                     {title}
                   </BreadcrumbLink>

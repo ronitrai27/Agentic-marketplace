@@ -15,8 +15,8 @@ import { v } from "convex/values";
 export default defineSchema({
   // ─── Publishable Key (one per creator workspace) ───────────────────
   creator_public_keys: defineTable({
-    userId: v.string(),         // BetterAuth subject ID
-    publicKey: v.string(),      // Full cat_pub_live_... key — safe to expose
+    userId: v.string(), // BetterAuth subject ID
+    publicKey: v.string(), // Full cat_pub_live_... key — safe to expose
     createdAt: v.number(),
   })
     .index("by_userId", ["userId"])
@@ -24,7 +24,7 @@ export default defineSchema({
 
   // ─── Secret API Keys (many per creator) ────────────────────────────
   creator_api_keys: defineTable({
-    userId: v.string(),         // BetterAuth subject ID
+    userId: v.string(), // BetterAuth subject ID
     /**
      * SHA-256 hex of the raw key.
      * Raw key is NEVER stored — generated and hashed inside a Convex action.
@@ -58,13 +58,13 @@ export default defineSchema({
   // Money is stored as integer micro-USD (1 = $0.000001), never floats.
   // JSON schemas are stored as strings: Convex field names cannot start with "$" or "_".
   agents: defineTable({
-    ownerId: v.string(),        // BetterAuth subject ID
-    slug: v.string(),           // unique, derived from name
+    ownerId: v.string(), // BetterAuth subject ID
+    slug: v.string(), // unique, derived from name
     name: v.string(),
     description: v.string(),
     /** Public R2 URL of the 256x256 logo; the UI falls back to the name's first letter. */
     logoUrl: v.optional(v.string()),
-    baseUrl: v.string(),        // unique, normalised (no trailing slash)
+    baseUrl: v.string(), // unique, normalised (no trailing slash)
     version: v.string(),
     manifestAgentId: v.optional(v.string()),
     status: v.union(
@@ -73,7 +73,7 @@ export default defineSchema({
       v.literal("suspended"),
       v.literal("archived"),
     ),
-    tags: v.array(v.string()),  // denormalised for display; filtering uses agent_tags
+    tags: v.array(v.string()), // denormalised for display; filtering uses agent_tags
     /** Short bullet points the creator adds after registering; shown in the agent sheet. */
     keyCapabilities: v.optional(v.array(v.string())),
     /** Models seen during the dry run (auto-filled from telemetry). */
@@ -140,16 +140,55 @@ export default defineSchema({
       v.object({
         shape: v.literal("tiered"),
         fieldKey: v.string(),
-        tiers: v.array(v.object({ value: v.string(), priceMicros: v.number() })),
+        tiers: v.array(
+          v.object({ value: v.string(), priceMicros: v.number() }),
+        ),
       }),
     ),
     createdAt: v.number(),
   }).index("by_agent_created", ["agentId", "createdAt"]),
 
+  // Running counters, one row per agent. Kept apart from `agents` so every run's write
+  // doesn't re-trigger queries that read the agent. Average latency = totalLatencyMs / totalRuns.
+  agent_stats: defineTable({
+    agentId: v.id("agents"),
+    totalRuns: v.number(),
+    successRuns: v.number(),
+    failedRuns: v.number(),
+    /** Sum of latency over ALL runs (success and failed). */
+    totalLatencyMs: v.number(),
+    lastRunAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_agent", ["agentId"]),
+
+  // One review per (agent, user). Name and avatar are snapshotted when written.
+  agent_reviews: defineTable({
+    agentId: v.id("agents"),
+    userId: v.string(), // BetterAuth subject ID
+    userName: v.string(),
+    userAvatar: v.optional(v.string()),
+    rating: v.number(), // 1–5
+    comment: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_agent_created", ["agentId", "createdAt"])
+    .index("by_agent_user", ["agentId", "userId"]),
+
+  // For daily stats store.
+  agent_stats_daily: defineTable({
+    agentId: v.id("agents"),
+    day: v.string(), // "2026-11-02" (UTC)
+    totalRuns: v.number(),
+    successRuns: v.number(),
+    failedRuns: v.number(),
+    totalLatencyMs: v.number(),
+  }).index("by_agent_day", ["agentId", "day"]),
+
   // ─── Rate Limit Sliding Window ──────────────────────────────────────
   // One document per (keyId, windowMinute). TTL-cleaned by a scheduled job.
   api_key_rate_windows: defineTable({
-    keyId: v.string(),          // creator_api_keys._id as string
+    keyId: v.string(), // creator_api_keys._id as string
     /** Unix minute bucket: Math.floor(Date.now() / 60_000) */
     windowMinute: v.number(),
     /** Number of requests in this 1-minute window */

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useQuery } from "convex/react";
 import { Star, Sparkles, Plus } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
@@ -11,6 +12,7 @@ import { ModelLogos } from "./agent-card";
 
 type CardAgent = {
   key: string;
+  slug?: string;
   name: string;
   logoUrl?: string;
   tags: string[];
@@ -52,6 +54,7 @@ export function TryAgents() {
 
   const real: CardAgent[] = featured.map((a) => ({
     key: a._id,
+    slug: a.slug,
     name: a.name,
     logoUrl: a.logoUrl,
     tags: a.tags,
@@ -77,11 +80,10 @@ export function TryAgents() {
           const visibleTags = agent.tags.slice(0, maxTags);
           const remainingTags = agent.tags.length - visibleTags.length;
 
-          return (
-            <div
-              key={agent.key}
-              className="p-2.5 2xl:p-3.5 rounded-lg border border-border/70 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col justify-between gap-2.5"
-            >
+          const cardClass =
+            "p-2.5 2xl:p-3.5 rounded-lg border border-border/70 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col justify-between gap-2.5";
+          const inner = (
+            <>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <AgentLogo name={agent.name} logoUrl={agent.logoUrl} className="size-7 text-xs shrink-0" />
@@ -120,6 +122,20 @@ export function TryAgents() {
                   <ModelLogos models={agent.models} />
                 </div>
               </div>
+            </>
+          );
+
+          return agent.slug ? (
+            <Link
+              key={agent.key}
+              href={`/space/marketplace/${agent.slug}`}
+              className={`${cardClass} hover:border-foreground/30 hover:bg-neutral-50 dark:hover:bg-neutral-950/70 transition-colors cursor-pointer`}
+            >
+              {inner}
+            </Link>
+          ) : (
+            <div key={agent.key} className={cardClass}>
+              {inner}
             </div>
           );
         })}

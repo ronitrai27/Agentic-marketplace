@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as agentPage from "../agentPage.js";
 import type * as agents from "../agents.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as apiKeysActions from "../apiKeysActions.js";
@@ -24,6 +25,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agentPage: typeof agentPage;
   agents: typeof agents;
   apiKeys: typeof apiKeys;
   apiKeysActions: typeof apiKeysActions;

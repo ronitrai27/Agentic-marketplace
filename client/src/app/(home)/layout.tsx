@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
@@ -24,15 +25,17 @@ export default function Layout({
       defaultOpen={true}
       className="bg-neutral-100 dark:bg-neutral-900 text-foreground h-screen max-h-screen overflow-hidden"
     >
-      {sidebar}
+      <Suspense fallback={null}>{sidebar}</Suspense>
       <SidebarInset className="bg-transparent m-0 p-0 md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none h-screen max-h-screen overflow-hidden flex flex-col min-h-0">
         {/* Outer connected container with padding surrounding the inner main content box */}
         <div className="flex flex-col flex-1 h-full max-h-screen w-full px-3 pb-3 pt-1.5 bg-neutral-100 dark:bg-neutral-900 overflow-hidden min-h-0">
           {/* Top Header Bar above the main content box (for breadcrumbs, search, user avatar, icons) */}
           <header className="h-12 sm:h-14 w-full flex items-center justify-between px-2 shrink-0">
             {/* Left slot (breadcrumbs, etc.) */}
-            <div className="flex items-center gap-2">
-              <SpaceBreadcrumbs />
+            <div className="flex items-center gap-2 shrink-0">
+              <Suspense fallback={null}>
+                <SpaceBreadcrumbs />
+              </Suspense>
             </div>
 
             {/* Center slot: agent search */}
@@ -41,7 +44,7 @@ export default function Layout({
             </div>
 
             {/* Right slot: theme toggle, notification, wallet badge, and user avatar with dropdown */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <WalletBadge />
               <ThemeToggle />
               <NotificationButton />

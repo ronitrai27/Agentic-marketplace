@@ -326,6 +326,7 @@ export const listFeatured = query({
       .slice(0, 3)
       .map((a) => ({
         _id: a._id,
+        slug: a.slug,
         name: a.name,
         logoUrl: a.logoUrl,
         tags: a.tags,
