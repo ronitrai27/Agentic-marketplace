@@ -39,12 +39,15 @@ export function AgentRating({
   value,
   align = "right",
   className = "",
+  reviewCount,
 }: {
   value: number;
   align?: "left" | "right";
   className?: string;
+  /** When set, shown under the star instead of the verdict; a value of 0 renders an empty 0.0 star. */
+  reviewCount?: number;
 }) {
-  const r = normaliseRating(value);
+  const r = value <= 0 ? 0 : normaliseRating(value);
   const fill = (r / 5) * 100;
 
   return (
@@ -58,7 +61,13 @@ export function AgentRating({
         </span>
         <span className="text-sm font-semibold text-foreground tabular-nums">{r.toFixed(1)}</span>
       </div>
-      <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">{ratingLabel(r)}</span>
+      <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">
+        {reviewCount !== undefined
+          ? `${reviewCount.toLocaleString()} ${reviewCount === 1 ? "review" : "reviews"}`
+          : r > 0
+            ? ratingLabel(r)
+            : null}
+      </span>
     </div>
   );
 }

@@ -296,3 +296,15 @@
 @media (prefers-reduced-motion: reduce) {
   .recipe-row, .recipe-scan, .recipe-lead, .recipe-plus, .recipe-bar, .recipe-line, .recipe-dot { animation: none; }
 }
+
+/* Run Agent button heartbeat */
+@keyframes heartbeat-trace {
+  0% { stroke-dashoffset: 1; }
+  60%, 100% { stroke-dashoffset: -1; }
+}
+@keyframes heartbeat-beat {
+  0%, 50%, 100% { transform: scale(1); }
+  25% { transform: scale(1.3); }
+}
+.heartbeat-icon { transform-box: fill-box; transform-origin: center; animation: heartbeat-beat 1.4s ease-in-out infinite; }
+.heartbeat-line { stroke-dasharray: 0.35 1; stroke-dashoffset: 1; animation: heartbeat-trace 1.4s linear infinite; }

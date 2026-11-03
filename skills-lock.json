@@ -13,6 +13,12 @@
       "skillPath": "skills/hairline-create/SKILL.md",
       "computedHash": "4f65f4126b664736d040c4d6d0d2ce340441787887b90b8de40962ddf48ae74d"
     },
+    "temporal-cloud": {
+      "source": "temporalio/skill-temporal-cloud",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "c53c61d5b61608d4e6b49606d7157130da8655a277399a4b1bdfd80513182259"
+    },
     "temporal-developer": {
       "source": "temporalio/skill-temporal-developer",
       "sourceType": "github",
