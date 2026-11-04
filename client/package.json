@@ -17,6 +17,7 @@
     "@paypal/react-paypal-js": "^10.6.0",
     "@shadcn/react": "^0.3.1",
     "@t3-oss/env-nextjs": "^0.13.11",
+    "@temporalio/client": "^1.25.0",
     "@upstash/redis": "^1.41.0",
     "aws4fetch": "^1.0.20",
     "better-auth": "1.6.15",

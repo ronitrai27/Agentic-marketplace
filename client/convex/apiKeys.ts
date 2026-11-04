@@ -239,17 +239,13 @@ export const verifyApiKey = internalMutation({
       return { valid: false, error: "KEY_EXPIRED", message: "API key has expired" };
     }
 
-    // Region check
-    if (
-      args.region &&
-      key.allowedRegions.length > 0 &&
-      !key.allowedRegions.includes("all")
-    ) {
-      if (!key.allowedRegions.includes(args.region)) {
+    // Region check. Fails closed: a region-restricted key with no region on the request is refused.
+    if (key.allowedRegions.length > 0 && !key.allowedRegions.includes("all")) {
+      if (!args.region || !key.allowedRegions.includes(args.region)) {
         return {
           valid: false,
           error: "REGION_RESTRICTED",
-          message: `Key restricted to [${key.allowedRegions.join(", ")}], called from ${args.region}`,
+          message: `Key restricted to [${key.allowedRegions.join(", ")}], called from ${args.region ?? "unknown"}`,
         };
       }
     }
@@ -305,6 +301,7 @@ export const verifyApiKey = internalMutation({
 
     return {
       valid: true,
+      keyId: key._id,
       userId: key.userId,
       rateLimitPerMin: key.rateLimitPerMin,
     };

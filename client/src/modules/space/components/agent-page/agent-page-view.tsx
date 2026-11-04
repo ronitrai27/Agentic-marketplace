@@ -23,6 +23,7 @@ import {
   modelIcon,
   schemaFields,
   uniqueModelIcons,
+  type PlanMicros,
 } from "@/lib/agent-display";
 import { AgentRating, normaliseRating } from "../agent-rating";
 import { RunAgentButton } from "./run-agent-button";
@@ -251,7 +252,7 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
                 value={agent.ratingAvg}
                 reviewCount={agent.ratingCount}
               />
-              <RunAgentButton />
+              <RunAgentButton agentName={agent.name} pricing={agent.pricing as PlanMicros | null} />
             </div>
           </div>
 

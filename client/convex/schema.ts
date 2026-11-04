@@ -89,6 +89,10 @@ export default defineSchema({
         delta_stream: v.optional(v.boolean()),
         max_timeout_seconds: v.optional(v.number()),
         execution_modes: v.optional(v.array(v.string())),
+        /** SDK `limits.maxConcurrent`: the gateway refuses runs past this many in flight. */
+        max_concurrent: v.optional(v.number()),
+        /** SDK `limits.rateLimit`, normalised to requests per minute. */
+        rate_limit_per_min: v.optional(v.number()),
       }),
     ),
     inputSchemaJson: v.string(),
@@ -184,6 +188,33 @@ export default defineSchema({
     failedRuns: v.number(),
     totalLatencyMs: v.number(),
   }).index("by_agent_day", ["agentId", "day"]),
+
+  // ─── Gateway runs ──────────────────────────────────────────────────
+  // One row per accepted run. The Temporal workflow (id = "run-<runId>") owns its lifecycle
+  // and reports back through /worker/run-status. Never holds the agent's baseUrl.
+  runs: defineTable({
+    agentId: v.id("agents"),
+    userId: v.string(), // caller: BetterAuth subject ID
+    source: v.union(v.literal("key"), v.literal("session")),
+    keyId: v.optional(v.id("creator_api_keys")),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    inputJson: v.string(),
+    workflowId: v.optional(v.string()),
+    /** Resolved at admission: agent's max_timeout_seconds, else the gateway default. */
+    timeoutSeconds: v.number(),
+    error: v.optional(v.object({ code: v.string(), message: v.string() })),
+    createdAt: v.number(),
+    startedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+  })
+    .index("by_agent_status", ["agentId", "status"])
+    .index("by_user_created", ["userId", "createdAt"]),
 
   // ─── Rate Limit Sliding Window ──────────────────────────────────────
   // One document per (keyId, windowMinute). TTL-cleaned by a scheduled job.

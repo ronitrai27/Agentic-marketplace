@@ -3,6 +3,8 @@
 import React from "react";
 import { ChefHat, LayoutGrid, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RunConfirmDialog } from "./run-confirm-dialog";
+import type { PlanMicros } from "@/lib/agent-display";
 
 /** Same shape as the lucide "activity" icon, drawn as a path so the line can trace like a heartbeat. */
 function HeartbeatIcon() {
@@ -25,17 +27,19 @@ function HeartbeatIcon() {
 }
 
 /** UI only for now: Run Agent plus two extra options that slide in below it on hover or keyboard focus. */
-export function RunAgentButton() {
+export function RunAgentButton({ agentName, pricing }: { agentName: string; pricing: PlanMicros | null }) {
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   return (
     <div className="group relative">
-      <Button size="lg" className="gap-2">
+      <RunConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} agentName={agentName} pricing={pricing} />
+      <Button size="lg" className="gap-2" onClick={() => setConfirmOpen(true)}>
         Run Agent
         <HeartbeatIcon />
       </Button>
 
       <div className="pointer-events-none absolute right-0 top-full z-20 w-max translate-y-1 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100">
         <div className="flex w-full flex-col gap-1.5 rounded-xl border border-border bg-background p-1.5 shadow-lg">
-          <Button variant="ghost" size="sm" className="justify-start gap-2">
+          <Button variant="ghost" size="sm" className="justify-start gap-2" onClick={() => setConfirmOpen(true)}>
             <Play className="size-4" />
             Run Now
           </Button>
