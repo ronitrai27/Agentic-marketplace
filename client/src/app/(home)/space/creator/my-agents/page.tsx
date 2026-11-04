@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { RainbowButton } from "@/components/ui/rainbow-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { api } from "../../../../../../convex/_generated/api";
 
 export default function MyAgentsPage() {
@@ -27,6 +28,9 @@ export default function MyAgentsPage() {
   // Looked up from the live list so the sheet updates if the agent changes
   const selected = agents?.find((a) => a._id === selectedId) ?? null;
   const toDelete = agents?.find((a) => a._id === deleteId) ?? null;
+
+  const activeAgents = agents?.filter((a) => a.status === "active") ?? [];
+  const inactiveAgents = agents?.filter((a) => a.status !== "active") ?? [];
 
   return (
     <div className="flex-1 h-full overflow-y-auto scrollbar-thin px-10 py-8 bg-background flex flex-col">
@@ -92,22 +96,67 @@ export default function MyAgentsPage() {
             <CreatorStats agents={agents} />
 
             <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-foreground">
-                  Registered agents
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">{agents.length}</span>
-                </h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {agents.map((a) => (
-                  <AgentCard
-                    key={a._id}
-                    agent={a}
-                    onOpen={() => setSelectedId(a._id)}
-                    onDelete={() => setDeleteId(a._id)}
-                  />
-                ))}
-              </div>
+              <Tabs defaultValue="active" className="w-full space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Registered agents
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">{agents.length}</span>
+                  </h2>
+
+                  <TabsList>
+                    <TabsTrigger value="active" className="cursor-pointer gap-1.5 px-3 text-xs">
+                      Active
+                      <span className="rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-normal">
+                        {activeAgents.length}
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger value="inactive" className="cursor-pointer gap-1.5 px-3 text-xs">
+                      Un-active
+                      <span className="rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-normal">
+                        {inactiveAgents.length}
+                      </span>
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+
+                <TabsContent value="active" className="mt-0">
+                  {activeAgents.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border py-12 text-center">
+                      <p className="text-sm text-muted-foreground">No active agents</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {activeAgents.map((a) => (
+                        <AgentCard
+                          key={a._id}
+                          agent={a}
+                          onOpen={() => setSelectedId(a._id)}
+                          onDelete={() => setDeleteId(a._id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="inactive" className="mt-0">
+                  {inactiveAgents.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border py-12 text-center">
+                      <p className="text-sm text-muted-foreground">No un-active agents</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {inactiveAgents.map((a) => (
+                        <AgentCard
+                          key={a._id}
+                          agent={a}
+                          onOpen={() => setSelectedId(a._id)}
+                          onDelete={() => setDeleteId(a._id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </section>
           </>
         )}

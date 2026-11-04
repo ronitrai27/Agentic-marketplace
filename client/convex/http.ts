@@ -317,29 +317,70 @@ http.route({
   }),
 });
 
-// ── Temporal worker: report run status ──────────────────────────────────────
-//   POST /worker/run-status   Authorization: Bearer <WORKER_SECRET>
-//   { "runId": "...", "status": "running|succeeded|failed|cancelled", "error"?: {code, message} }
-http.route({
-  path: "/worker/run-status",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const secret = process.env.WORKER_SECRET;
-    const token = (request.headers.get("Authorization") ?? "").replace(/^Bearer /, "");
-    if (!secret || !safeEqual(token, secret)) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
-    }
-    try {
-      const { runId, status, error } = await request.json();
-      const result = await ctx.runMutation(internal.runs.setStatus, { runId, status, error });
-      return new Response(JSON.stringify(result), {
-        status: result.ok ? 200 : result.reason === "not_found" ? 404 : 409,
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch {
-      return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
-    }
-  }),
+// ── Temporal worker routes ───────────────────────────────────────────────────
+// All guarded by `Authorization: Bearer <WORKER_SECRET>`. Only the worker calls these.
+//   POST /worker/run-context   { runId }                           → agent URL, schemas, sealed creator keys
+//   POST /worker/run-status    { runId, status, error? }           → running | failed | cancelled
+//   POST /worker/run-events    { runId, events: [{type, data}] }   → live feed for the run sheet
+//   POST /worker/agent-key     { runId, keyId }                    → which creator key the agent accepted
+//   POST /worker/run-complete  { runId, output }                   → output passed its schema: charge and close
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+
+const workerAuthorised = (request: Request) => {
+  const secret = process.env.WORKER_SECRET;
+  const token = (request.headers.get("Authorization") ?? "").replace(/^Bearer /, "");
+  return !!secret && safeEqual(token, secret);
+};
+
+const workerRoute = (path: string, handle: (ctx: any, body: any) => Promise<Response>) =>
+  http.route({
+    path,
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+      if (!workerAuthorised(request)) return json({ error: "unauthorized" }, 401);
+      let body: any;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid_body" }, 400);
+      }
+      try {
+        return await handle(ctx, body);
+      } catch (err) {
+        console.error(path, err);
+        return json({ error: "invalid_body" }, 400);
+      }
+    }),
+  });
+
+workerRoute("/worker/run-context", async (ctx, { runId }) => {
+  const context = await ctx.runQuery(internal.runs.contextForWorker, { runId });
+  return context ? json(context) : json({ error: "not_found" }, 404);
+});
+
+workerRoute("/worker/run-status", async (ctx, { runId, status, error }) => {
+  const result = await ctx.runMutation(internal.runs.setStatus, { runId, status, error });
+  return json(result, result.ok ? 200 : result.reason === "not_found" ? 404 : 409);
+});
+
+workerRoute("/worker/run-events", async (ctx, { runId, events }) => {
+  const rows = (Array.isArray(events) ? events : []).slice(0, 200).map((e: { type: string; data: unknown }) => ({
+    type: String(e.type).slice(0, 64),
+    dataJson: JSON.stringify(e.data ?? null),
+  }));
+  const result = await ctx.runMutation(internal.runs.appendEvents, { runId, events: rows });
+  return json(result);
+});
+
+workerRoute("/worker/agent-key", async (ctx, { runId, keyId }) => {
+  return json(await ctx.runMutation(internal.runs.rememberSigningKey, { runId, keyId }));
+});
+
+workerRoute("/worker/run-complete", async (ctx, { runId, output }) => {
+  const result = await ctx.runMutation(internal.runs.complete, { runId, outputJson: JSON.stringify(output ?? null) });
+  return json(result, result.ok ? 200 : result.reason === "not_found" ? 404 : 409);
 });
 
 export default http;

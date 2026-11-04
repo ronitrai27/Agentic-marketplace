@@ -252,7 +252,7 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
                 value={agent.ratingAvg}
                 reviewCount={agent.ratingCount}
               />
-              <RunAgentButton agentName={agent.name} pricing={agent.pricing as PlanMicros | null} />
+              <RunAgentButton agentName={agent.name} agentSlug={agent.slug} pricing={agent.pricing as PlanMicros | null} />
             </div>
           </div>
 
@@ -362,6 +362,7 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
           <Row label="Pricing">
             <Pricing pricing={agent.pricing} />
           </Row>
+
 
           <Row label="Activity">
             <div className="space-y-4">

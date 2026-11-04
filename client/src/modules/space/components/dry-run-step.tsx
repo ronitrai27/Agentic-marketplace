@@ -1172,16 +1172,16 @@ export function DryRunStep({
               </div>
             )}
 
-            <div className="flex gap-1 px-2 pt-2 border-b border-border">
+            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border bg-muted/20">
               {(["events", "output", "telemetry"] as ResultTab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setTab(t)}
-                  className={`px-3 py-1.5 text-xs rounded-t-md capitalize transition-colors cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs rounded-md border capitalize transition-all cursor-pointer font-medium ${
                     tab === t
-                      ? "bg-muted text-foreground font-medium"
-                      : "text-foreground hover:text-foreground"
+                      ? "border-border bg-background text-foreground shadow-2xs"
+                      : "border-border/80 bg-background/50 text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted/50"
                   }`}
                 >
                   {t}

@@ -1,10 +1,14 @@
 "use node";
 
-import { internalAction } from "./_generated/server";
-import { v } from "convex/values";
+import { action, internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { ConvexError, v } from "convex/values";
 import { Client, Connection } from "@temporalio/client";
 
 const DEFAULT_TASK_QUEUE = "catelog-agent-runs";
+/** Inputs above this go to file storage. Above MAX they are refused. */
+const INLINE_INPUT_CHARS = 400_000;
+const MAX_INPUT_CHARS = 12_000_000;
 
 let clientPromise: Promise<Client> | undefined;
 
@@ -42,5 +46,61 @@ export const startRunWorkflow = internalAction({
       workflowExecutionTimeout: `${timeoutSeconds + 300} seconds`,
     });
     return { workflowId };
+  },
+});
+
+/**
+ * Step after the input form: queues the run (checks the agent's SDK limits) and starts its workflow.
+ * If Temporal can't be reached the run is closed and the payment hold is released.
+ */
+export const start = action({
+  args: { runId: v.id("runs"), inputJson: v.string() },
+  handler: async (ctx, { runId, inputJson }): Promise<{ ok: true }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Please sign in." });
+
+    if (inputJson.length > MAX_INPUT_CHARS) {
+      throw new ConvexError({ code: "PAYLOAD_TOO_LARGE", message: "Your input is too large (limit is about 8 MB)." });
+    }
+    try {
+      const parsed = JSON.parse(inputJson);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+    } catch {
+      throw new ConvexError({ code: "INVALID_INPUT", message: "Input must be a JSON object." });
+    }
+
+    // Uploaded files make the input big: keep it in file storage (deleted when the run ends), not in the run row
+    const stored = inputJson.length > INLINE_INPUT_CHARS
+      ? await ctx.storage.store(new Blob([inputJson], { type: "application/json" }))
+      : undefined;
+    const begun = await ctx.runMutation(internal.runs.beginRun, {
+      runId,
+      userId: identity.subject,
+      ...(stored ? { inputStorageId: stored } : { inputJson }),
+    });
+    if (!begun.ok) {
+      if (stored) await ctx.storage.delete(stored).catch(() => {});
+      throw new ConvexError({ code: begun.code, message: begun.message });
+    }
+
+    try {
+      const client = await getClient();
+      await client.workflow.start("runAgentWorkflow", {
+        taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? DEFAULT_TASK_QUEUE,
+        workflowId: `run-${runId}`,
+        args: [{ runId, timeoutSeconds: begun.timeoutSeconds }],
+        workflowExecutionTimeout: `${begun.timeoutSeconds + 300} seconds`,
+      });
+    } catch (err) {
+      console.error("start: workflow start failed", err);
+      const message = "Could not start the run. Nothing was charged.";
+      await ctx.runMutation(internal.runs.setStatus, {
+        runId,
+        status: "failed",
+        error: { code: "WORKFLOW_START_FAILED", message },
+      });
+      throw new ConvexError({ code: "WORKFLOW_START_FAILED", message });
+    }
+    return { ok: true };
   },
 });

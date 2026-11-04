@@ -122,6 +122,7 @@ export const _insertSecretKey = internalMutation({
     userId: v.string(),
     keyHash: v.string(),
     previewKey: v.string(),
+    sealed: v.string(),
     expiresAt: v.optional(v.number()),
     allowedRegions: v.array(v.string()),
     allowedIps: v.array(v.string()),
@@ -132,6 +133,7 @@ export const _insertSecretKey = internalMutation({
       userId: args.userId,
       keyHash: args.keyHash,
       previewKey: args.previewKey,
+      sealed: args.sealed,
       createdAt: Date.now(),
       expiresAt: args.expiresAt,
       status: "active",
@@ -149,6 +151,7 @@ export const _applyRotation = internalMutation({
     userId: v.string(),
     newKeyHash: v.string(),
     newPreviewKey: v.string(),
+    newSealed: v.string(),
   },
   handler: async (ctx, args) => {
     const key = await ctx.db.get(args.keyId);
@@ -158,6 +161,7 @@ export const _applyRotation = internalMutation({
     await ctx.db.patch(args.keyId, {
       keyHash: args.newKeyHash,
       previewKey: args.newPreviewKey,
+      sealed: args.newSealed,
       rotatedAt: Date.now(),
     });
   },

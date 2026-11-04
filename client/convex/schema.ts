@@ -32,6 +32,11 @@ export default defineSchema({
     keyHash: v.string(),
     /** UI display suffix e.g. "cat_sec_live_••••4b12" */
     previewKey: v.string(),
+    /**
+     * RSA-OAEP copy of the key, sealed to the run worker's public key. Convex cannot read it back; only the
+     * worker can open it, to sign requests to the creator's agents. Never shown to the creator again.
+     */
+    sealed: v.optional(v.string()),
     createdAt: v.number(),
     expiresAt: v.optional(v.number()),
     status: v.union(v.literal("active"), v.literal("revoked")),
@@ -105,6 +110,10 @@ export default defineSchema({
     /** Star rating (0 until buyer reviews exist). Missing = 0. Reviews will live in their own table. */
     ratingAvg: v.optional(v.number()),
     ratingCount: v.optional(v.number()),
+    /** Consecutive failed /health checks across runs. Reaching the limit pauses the agent. */
+    healthFailures: v.optional(v.number()),
+    /** Which of the owner's secret keys this agent verifies against, learned from the first run that works. */
+    signingKeyId: v.optional(v.id("creator_api_keys")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -198,6 +207,7 @@ export default defineSchema({
     source: v.union(v.literal("key"), v.literal("session")),
     keyId: v.optional(v.id("creator_api_keys")),
     status: v.union(
+      v.literal("awaiting_input"), // payment held, waiting for the buyer to fill the input form
       v.literal("queued"),
       v.literal("running"),
       v.literal("succeeded"),
@@ -205,6 +215,13 @@ export default defineSchema({
       v.literal("cancelled"),
     ),
     inputJson: v.string(),
+    /** Big inputs (uploaded files as base64) live in file storage, not in this row. Deleted when the run ends. */
+    inputStorageId: v.optional(v.id("_storage")),
+    inputLarge: v.optional(v.boolean()),
+    /** Escrow in credits (100 credits = $1). Counts against the buyer's wallet until settled or released. */
+    holdCredits: v.optional(v.number()),
+    holdStatus: v.optional(v.union(v.literal("held"), v.literal("settled"), v.literal("released"))),
+    chargedCredits: v.optional(v.number()),
     workflowId: v.optional(v.string()),
     /** Resolved at admission: agent's max_timeout_seconds, else the gateway default. */
     timeoutSeconds: v.number(),
@@ -214,7 +231,17 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
   })
     .index("by_agent_status", ["agentId", "status"])
-    .index("by_user_created", ["userId", "createdAt"]),
+    .index("by_user_created", ["userId", "createdAt"])
+    .index("by_user_hold", ["userId", "holdStatus"]),
+
+  // Live feed of what the agent emitted (SSE events) plus gateway notes, so a reload loses nothing.
+  run_events: defineTable({
+    runId: v.id("runs"),
+    seq: v.number(),
+    type: v.string(), // "task.progress", "task.delta", "health", "schema.check", ...
+    dataJson: v.string(), // clipped, see MAX_EVENT_CHARS
+    at: v.number(),
+  }).index("by_run_seq", ["runId", "seq"]),
 
   // ─── Rate Limit Sliding Window ──────────────────────────────────────
   // One document per (keyId, windowMinute). TTL-cleaned by a scheduled job.

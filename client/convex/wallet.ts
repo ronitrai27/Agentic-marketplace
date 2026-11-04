@@ -1,5 +1,6 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { components } from "./_generated/api";
+import { escrowCredits } from "./escrow";
 import { v } from "convex/values";
 
 export const getWallet = query({
@@ -27,7 +28,7 @@ export const getWallet = query({
       );
 
       const credits = Number(user?.credits ?? 0);
-      const escrow = 0; // Active agent holds in escrow
+      const escrow = await escrowCredits(ctx, identity.subject); // credits held for runs in progress
 
       // Platform rule: User must maintain at least 500 credits ($5.00) reserve.
       // Funds in escrow cannot be withdrawn.
@@ -121,7 +122,7 @@ export const deductCreditsForWithdrawal = mutation({
     }
 
     const currentCredits = Number(user.credits ?? 0);
-    const escrow = 0;
+    const escrow = await escrowCredits(ctx, identity.subject);
     const maxWithdrawable = Math.max(0, currentCredits - 500 - escrow);
 
     if (args.amountCredits > maxWithdrawable) {
@@ -158,7 +159,7 @@ export const getWalletByUserId = internalQuery({
     if (!user) return null;
 
     const credits = Number(user.credits ?? 0);
-    const escrow = 0; // Active agent holds in escrow
+    const escrow = await escrowCredits(ctx, args.userId);
     const withdrawableCredits = Math.max(0, credits - 500 - escrow);
     return {
       credits,

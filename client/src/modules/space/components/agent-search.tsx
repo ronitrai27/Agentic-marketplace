@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+import { ACTIVE_STATUSES } from "./runs/active-runs-pill";
+import { openRun } from "./runs/run-store";
 import {
   LandPlot,
   Layers,
@@ -136,6 +140,8 @@ export function AgentSearch() {
   const [cursor, setCursor] = useState(0);
   const wrap = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const recent = useQuery(api.runs.myRecent);
+  const activeRuns = (recent ?? []).filter((r) => ACTIVE_STATUSES.includes(r.status));
 
   // Flat list in display order, for keyboard navigation
   const flat = useMemo(
@@ -275,6 +281,30 @@ export function AgentSearch() {
           className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-lg! border border-border bg-popover shadow-lg shadow-black/10 animate-in fade-in-0 slide-in-from-top-1 duration-150"
         >
           <div className="max-h-[70vh] overflow-y-auto p-1.5">
+            {term.length < 2 && activeRuns.length > 0 && (
+              <div className="px-1.5 pt-1.5 pb-2">
+                <p className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Your runs
+                </p>
+                {activeRuns.map((run) => (
+                  <button
+                    key={run.id}
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      openRun(run.id);
+                    }}
+                    className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted"
+                  >
+                    <span className="min-w-0 truncate font-medium">Open {run.agentName}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {run.status === "awaiting_input" ? "needs your input" : "running"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {term.length < 2 && (
               <div className="px-3 py-4">
                 <p className="text-xs font-medium text-muted-foreground mb-2.5">

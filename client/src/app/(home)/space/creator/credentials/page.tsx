@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Copy, Check, Plus, ArrowRight } from "lucide-react";
+import { Copy, Check, Plus, ArrowRight, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/../convex/_generated/api";
@@ -211,10 +211,13 @@ export default function CreatorCredentialsPage() {
               Production & Agent Security
             </h2>
             <p className="text-xs sm:text-[13px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
-              Secret keys grant full execution rights to publish agents, call
-              hosted tools, and claim payouts. They are hashed with salted
-              SHA-256 and never stored in plaintext. Publishable keys are safe
-              to embed in client-side runtimes.
+              <span className="text-black font-semibold ">
+                Security built for trusted agent execution
+              </span>{" "}
+              Protect your agents and marketplace operations with secure
+              authentication and controlled access. Keep sensitive credentials
+              private and ensure that only authorized requests can interact with
+              your agents.
             </p>
           </div>
 
@@ -242,9 +245,7 @@ export default function CreatorCredentialsPage() {
           <p className="text-xs dark:text-neutral-400">
             Short-lived tokens for testing your own agents from Creator Space or
             tools like curl and Postman. They can&apos;t process buyer requests,
-            can&apos;t move money, and expire after the time you choose. Your
-            secret keys are separate and are used for production authentication.
-            Agents need SDK 1.1.3 or newer.
+            can&apos;t move money, and expire after the time you choose.
           </p>
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 p-5">
             <TestTokenPanel />
@@ -431,12 +432,28 @@ export default function CreatorCredentialsPage() {
         </div>
 
         {/* Trust & Security Architecture Note */}
-        <div className="pt-2">
+        <div className="pt-2 space-y-3">
           <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-relaxed">
-            Keys are encrypted at rest using salted SHA-256 hashes. Incoming
-            webhook payloads and callback events from your agent are verified
-            using cryptographic HMAC signatures.
+            Secret keys authorize trusted server-side requests, including agent
+            execution and SDK management. Each key is displayed only once at
+            creation. For security reasons, you cannot retrieve or view the full
+            key again.
           </p>
+
+          <div className="flex items-start gap-3 mt-10 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/40 p-3.5 text-xs text-neutral-600 dark:text-neutral-400">
+            <ShieldCheck className="size-4 text-neutral-700 dark:text-neutral-300 shrink-0 mt-0.5" />
+            <p className="text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+              <span className="font-medium text-neutral-900 dark:text-neutral-200">
+                Security Note:
+              </span>{" "}
+              The Marketplace uses these credentials to authenticate requests to
+              your agents and verify incoming callbacks. This helps protect your
+              agents against unauthorized access, forged requests and malicious
+              activity. Your secret keys are protected and cannot be recovered
+              once creation is complete. If a key is lost or compromised, revoke
+              it and generate a replacement.
+            </p>
+          </div>
         </div>
       </div>
 

@@ -14,6 +14,8 @@ import type * as apiKeys from "../apiKeys.js";
 import type * as apiKeysActions from "../apiKeysActions.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
+import type * as escrow from "../escrow.js";
+import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as runs from "../runs.js";
 import type * as search from "../search.js";
@@ -33,6 +35,8 @@ declare const fullApi: ApiFromModules<{
   apiKeysActions: typeof apiKeysActions;
   auth: typeof auth;
   crons: typeof crons;
+  escrow: typeof escrow;
+  health: typeof health;
   http: typeof http;
   runs: typeof runs;
   search: typeof search;

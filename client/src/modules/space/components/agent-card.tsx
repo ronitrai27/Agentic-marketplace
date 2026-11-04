@@ -21,18 +21,20 @@ export type AgentWithPricing = Doc<"agents"> & {
   pricing: Doc<"agent_pricing"> | null;
 };
 
-const STATUS: Record<Doc<"agents">["status"], { label: string; dot: string }> =
-  {
-    active: { label: "Active", dot: "bg-green-500" },
-    paused: { label: "Paused", dot: "bg-amber-500" },
-    suspended: { label: "Suspended", dot: "bg-red-500" },
-    archived: { label: "Archived", dot: "bg-zinc-400" },
-  };
+const STATUS: Record<
+  Doc<"agents">["status"],
+  { label: string; dot: string; text: string }
+> = {
+  active: { label: "Active", dot: "bg-green-500", text: "text-muted-foreground" },
+  paused: { label: "Paused", dot: "bg-amber-500", text: "text-amber-500 dark:text-yellow-400" },
+  suspended: { label: "Suspended", dot: "bg-red-500", text: "text-red-500 dark:text-red-400" },
+  archived: { label: "Archived", dot: "bg-red-500", text: "text-red-500 dark:text-red-400" },
+};
 
 export function StatusText({ status }: { status: Doc<"agents">["status"] }) {
   const s = STATUS[status];
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${s.text}`}>
       <span className={`size-1.5 rounded-full ${s.dot}`} />
       {s.label}
     </span>
@@ -82,9 +84,7 @@ export function AgentCard({
   const extra = agent.tags.length - tags.length;
 
   return (
-    <div
-      className={`rounded-xl border border-border bg-card p-5 shadow-2xs transition-colors hover:border-foreground/30 flex flex-col gap-4 ${agent.status === "archived" ? "opacity-60" : ""}`}
-    >
+    <div className="rounded-xl border border-border bg-card p-5 shadow-2xs transition-colors hover:border-foreground/30 flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <LogoUpload

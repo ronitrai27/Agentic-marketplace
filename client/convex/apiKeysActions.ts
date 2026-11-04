@@ -3,6 +3,24 @@
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { constants, createPublicKey, publicEncrypt } from "node:crypto";
+
+/**
+ * Seals a raw key to the run worker's RSA public key (RUN_SECRET_PUBLIC_KEY). The result can be stored but not read
+ * back by Convex: only the worker, which holds the private key, can open it to sign requests to the creator's agents.
+ */
+function seal(rawKey: string): string {
+  const publicKey = process.env.RUN_SECRET_PUBLIC_KEY;
+  if (!publicKey) throw new Error("Secret keys are not configured on the server.");
+  return publicEncrypt(
+    {
+      key: createPublicKey({ key: Buffer.from(publicKey, "base64"), format: "der", type: "spki" }),
+      padding: constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    Buffer.from(rawKey, "utf8"),
+  ).toString("base64");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Node.js actions — require "use node" because they use node:crypto.
@@ -44,7 +62,7 @@ export const getOrCreatePublicKey = action({
 /**
  * Generate a new secret API key.
  * All crypto (randomBytes + SHA-256 hash) runs server-side.
- * The raw key is returned ONCE to the caller and never stored.
+ * The raw key is returned ONCE to the caller. We keep its hash (to verify calls) and a sealed copy only the worker can open.
  */
 export const generateSecretKey = action({
   args: {
@@ -74,13 +92,14 @@ export const generateSecretKey = action({
       userId: identity.subject,
       keyHash,
       previewKey,
+      sealed: seal(rawKey),
       expiresAt: args.expiresAt,
       allowedRegions: args.allowedRegions.length > 0 ? args.allowedRegions : ["all"],
       allowedIps: args.allowedIps,
       rateLimitPerMin: args.rateLimitPerMin ?? 10,
     });
 
-    // Raw key returned ONCE to the client — never stored, never logged
+    // Raw key returned ONCE to the client — never logged, never shown again
     return { rawKey, previewKey };
   },
 });
@@ -108,6 +127,7 @@ export const rotateSecretKey = action({
       userId: identity.subject,
       newKeyHash: keyHash,
       newPreviewKey: previewKey,
+      newSealed: seal(rawKey),
     });
 
     return { rawKey, previewKey };

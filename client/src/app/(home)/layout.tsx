@@ -5,6 +5,8 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/modules/space/components/theme-toggle";
 import { NotificationButton } from "@/modules/space/components/notification-button";
 import { WalletBadge } from "@/modules/space/components/wallet-badge";
+import { ActiveRunsPill } from "@/modules/space/components/runs/active-runs-pill";
+import { RunSheetHost } from "@/modules/space/components/runs/run-sheet-host";
 import { HeaderUserMenu } from "@/modules/space/components/header-user-menu";
 import { AgentSearch } from "@/modules/space/components/agent-search";
 import { SpaceBreadcrumbs } from "@/modules/space/components/space-breadcrumbs";
@@ -45,6 +47,7 @@ export default function Layout({
 
             {/* Right slot: theme toggle, notification, wallet badge, and user avatar with dropdown */}
             <div className="flex items-center gap-2 shrink-0">
+              <ActiveRunsPill />
               <WalletBadge />
               <ThemeToggle />
               <NotificationButton />
@@ -58,6 +61,7 @@ export default function Layout({
           </div>
         </div>
       </SidebarInset>
+      <RunSheetHost />
     </SidebarProvider>
   );
 }
