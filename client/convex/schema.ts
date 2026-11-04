@@ -198,6 +198,23 @@ export default defineSchema({
     totalLatencyMs: v.number(),
   }).index("by_agent_day", ["agentId", "day"]),
 
+  // Daily per-caller usage of an agent (creator analytics: who is calling, how often, how well).
+  agent_callers_daily: defineTable({
+    agentId: v.id("agents"),
+    userId: v.string(),
+    day: v.string(), // UTC
+    userName: v.optional(v.string()),
+    userAvatar: v.optional(v.string()),
+    lastIp: v.optional(v.string()),
+    lastRegion: v.optional(v.string()),
+    totalRuns: v.number(),
+    successRuns: v.number(),
+    failedRuns: v.number(),
+    totalLatencyMs: v.number(),
+  })
+    .index("by_agent_day", ["agentId", "day"])
+    .index("by_agent_day_user", ["agentId", "day", "userId"]),
+
   // ─── Gateway runs ──────────────────────────────────────────────────
   // One row per accepted run. The Temporal workflow (id = "run-<runId>") owns its lifecycle
   // and reports back through /worker/run-status. Never holds the agent's baseUrl.
@@ -229,11 +246,28 @@ export default defineSchema({
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
+    /** Latest `task.progress` percent from the agent (0-100), for live progress bars. */
+    progressPct: v.optional(v.number()),
+    /** What the agent returned (schema-checked), kept for the Output tab. Clipped, see MAX_OUTPUT_CHARS. */
+    // ─── Trace: who called, from where, how long it took ───
+    callerName: v.optional(v.string()),
+    callerAvatar: v.optional(v.string()),
+    clientIp: v.optional(v.string()),
+    /** Region/country as far as the edge told us (header or geo header). */
+    clientRegion: v.optional(v.string()),
+    /** Total wall time from admission to the final status. */
+    durationMs: v.optional(v.number()),
   })
     .index("by_agent_status", ["agentId", "status"])
     .index("by_user_created", ["userId", "createdAt"])
     .index("by_user_hold", ["userId", "holdStatus"])
     .index("by_status_created", ["status", "createdAt"]),
+
+  // What the agent returned, kept apart from `runs` so lists of runs never load large outputs.
+  run_outputs: defineTable({
+    runId: v.id("runs"),
+    outputJson: v.string(), // clipped, see MAX_OUTPUT_CHARS
+  }).index("by_run", ["runId"]),
 
   // Live feed of what the agent emitted (SSE events) plus gateway notes, so a reload loses nothing.
   run_events: defineTable({

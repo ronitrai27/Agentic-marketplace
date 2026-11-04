@@ -3,7 +3,10 @@
 import React from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { CheckCircle2, CircleAlert, Lock, WifiOff, XCircle } from "lucide-react";
+import { CheckCircle2, CircleAlert, Eraser, Lock, WifiOff, XCircle } from "lucide-react";
+import { Terminal } from "@lucasmarkes/hairline/react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RunConsole, RunOutput, outputFromEvents } from "./run-console";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
@@ -150,7 +153,7 @@ function EventRow({ event, base }: { event: RunEvent; base: number }) {
   );
 }
 
-function RunBody({ runId, onClose }: { runId: Id<"runs">; onClose: () => void }) {
+function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () => void; onClear: () => void }) {
   const run = useQuery(api.runs.get, { runId });
   const events = useQuery(api.runs.events, { runId });
   const start = useAction(api.temporal.start);
@@ -165,6 +168,7 @@ function RunBody({ runId, onClose }: { runId: Id<"runs">; onClose: () => void })
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [sendError, setSendError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
+  const [tab, setTab] = React.useState<"traces" | "output">("traces");
 
   const fileNames = React.useMemo(
     () => new Set(fields.flatMap((f) => (f.kind === "file" ? [f.name, ...(f.filenameField ? [f.filenameField] : [])] : []))),
@@ -232,7 +236,16 @@ function RunBody({ runId, onClose }: { runId: Id<"runs">; onClose: () => void })
     setSendError(null);
     setSending(true);
     try {
-      await start({ runId, inputJson: JSON.stringify(built.input) });
+      // Best effort: the trace records where the run came from, but never blocks it
+      const where: { ip?: string | null; region?: string | null } = await fetch("/api/client-info", { cache: "no-store" })
+        .then((r) => r.json())
+        .catch(() => ({}));
+      await start({
+        runId,
+        inputJson: JSON.stringify(built.input),
+        clientIp: where.ip ?? undefined,
+        clientRegion: where.region ?? undefined,
+      });
       try {
         localStorage.removeItem(draftKey);
       } catch {
@@ -262,7 +275,20 @@ function RunBody({ runId, onClose }: { runId: Id<"runs">; onClose: () => void })
   return (
     <>
       <SheetHeader className="border-b border-border">
-        <SheetTitle className="text-lg">{run.agent.name}</SheetTitle>
+        <div className="flex items-center gap-2.5 pr-8">
+          {run.agent.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={run.agent.logoUrl} alt="" className="size-8 shrink-0 rounded-lg object-cover" />
+          ) : (
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold">
+              {run.agent.name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+          <SheetTitle className="min-w-0 flex-1 truncate text-lg">{run.agent.name}</SheetTitle>
+          <Button variant="outline" size="sm" onClick={onClear} title="Clear this view">
+            <Eraser className="size-3.5" /> Clear
+          </Button>
+        </div>
         <SheetDescription className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${status.tone}`}>
             {run.status === "running" && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
@@ -295,9 +321,9 @@ function RunBody({ runId, onClose }: { runId: Id<"runs">; onClose: () => void })
         </div>
       )}
 
-      <div ref={logRef} className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
         {run.status === "awaiting_input" && values ? (
-          <section className="space-y-4">
+          <section className="min-h-0 flex-1 space-y-4 overflow-y-auto">
             <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Input</h3>
             <SchemaForm
               fields={fields}
@@ -320,26 +346,27 @@ function RunBody({ runId, onClose }: { runId: Id<"runs">; onClose: () => void })
                 )}
               </details>
             )}
-            <section className="space-y-3">
-              <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Live events</h3>
-              {events && events.length > 0 ? (
-                <ul className="space-y-2.5">
-                  {events.map((e) => (
-                    <EventRow key={e.seq} event={e} base={base} />
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {active ? "Waiting for the agent to report in…" : "No events were recorded."}
-                </p>
-              )}
-              {run.error && (
-                <p className="flex items-start gap-1.5 rounded-lg bg-red-50 p-2.5 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
-                  <XCircle className="mt-0.5 size-3.5 shrink-0" />
-                  {run.error.message}
-                </p>
-              )}
-            </section>
+            <Tabs value={tab} onValueChange={(v) => setTab(v as "traces" | "output")} className="flex-none gap-0">
+              <TabsList>
+                <TabsTrigger value="traces">
+                  Traces <span className="tabular-nums text-muted-foreground">{events?.length ?? 0}</span>
+                </TabsTrigger>
+                <TabsTrigger value="output">
+                  Output {run.outputJson && <span className="size-1.5 rounded-full bg-emerald-500" />}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {tab === "traces" ? (
+              <RunConsole
+                events={events}
+                base={base}
+                live={active}
+                runLabel={`run-${runId.slice(0, 8)} · ${run.agent.slug}`}
+                error={run.error?.message}
+              />
+            ) : (
+              <RunOutput outputJson={run.outputJson ?? outputFromEvents(events)} status={run.status} />
+            )}
           </>
         )}
       </div>
@@ -385,13 +412,36 @@ class Boundary extends React.Component<{ children: React.ReactNode; onClose: () 
 }
 
 /** Right-hand panel for one run. Everything shown comes from Convex, so a reload or a dropped connection loses nothing. */
-export function RunSheet({ runId, onClose }: { runId: string; onClose: () => void }) {
+export function RunSheet({ runId, onClose, onClear }: { runId: string; onClose: () => void; onClear: () => void }) {
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="right" className="w-full gap-0 sm:max-w-xl">
         <Boundary onClose={onClose}>
-          <RunBody runId={runId as Id<"runs">} onClose={onClose} />
+          <RunBody runId={runId as Id<"runs">} onClose={onClose} onClear={onClear} />
         </Boundary>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/** What the sheet shows when no run is selected (or after "Clear"). */
+export function EmptyRunSheet({ onClose }: { onClose: () => void }) {
+  return (
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
+      <SheetContent side="right" className="w-full gap-0 sm:max-w-xl">
+        <SheetHeader className="border-b border-border">
+          <SheetTitle className="text-lg">Runs</SheetTitle>
+          <SheetDescription>Agent activity shows up here.</SheetDescription>
+        </SheetHeader>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+          <Terminal />
+          <p className="text-sm text-muted-foreground">No runs right now</p>
+        </div>
+        <SheetFooter>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </SheetFooter>
       </SheetContent>
     </Sheet>
   );

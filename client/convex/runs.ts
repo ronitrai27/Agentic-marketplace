@@ -1,7 +1,7 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { escrowCredits, getCredits, setCredits } from "./escrow";
 import { chargeMicrosFor, microsToCredits, runQuote, type PlanMicros } from "../src/lib/agent-display";
@@ -20,6 +20,7 @@ const HOLD_TTL_MS = 15 * 60_000;
 const HEALTH_FAILURE_LIMIT = 3;
 const MAX_INPUT_CHARS = 256_000;
 const MAX_EVENT_CHARS = 32_000;
+const MAX_OUTPUT_CHARS = 400_000;
 const MAX_EVENTS_PER_RUN = 1000;
 const EVENTS_SHOWN = 500;
 
@@ -112,6 +113,81 @@ async function releaseHold(ctx: MutationCtx, run: Doc<"runs">) {
   if (run.holdStatus === "held") await ctx.db.patch(run._id, { holdStatus: "released" });
 }
 
+/** Name and avatar of a caller, snapshotted onto the run when it is created. */
+async function callerOf(ctx: MutationCtx, userId: string): Promise<{ callerName?: string; callerAvatar?: string }> {
+  try {
+    const user = await (ctx as any).runQuery(components.betterAuth.adapter.findOne, {
+      model: "user",
+      where: [{ field: "_id", value: userId }],
+    });
+    return { callerName: user?.name || user?.email || undefined, callerAvatar: user?.image || undefined };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Trace + stats for a run that reached a final state: total time, then the agent's running counters, its daily row
+ * and the per-caller daily row. Called exactly once per run (terminal states stick).
+ */
+async function recordOutcome(ctx: MutationCtx, run: Doc<"runs">, ok: boolean, now: number) {
+  const durationMs = Math.max(0, now - (run.startedAt ?? run.createdAt));
+  await ctx.db.patch(run._id, { durationMs });
+  const day = new Date(now).toISOString().slice(0, 10);
+  const bump = { totalRuns: 1, successRuns: ok ? 1 : 0, failedRuns: ok ? 0 : 1, totalLatencyMs: durationMs };
+
+  const total = await ctx.db.query("agent_stats").withIndex("by_agent", (q) => q.eq("agentId", run.agentId)).first();
+  if (total) {
+    await ctx.db.patch(total._id, {
+      totalRuns: total.totalRuns + 1,
+      successRuns: total.successRuns + bump.successRuns,
+      failedRuns: total.failedRuns + bump.failedRuns,
+      totalLatencyMs: total.totalLatencyMs + durationMs,
+      lastRunAt: now,
+      updatedAt: now,
+    });
+  } else {
+    await ctx.db.insert("agent_stats", { agentId: run.agentId, ...bump, lastRunAt: now, updatedAt: now });
+  }
+
+  const daily = await ctx.db
+    .query("agent_stats_daily")
+    .withIndex("by_agent_day", (q) => q.eq("agentId", run.agentId).eq("day", day))
+    .first();
+  if (daily) {
+    await ctx.db.patch(daily._id, {
+      totalRuns: daily.totalRuns + 1,
+      successRuns: daily.successRuns + bump.successRuns,
+      failedRuns: daily.failedRuns + bump.failedRuns,
+      totalLatencyMs: daily.totalLatencyMs + durationMs,
+    });
+  } else {
+    await ctx.db.insert("agent_stats_daily", { agentId: run.agentId, day, ...bump });
+  }
+
+  const caller = await ctx.db
+    .query("agent_callers_daily")
+    .withIndex("by_agent_day_user", (q) => q.eq("agentId", run.agentId).eq("day", day).eq("userId", run.userId))
+    .first();
+  const identity = {
+    userName: run.callerName,
+    userAvatar: run.callerAvatar,
+    lastIp: run.clientIp,
+    lastRegion: run.clientRegion,
+  };
+  if (caller) {
+    await ctx.db.patch(caller._id, {
+      ...identity,
+      totalRuns: caller.totalRuns + 1,
+      successRuns: caller.successRuns + bump.successRuns,
+      failedRuns: caller.failedRuns + bump.failedRuns,
+      totalLatencyMs: caller.totalLatencyMs + durationMs,
+    });
+  } else {
+    await ctx.db.insert("agent_callers_daily", { agentId: run.agentId, userId: run.userId, day, ...identity, ...bump });
+  }
+}
+
 /** A finished run no longer needs the buyer's uploaded files: delete them rather than keep them around. */
 async function dropStoredInput(ctx: MutationCtx, run: Doc<"runs">) {
   if (!run.inputStorageId) return;
@@ -132,6 +208,8 @@ export const admit = internalMutation({
     source: v.union(v.literal("key"), v.literal("session")),
     keyId: v.optional(v.id("creator_api_keys")),
     inputJson: v.string(),
+    clientIp: v.optional(v.string()),
+    clientRegion: v.optional(v.string()),
   },
   handler: async (
     ctx,
@@ -168,6 +246,9 @@ export const admit = internalMutation({
       inputJson: args.inputJson,
       timeoutSeconds,
       createdAt: Date.now(),
+      clientIp: args.clientIp,
+      clientRegion: args.clientRegion,
+      ...(await callerOf(ctx, args.userId)),
     });
     return { ok: true, runId, timeoutSeconds };
   },
@@ -225,6 +306,8 @@ export const hold = mutation({
       holdStatus: "held",
       timeoutSeconds: timeoutFor(agent),
       createdAt: Date.now(),
+      callerName: identity.name || identity.email || undefined,
+      callerAvatar: identity.pictureUrl || undefined,
     });
     await ctx.scheduler.runAfter(HOLD_TTL_MS, internal.runs.expireAwaiting, { runId });
     return { runId, holdCredits };
@@ -266,6 +349,8 @@ export const beginRun = internalMutation({
     userId: v.string(),
     inputJson: v.optional(v.string()),
     inputStorageId: v.optional(v.id("_storage")),
+    clientIp: v.optional(v.string()),
+    clientRegion: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ ok: true; timeoutSeconds: number } | Rejection> => {
     const run = await ctx.db.get(args.runId);
@@ -300,6 +385,8 @@ export const beginRun = internalMutation({
       status: "queued",
       inputJson: args.inputJson ?? "{}",
       ...(args.inputStorageId ? { inputStorageId: args.inputStorageId, inputLarge: true } : {}),
+      clientIp: args.clientIp,
+      clientRegion: args.clientRegion,
       createdAt: Date.now(),
     });
     return { ok: true, timeoutSeconds: run.timeoutSeconds };
@@ -325,6 +412,8 @@ export const setStatus = internalMutation({
     if (args.status !== "running") {
       await releaseHold(ctx, run);
       await dropStoredInput(ctx, run);
+      // Only runs that reached the agent count against it, not queue/worker failures
+      if (run.status === "running") await recordOutcome(ctx, run, false, now);
     }
     await ctx.db.patch(args.runId, {
       status: args.status,
@@ -358,6 +447,7 @@ export const reapStale = internalMutation({
         } else if (deadline > now) continue;
         await releaseHold(ctx, run);
         await dropStoredInput(ctx, run);
+        if (status === "running") await recordOutcome(ctx, run, false, now);
         await ctx.db.patch(run._id, {
           status: "failed",
           finishedAt: now,
@@ -396,7 +486,20 @@ export const complete = internalMutation({
       await ctx.db.patch(runId, { holdStatus: "settled", chargedCredits: charged });
     }
     await dropStoredInput(ctx, run);
-    await ctx.db.patch(runId, { status: "succeeded", finishedAt: Date.now() });
+    const now = Date.now();
+    await recordOutcome(ctx, run, true, now);
+    await ctx.db.patch(runId, {
+      status: "succeeded",
+      finishedAt: now,
+      progressPct: 100,
+    });
+    await ctx.db.insert("run_outputs", {
+      runId,
+      outputJson:
+        outputJson.length > MAX_OUTPUT_CHARS
+          ? JSON.stringify({ truncated: true, preview: outputJson.slice(0, MAX_OUTPUT_CHARS) })
+          : outputJson,
+    });
     return { ok: true as const, charged };
   },
 });
@@ -414,6 +517,18 @@ export const appendEvents = internalMutation({
       .first();
     let seq = last?.seq ?? 0;
     const at = Date.now();
+    // Latest progress percent drives the live bar in the sidebar
+    for (const e of events) {
+      if (e.type !== "task.progress") continue;
+      try {
+        const pct = Number(JSON.parse(e.dataJson)?.percent);
+        if (Number.isFinite(pct) && !TERMINAL.has(run.status)) {
+          await ctx.db.patch(runId, { progressPct: Math.min(100, Math.max(0, pct)) });
+        }
+      } catch {
+        /* not JSON, ignore */
+      }
+    }
     for (const e of events) {
       if (seq >= MAX_EVENTS_PER_RUN && !ALWAYS_KEPT.has(e.type)) continue;
       seq += 1;
@@ -520,6 +635,8 @@ export const get = query({
       chargedCredits: run.chargedCredits ?? null,
       inputJson: run.status === "awaiting_input" || run.inputLarge ? null : run.inputJson,
       inputLarge: run.inputLarge ?? false,
+      outputJson:
+        (await ctx.db.query("run_outputs").withIndex("by_run", (q) => q.eq("runId", runId)).first())?.outputJson ?? null,
       agent: {
         name: agent.name,
         slug: agent.slug,
@@ -546,6 +663,38 @@ export const events = query({
   },
 });
 
+/** The signed-in buyer's own runs of one agent, newest first. Powers the History table on the agent page. */
+export const myForAgent = query({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+    if (!agent) return [];
+    const rows = await ctx.db
+      .query("runs")
+      .withIndex("by_user_created", (q) => q.eq("userId", identity.subject))
+      .order("desc")
+      .take(100);
+    return rows
+      .filter((r) => r.agentId === agent._id && r.status !== "awaiting_input")
+      .slice(0, 50)
+      .map((r) => ({
+        id: r._id as string,
+        status: r.status,
+        createdAt: r.createdAt,
+        durationMs: r.durationMs ?? (r.finishedAt ? r.finishedAt - (r.startedAt ?? r.createdAt) : null),
+        chargedCredits: r.chargedCredits ?? null,
+        holdCredits: r.holdCredits ?? null,
+        holdStatus: r.holdStatus ?? null,
+        errorMessage: r.error?.message ?? null,
+      }));
+  },
+});
+
 /** The buyer's latest runs, with their agent. Drives the header pill, the Run button state and the toasts. */
 export const myRecent = query({
   args: {},
@@ -567,6 +716,8 @@ export const myRecent = query({
         status: r.status,
         agentName: agent.name,
         agentSlug: agent.slug,
+        logoUrl: agent.logoUrl ?? null,
+        progressPct: r.progressPct ?? null,
         createdAt: r.createdAt,
         startedAt: r.startedAt ?? null,
         chargedCredits: r.chargedCredits ?? null,

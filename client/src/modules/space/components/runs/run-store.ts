@@ -12,14 +12,34 @@ const emit = () => listeners.forEach((l) => l());
 function writeUrl(id: string | null) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  if (id) url.searchParams.set("run", id);
+  if (id && id !== EMPTY_RUN) url.searchParams.set("run", id);
   else url.searchParams.delete("run");
   // Keep Next's own history state, or its router loses track of the page
   window.history.replaceState(window.history.state, "", url);
 }
 
+let last: string | null = null;
+
+/** Sentinel for the empty sheet ("No runs right now"). Never written to the URL. */
+export const EMPTY_RUN = "__empty__";
+
+/** "Clear": show the empty sheet instead of the run. The run itself is untouched. */
+export function clearRun() {
+  current = EMPTY_RUN;
+  last = EMPTY_RUN;
+  writeUrl(null);
+  emit();
+}
+
+/** Ctrl+Shift+B: closes the sheet if open, else reopens the last view (or `fallbackId`, the latest run; empty if none). */
+export function toggleRun(fallbackId?: string) {
+  if (current) return closeRun();
+  openRun(last ?? fallbackId ?? EMPTY_RUN);
+}
+
 export function openRun(id: string) {
   current = id;
+  last = id;
   writeUrl(id);
   emit();
 }

@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { usePathname } from "next/navigation";
 import {
   ArrowRight,
+  ChevronDown,
   Home,
   History,
   LogOut,
@@ -31,7 +32,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
-import { ActiveRunsIndicator, ActiveRunsList, useActiveRuns } from "@/modules/space/components/runs/active-runs-pill";
+import { ActiveRunsIndicator, RecentRunsList, useSidebarRuns } from "@/modules/space/components/runs/active-runs-pill";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
 
 const NAV_LINKS = [
@@ -45,7 +46,8 @@ const NAV_LINKS = [
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { data: session } = authClient.useSession();
   const pathname = usePathname();
-  const activeRuns = useActiveRuns();
+  const { active: activeRuns, finished } = useSidebarRuns();
+  const [recentOpen, setRecentOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
 
@@ -159,7 +161,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       <span>{label}</span>
                       {href === "/space/runs" && <ActiveRunsIndicator count={activeRuns.length} />}
                     </SidebarMenuButton>
-                    {href === "/space/runs" && <ActiveRunsList runs={activeRuns} />}
+                    {href === "/space/runs" && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={recentOpen ? "Hide recent runs" : "Show recent runs"}
+                          aria-expanded={recentOpen}
+                          onClick={() => setRecentOpen((v) => !v)}
+                          className="absolute right-1.5 top-2 flex size-5 cursor-pointer items-center justify-center rounded text-neutral-600 hover:bg-black/5 group-data-[collapsible=icon]:hidden dark:hover:bg-white/10"
+                        >
+                          <ChevronDown className={cn("size-4 transition-transform", recentOpen && "rotate-180")} />
+                        </button>
+                        {recentOpen && <RecentRunsList runs={finished} active={activeRuns} />}
+                      </>
+                    )}
                   </SidebarMenuItem>
                 );
               })}

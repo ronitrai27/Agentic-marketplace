@@ -1,5 +1,12 @@
 import React from "react";
-import { AlertTriangle, Brain, Check } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeftRight,
+  Check,
+  MessageSquare,
+  Sparkles,
+} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -28,7 +35,8 @@ import {
 import { AgentRating, normaliseRating } from "../agent-rating";
 import { RunAgentButton } from "./run-agent-button";
 import { AgentBanner } from "./agent-banner";
-import { AgentActivityCharts } from "./agent-activity-charts";
+import { AgentHistoryGate } from "./agent-history";
+import { AgentActivity } from "./agent-activity";
 
 export type AgentPageData = NonNullable<
   FunctionReturnType<typeof api.agentPage.getBySlug>
@@ -36,17 +44,20 @@ export type AgentPageData = NonNullable<
 
 const initial = (name: string) => name.trim().charAt(0).toUpperCase() || "?";
 
-/** Label on the left, content on the right, a hairline between rows. */
+/** Heading with an icon on top, content below at full width, a hairline between sections. */
 function Row({
   label,
+  icon: Icon,
   children,
 }: {
   label: string;
+  icon: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
 }) {
   return (
-    <section className="grid gap-3 border-t border-border py-7 md:grid-cols-[10rem_1fr] md:gap-8">
-      <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+    <section className=" py-4">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Icon className="size-4 text-muted-foreground" />
         {label}
       </h2>
       <div className="min-w-0">{children}</div>
@@ -79,28 +90,6 @@ function Avatar({
   );
 }
 
-function Stat({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-}) {
-  return (
-    <div className="p-4">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
-        {value}
-      </p>
-      {note && (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">{note}</p>
-      )}
-    </div>
-  );
-}
-
 /** Compact one-line price for the header, from the agent's stored pricing plan. */
 function priceSummary(pricing: AgentPageData["pricing"]): string {
   if (!pricing) return "No price set";
@@ -114,68 +103,6 @@ function priceSummary(pricing: AgentPageData["pricing"]): string {
   return lo === hi
     ? `${fmtMicros(lo)} / run`
     : `${fmtMicros(lo)} – ${fmtMicros(hi)} / run`;
-}
-
-function Pricing({ pricing }: { pricing: AgentPageData["pricing"] }) {
-  if (!pricing)
-    return <p className="text-sm text-muted-foreground">No price set.</p>;
-
-  if (pricing.shape === "per_run") {
-    return (
-      <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tracking-tight text-foreground">
-          {fmtMicros(pricing.priceMicros)}
-        </span>
-        <span className="text-sm text-muted-foreground">per run</span>
-        {"negotiable" in pricing && pricing.negotiable && (
-          <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-            Negotiable
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  if (pricing.shape === "per_unit") {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold tracking-tight text-foreground">
-            {fmtMicros(pricing.pricePerUnitMicros)}
-          </span>
-          <span className="text-sm text-muted-foreground">
-            per {pricing.unitLabel}
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Minimum {fmtMicros(pricing.minChargeMicros)} per run
-          {pricing.maxUnitsPerRun
-            ? ` · up to ${pricing.maxUnitsPerRun} ${pricing.unitLabel}s`
-            : ""}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">
-        {SHAPE_NAME[pricing.shape]} by{" "}
-        <span className="font-mono">{pricing.fieldKey}</span>
-      </p>
-      <div className="rounded-lg border border-border divide-y divide-border max-w-sm">
-        {pricing.tiers.map((t) => (
-          <div
-            key={t.value}
-            className="flex items-center justify-between px-3.5 py-2 text-xs"
-          >
-            <span className="font-mono">{t.value}</span>
-            <span className="font-semibold">{fmtMicros(t.priceMicros)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function Fields({ title, json }: { title: string; json: string }) {
@@ -217,15 +144,12 @@ function Fields({ title, json }: { title: string; json: string }) {
 }
 
 export function AgentPageView({ agent }: { agent: AgentPageData }) {
-  const { stats } = agent;
-  const hasRuns = stats.totalRuns > 0;
-  const avgLatency = hasRuns
-    ? Math.round(stats.totalLatencyMs / stats.totalRuns)
-    : null;
-  const successRate = hasRuns
-    ? Math.round((stats.successRuns / stats.totalRuns) * 100)
-    : null;
-  const modelIcons = uniqueModelIcons(agent.models);
+  const modelIcons = uniqueModelIcons(agent.models).map((icon) => ({
+    ...icon,
+    ids: agent.models
+      .filter((m) => modelIcon(m.id, m.provider)?.src === icon.src)
+      .map((m) => m.id),
+  }));
 
   return (
     <div className="flex-1 h-full overflow-y-auto scrollbar-thin bg-background">
@@ -252,7 +176,11 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
                 value={agent.ratingAvg}
                 reviewCount={agent.ratingCount}
               />
-              <RunAgentButton agentName={agent.name} agentSlug={agent.slug} pricing={agent.pricing as PlanMicros | null} />
+              <RunAgentButton
+                agentName={agent.name}
+                agentSlug={agent.slug}
+                pricing={agent.pricing as PlanMicros | null}
+              />
             </div>
           </div>
 
@@ -260,10 +188,11 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
             {agent.name}
           </h1>
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-primary">
             <span className="inline-flex items-center gap-1.5">
               <Avatar
                 src={agent.owner.image}
+                // fallback={agent.owner.name.charAt(0).toUpperCase()}
                 name={agent.owner.name}
                 className="size-4 text-[9px]"
               />
@@ -278,14 +207,22 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
                 <span>·</span>
                 <span className="inline-flex items-center gap-1.5">
                   {modelIcons.map((icon) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={icon.src}
-                      src={icon.src}
-                      alt={icon.name}
-                      title={icon.name}
-                      className={`size-4 ${icon.theme ?? ""}`}
-                    />
+                    <Tooltip key={icon.src}>
+                      <TooltipTrigger
+                        aria-label={icon.ids.join(", ")}
+                        className="inline-flex cursor-default"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={icon.src}
+                          alt={icon.name}
+                          className={`size-4 ${icon.theme ?? ""}`}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="font-mono">
+                        {icon.ids.join(", ")}
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                 </span>
               </>
@@ -321,16 +258,16 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
             )}
           </div>
 
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-foreground/80">
+          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-foreground">
             {agent.description || "No description provided."}
           </p>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 ">
             <div className="flex flex-wrap gap-1.5">
               {agent.tags.map((id) => (
                 <span
                   key={id}
-                  className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground"
+                  className="rounded-full border border-border px-2.5 py-1 text-[11px] text-foreground"
                 >
                   {tagById(id)?.label ?? id}
                 </span>
@@ -342,9 +279,9 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
           </div>
         </header>
 
-        <div className="mt-10">
+        <div className="mt-5">
           {agent.keyCapabilities.length > 0 && (
-            <Row label="Key capabilities">
+            <Row label="Key capabilities" icon={Sparkles}>
               <ul className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
                 {agent.keyCapabilities.map((c) => (
                   <li
@@ -359,131 +296,55 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
             </Row>
           )}
 
-          <Row label="Pricing">
-            <Pricing pricing={agent.pricing} />
-          </Row>
+          <AgentHistoryGate slug={agent.slug}>
+            <Row label="Activity" icon={Activity}>
+              <AgentActivity
+                slug={agent.slug}
+                initial={{ stats: agent.stats, daily: agent.daily }}
+              />
+            </Row>
 
-
-          <Row label="Activity">
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 rounded-xl border border-border divide-x divide-y sm:divide-y-0 divide-border overflow-hidden">
-                <Stat
-                  label="Total runs"
-                  value={hasRuns ? stats.totalRuns.toLocaleString() : "0"}
-                />
-                <Stat
-                  label="Success"
-                  value={hasRuns ? stats.successRuns.toLocaleString() : "—"}
-                  note={
-                    successRate !== null
-                      ? `${successRate}% success rate`
-                      : undefined
-                  }
-                />
-                <Stat
-                  label="Failed"
-                  value={hasRuns ? stats.failedRuns.toLocaleString() : "—"}
-                />
-                <Stat
-                  label="Avg latency"
-                  value={
-                    avgLatency !== null
-                      ? `${avgLatency.toLocaleString()} ms`
-                      : "None"
-                  }
-                />
+            <Row label="Input & output" icon={ArrowLeftRight}>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Fields title="Input" json={agent.inputSchemaJson} />
+                <Fields title="Output" json={agent.outputSchemaJson} />
               </div>
+            </Row>
 
-              {hasRuns ? (
-                <AgentActivityCharts daily={agent.daily} />
+            <Row label="Reviews" icon={MessageSquare}>
+              {agent.reviews.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No reviews yet.</p>
               ) : (
-                <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center">
-                  <p className="text-sm font-medium text-foreground">
-                    No runs before
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Nobody has called this agent yet, so you would be the first.
-                    Charts appear after the first run.
-                  </p>
-                </div>
-              )}
-            </div>
-          </Row>
-
-          <Row label="Models">
-            {agent.models.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No models reported.
-              </p>
-            ) : (
-              <ul className="flex flex-wrap gap-2">
-                {agent.models.map((m) => {
-                  const icon = modelIcon(m.id, m.provider);
-                  return (
-                    <li
-                      key={m.id}
-                      className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
-                    >
-                      {icon ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={icon.src}
-                          alt={icon.name}
-                          className={`size-4 ${icon.theme ?? ""}`}
-                        />
-                      ) : (
-                        <Brain className="size-4 text-muted-foreground" />
-                      )}
-                      <span className="text-xs font-mono text-foreground">
-                        {m.id}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Row>
-
-          <Row label="Input & output">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Fields title="Input" json={agent.inputSchemaJson} />
-              <Fields title="Output" json={agent.outputSchemaJson} />
-            </div>
-          </Row>
-
-          <Row label="Reviews">
-            {agent.reviews.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No reviews yet.</p>
-            ) : (
-              <ul className="divide-y divide-border rounded-xl border border-border">
-                {agent.reviews.map((r) => (
-                  <li key={r.id} className="p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Avatar
-                          src={r.userAvatar}
-                          name={r.userName}
-                          className="size-7 text-xs"
-                        />
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-medium text-foreground">
-                            {r.userName}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {fmtDate(r.createdAt)}
-                          </p>
+                <ul className="divide-y divide-border rounded-xl border border-border">
+                  {agent.reviews.map((r) => (
+                    <li key={r.id} className="p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Avatar
+                            src={r.userAvatar}
+                            name={r.userName}
+                            className="size-7 text-xs"
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-medium text-foreground">
+                              {r.userName}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {fmtDate(r.createdAt)}
+                            </p>
+                          </div>
                         </div>
+                        <AgentRating value={normaliseRating(r.rating)} />
                       </div>
-                      <AgentRating value={normaliseRating(r.rating)} />
-                    </div>
-                    <p className="mt-3 text-sm leading-relaxed text-foreground/80">
-                      {r.comment}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Row>
+                      <p className="mt-3 text-sm leading-relaxed text-foreground/80">
+                        {r.comment}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Row>
+          </AgentHistoryGate>
         </div>
       </div>
     </div>

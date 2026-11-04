@@ -250,10 +250,16 @@ http.route({
     let userId: string;
     let keyId: Id<"creator_api_keys"> | undefined;
 
+    // Last hop is the one the platform proxy added; earlier entries are client-supplied.
+    const forwarded = (request.headers.get("X-Forwarded-For") ?? "").split(",");
+    const clientIp = forwarded[forwarded.length - 1]?.trim() || undefined;
+    const clientRegion =
+      request.headers.get("X-Catelog-Region")?.trim() ||
+      request.headers.get("CF-IPCountry")?.trim() ||
+      request.headers.get("X-Vercel-IP-Country")?.trim() ||
+      undefined;
+
     if (bearer.startsWith("cat_sec_")) {
-      // Last hop is the one the platform proxy added; earlier entries are client-supplied.
-      const forwarded = (request.headers.get("X-Forwarded-For") ?? "").split(",");
-      const clientIp = forwarded[forwarded.length - 1]?.trim() || undefined;
       const verdict = await ctx.runMutation(internal.apiKeys.verifyApiKey, {
         keyHash: await sha256Hex(bearer),
         clientIp,
@@ -288,6 +294,8 @@ http.route({
       source: keyId ? "key" : "session",
       keyId,
       inputJson: JSON.stringify(input),
+      clientIp,
+      clientRegion,
     });
     if (!admitted.ok) {
       return gatewayError(admitted.status, admitted.code, admitted.message, requestId, admitted.retryAfterSec);

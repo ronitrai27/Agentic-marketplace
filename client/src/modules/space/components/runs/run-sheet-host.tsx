@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
 import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
-import { RunSheet } from "../agent-page/run-sheet";
-import { closeRun, keepRunInUrl, openRun, startFromUrl, useOpenRunId } from "./run-store";
+import { EmptyRunSheet, RunSheet } from "../agent-page/run-sheet";
+import { EMPTY_RUN, clearRun, closeRun, keepRunInUrl, openRun, startFromUrl, toggleRun, useOpenRunId } from "./run-store";
 
 const fmtCredits = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, "")} credits`;
 
@@ -75,5 +75,24 @@ export function RunSheetHost() {
   React.useEffect(() => keepRunInUrl(), [pathname]);
   useRunToasts();
 
-  return runId ? <RunSheet runId={runId} onClose={closeRun} /> : null;
+  // Ctrl/Cmd+Shift+B toggles the run sheet (Ctrl+K is the header search)
+  const recent = useQuery(api.runs.myRecent);
+  const latestId = (recent?.find((r) => r.status === "running" || r.status === "queued") ?? recent?.[0])?.id;
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleRun(latestId);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [latestId]);
+
+  if (!runId) return null;
+  return runId === EMPTY_RUN ? (
+    <EmptyRunSheet onClose={closeRun} />
+  ) : (
+    <RunSheet runId={runId} onClose={closeRun} onClear={clearRun} />
+  );
 }

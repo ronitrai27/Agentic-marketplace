@@ -2,8 +2,44 @@ import { query } from "./_generated/server";
 import { components } from "./_generated/api";
 import { v } from "convex/values";
 
-const CHART_DAYS = 30;
+const CHART_DAYS = 90;
 const REVIEW_LIMIT = 20;
+
+/** Live stats and the daily series for the agent page (the page itself is cached, so it reads this separately). */
+export const activity = query({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+    if (!agent || agent.status === "archived" || agent.status === "suspended") return null;
+    const stats = await ctx.db
+      .query("agent_stats")
+      .withIndex("by_agent", (q) => q.eq("agentId", agent._id))
+      .first();
+    const start = new Date(Date.now() - (CHART_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+    const daily = await ctx.db
+      .query("agent_stats_daily")
+      .withIndex("by_agent_day", (q) => q.eq("agentId", agent._id).gte("day", start))
+      .collect();
+    return {
+      stats: {
+        totalRuns: stats?.totalRuns ?? 0,
+        successRuns: stats?.successRuns ?? 0,
+        failedRuns: stats?.failedRuns ?? 0,
+        totalLatencyMs: stats?.totalLatencyMs ?? 0,
+      },
+      daily: daily.map((d) => ({
+        day: d.day,
+        totalRuns: d.totalRuns,
+        successRuns: d.successRuns,
+        failedRuns: d.failedRuns,
+        totalLatencyMs: d.totalLatencyMs,
+      })),
+    };
+  },
+});
 
 /**
  * Everything the public agent page shows, in one query (the page caches it in Redis).

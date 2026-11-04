@@ -54,8 +54,14 @@ export const startRunWorkflow = internalAction({
  * If Temporal can't be reached the run is closed and the payment hold is released.
  */
 export const start = action({
-  args: { runId: v.id("runs"), inputJson: v.string() },
-  handler: async (ctx, { runId, inputJson }): Promise<{ ok: true }> => {
+  args: {
+    runId: v.id("runs"),
+    inputJson: v.string(),
+    /** Caller's address and region as seen by our Next.js edge (/api/client-info). */
+    clientIp: v.optional(v.string()),
+    clientRegion: v.optional(v.string()),
+  },
+  handler: async (ctx, { runId, inputJson, clientIp, clientRegion }): Promise<{ ok: true }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Please sign in." });
 
@@ -76,6 +82,8 @@ export const start = action({
     const begun = await ctx.runMutation(internal.runs.beginRun, {
       runId,
       userId: identity.subject,
+      clientIp: clientIp?.slice(0, 64),
+      clientRegion: clientRegion?.slice(0, 64),
       ...(stored ? { inputStorageId: stored } : { inputJson }),
     });
     if (!begun.ok) {
