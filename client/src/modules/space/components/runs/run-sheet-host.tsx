@@ -31,7 +31,18 @@ function useRunToasts() {
       const before = seen.current.get(r.id);
       if (before === r.status) continue;
       seen.current.set(r.id, r.status);
-      if (r.status === "awaiting_input" || r.status === "queued" || r.status === "cancelled") continue;
+      if (r.status === "awaiting_input" || r.status === "queued") continue;
+      const released = r.holdStatus === "released" && r.holdCredits ? ` ${fmtCredits(r.holdCredits)} released back to your wallet.` : " Nothing was charged.";
+
+      if (r.status === "cancelled") {
+        if (r.errorCode) {
+          toast.warning(`${r.agentName} run expired`, {
+            description: `${r.errorMessage ?? "The run was cancelled."}${released}`,
+            action: { label: "View", onClick: () => openRun(r.id) },
+          });
+        }
+        continue;
+      }
 
       if (r.status === "running") {
         toast.info(`${r.agentName} started running`, {
@@ -45,8 +56,9 @@ function useRunToasts() {
           action: { label: "View", onClick: () => openRun(r.id) },
         });
       } else if (r.status === "failed") {
-        toast.error(`${r.agentName} failed`, {
-          description: r.errorMessage ?? "Nothing was charged.",
+        toast.error(r.errorCode === "TIMEOUT" ? `${r.agentName} timed out` : `${r.agentName} failed`, {
+          description: `${r.errorMessage ?? "The agent could not finish this run."}${released}`,
+          duration: 10000,
           action: { label: "View", onClick: () => openRun(r.id) },
         });
       }

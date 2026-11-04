@@ -31,6 +31,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
+import { ActiveRunsIndicator, ActiveRunsList, useActiveRuns } from "@/modules/space/components/runs/active-runs-pill";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
 
 const NAV_LINKS = [
@@ -44,6 +45,7 @@ const NAV_LINKS = [
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { data: session } = authClient.useSession();
   const pathname = usePathname();
+  const activeRuns = useActiveRuns();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
 
@@ -155,7 +157,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         strokeWidth={1.75}
                       />
                       <span>{label}</span>
+                      {href === "/space/runs" && <ActiveRunsIndicator count={activeRuns.length} />}
                     </SidebarMenuButton>
+                    {href === "/space/runs" && <ActiveRunsList runs={activeRuns} />}
                   </SidebarMenuItem>
                 );
               })}

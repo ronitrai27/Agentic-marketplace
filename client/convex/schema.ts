@@ -232,7 +232,8 @@ export default defineSchema({
   })
     .index("by_agent_status", ["agentId", "status"])
     .index("by_user_created", ["userId", "createdAt"])
-    .index("by_user_hold", ["userId", "holdStatus"]),
+    .index("by_user_hold", ["userId", "holdStatus"])
+    .index("by_status_created", ["status", "createdAt"]),
 
   // Live feed of what the agent emitted (SSE events) plus gateway notes, so a reload loses nothing.
   run_events: defineTable({

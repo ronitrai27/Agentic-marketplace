@@ -10,6 +10,8 @@ const DEFAULT_TIMEOUT_S = 600;
 const MAX_TIMEOUT_S = 4 * 3600;
 /** A run older than its timeout plus this no longer holds a concurrency slot (worker lost, etc.). */
 const SLOT_GRACE_MS = 60_000;
+/** Extra time past the timeout before the marketplace itself aborts a run. */
+const REAP_GRACE_MS = 30_000;
 /** Per-user cap for signed-in (no key) callers on the /v1/runs gateway. */
 const SESSION_RATE_PER_MIN = 30;
 /** A payment hold with no input sent is released after this long. */
@@ -334,6 +336,40 @@ export const setStatus = internalMutation({
   },
 });
 
+/**
+ * Marketplace-side deadline. A queued/running run past its agent's max timeout (plus a short grace for the worker
+ * to report on its own) is failed here, so a dead worker or lost workflow can never leave it running forever.
+ */
+export const reapStale = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    let reaped = 0;
+    for (const status of ["queued", "running"] as const) {
+      const rows = await ctx.db
+        .query("runs")
+        .withIndex("by_status_created", (q) => q.eq("status", status))
+        .take(200);
+      for (const run of rows) {
+        const deadline = (run.startedAt ?? run.createdAt) + run.timeoutSeconds * 1000 + REAP_GRACE_MS;
+        if (status === "queued") {
+          // Queued runs never started: they get the same budget from admission
+          if (run.createdAt + run.timeoutSeconds * 1000 + REAP_GRACE_MS > now) continue;
+        } else if (deadline > now) continue;
+        await releaseHold(ctx, run);
+        await dropStoredInput(ctx, run);
+        await ctx.db.patch(run._id, {
+          status: "failed",
+          finishedAt: now,
+          error: { code: "TIMEOUT", message: `Run exceeded the agent's ${Math.round(run.timeoutSeconds / 60)} min limit and was stopped.` },
+        });
+        reaped++;
+      }
+    }
+    return { reaped };
+  },
+});
+
 /** The agent answered and its output matched the schema: charge the buyer and close the run. */
 export const complete = internalMutation({
   args: { runId: v.id("runs"), outputJson: v.string() },
@@ -535,6 +571,9 @@ export const myRecent = query({
         startedAt: r.startedAt ?? null,
         chargedCredits: r.chargedCredits ?? null,
         errorMessage: r.error?.message ?? null,
+        errorCode: r.error?.code ?? null,
+        holdCredits: r.holdCredits ?? null,
+        holdStatus: r.holdStatus ?? null,
       });
     }
     return out;

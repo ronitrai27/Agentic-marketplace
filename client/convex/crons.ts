@@ -10,6 +10,9 @@ crons.interval(
   internal.apiKeys.cleanupRateWindows,
 );
 
+// Abort runs past their agent's max timeout (dead worker / lost workflow)
+crons.interval("reap-stale-runs", { minutes: 1 }, internal.runs.reapStale);
+
 // Fix any drift between Convex and the Typesense search index
 crons.daily("resync-search-index", { hourUTC: 3, minuteUTC: 0 }, internal.search.backfill);
 
