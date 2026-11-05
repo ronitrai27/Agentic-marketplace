@@ -59,7 +59,9 @@ export default function Layout({
           </div>
         </div>
       </SidebarInset>
-      <RunSheetHost />
+      <Suspense fallback={null}>
+        <RunSheetHost />
+      </Suspense>
     </SidebarProvider>
   );
 }

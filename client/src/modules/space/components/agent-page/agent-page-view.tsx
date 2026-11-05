@@ -32,11 +32,12 @@ import {
   uniqueModelIcons,
   type PlanMicros,
 } from "@/lib/agent-display";
-import { AgentRating, normaliseRating } from "../agent-rating";
+import { AgentRating } from "../agent-rating";
 import { RunAgentButton } from "./run-agent-button";
 import { AgentBanner } from "./agent-banner";
 import { AgentHistoryGate } from "./agent-history";
 import { AgentActivity } from "./agent-activity";
+import { AgentReviews } from "./agent-reviews";
 
 export type AgentPageData = NonNullable<
   FunctionReturnType<typeof api.agentPage.getBySlug>
@@ -312,37 +313,10 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
             </Row>
 
             <Row label="Reviews" icon={MessageSquare}>
-              {agent.reviews.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No reviews yet.</p>
-              ) : (
-                <ul className="divide-y divide-border rounded-xl border border-border">
-                  {agent.reviews.map((r) => (
-                    <li key={r.id} className="p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <Avatar
-                            src={r.userAvatar}
-                            name={r.userName}
-                            className="size-7 text-xs"
-                          />
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-medium text-foreground">
-                              {r.userName}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {fmtDate(r.createdAt)}
-                            </p>
-                          </div>
-                        </div>
-                        <AgentRating value={normaliseRating(r.rating)} />
-                      </div>
-                      <p className="mt-3 text-sm leading-relaxed text-foreground/80">
-                        {r.comment}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <AgentReviews
+                slug={agent.slug}
+                initial={agent.reviews.map((r) => ({ ...r, userAvatar: r.userAvatar }))}
+              />
             </Row>
           </AgentHistoryGate>
         </div>

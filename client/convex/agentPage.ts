@@ -3,7 +3,8 @@ import { components } from "./_generated/api";
 import { v } from "convex/values";
 
 const CHART_DAYS = 90;
-const REVIEW_LIMIT = 20;
+/** First page of reviews baked into the cached page; the rest load live. */
+const REVIEW_LIMIT = 10;
 
 /** Live stats and the daily series for the agent page (the page itself is cached, so it reads this separately). */
 export const activity = query({
@@ -128,7 +129,9 @@ export const getBySlug = query({
         userAvatar: r.userAvatar ?? null,
         rating: r.rating,
         comment: r.comment,
+        likes: r.likes ?? 0,
         createdAt: r.createdAt,
+        isOwner: r.userId === agent.ownerId,
       })),
     };
   },

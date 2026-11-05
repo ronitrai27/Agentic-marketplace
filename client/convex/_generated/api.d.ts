@@ -17,6 +17,7 @@ import type * as crons from "../crons.js";
 import type * as escrow from "../escrow.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
+import type * as reviews from "../reviews.js";
 import type * as runs from "../runs.js";
 import type * as search from "../search.js";
 import type * as temporal from "../temporal.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   escrow: typeof escrow;
   health: typeof health;
   http: typeof http;
+  reviews: typeof reviews;
   runs: typeof runs;
   search: typeof search;
   temporal: typeof temporal;

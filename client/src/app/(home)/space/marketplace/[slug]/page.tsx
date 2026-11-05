@@ -4,6 +4,7 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "../../../../../../convex/_generated/api";
 import { cached } from "@/lib/redis/cache";
 import { getRedis } from "@/lib/redis/client";
+import { agentPageKey } from "@/lib/redis/agent-page-cache";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentPageView } from "@/modules/space/components/agent-page/agent-page-view";
 
@@ -13,7 +14,7 @@ const CACHE_SECONDS = 20 * 60;
 const MISS_SECONDS = 60;
 
 async function loadAgent(slug: string) {
-  const redisKey = `agent-page:v1:${slug}`;
+  const redisKey = agentPageKey(slug);
   // `cached` stores whatever load returns; wrap so a missing agent is a cacheable value, not null
   const entry = await cached(redisKey, CACHE_SECONDS, async () => {
     const agent = await fetchQuery(api.agentPage.getBySlug, { slug });

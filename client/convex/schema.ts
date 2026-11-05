@@ -182,6 +182,8 @@ export default defineSchema({
     userAvatar: v.optional(v.string()),
     rating: v.number(), // 1–5
     comment: v.string(),
+    /** Like counter only; who liked is not stored. Missing = 0. */
+    likes: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
   })
