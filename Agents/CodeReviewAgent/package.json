@@ -7,12 +7,14 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "catelog": "tsx src/catelog-server.ts",
     "typecheck": "tsc --noEmit",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"
   },
   "dependencies": {
+    "catelog": "1.2.0",
     "cors": "^2.8.5",
     "dotenv": "^18.0.8",
     "express": "^4.21.2",
