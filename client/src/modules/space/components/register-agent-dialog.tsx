@@ -1,0 +1,761 @@
+"use client";
+
+import React, { useEffect, useRef, useState } from "react";
+import { useMutation } from "convex/react";
+import { toast } from "sonner";
+import { api } from "../../../../convex/_generated/api";
+import {
+  Check,
+  CircleAlert,
+  CircleCheck,
+  Loader2,
+  Search,
+  Brain,
+  Globe,
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { RainbowButton } from "@/components/ui/rainbow-button";
+import { AgentPromptDialog } from "./agent-prompt-dialog";
+import { DryRunStep, type DetectedModel } from "./dry-run-step";
+import { TagsStep } from "./tags-step";
+import { PricingStep, type PricingDraft } from "./pricing-step";
+import { ContractStep } from "./contract-step";
+import type { PricingPlan } from "@/lib/pricing-plan";
+import { validateTags } from "@/lib/agent-tags";
+import { modelIcon } from "@/lib/agent-display";
+
+const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
+
+const DRAFT_KEY = "catelog:register-agent-draft:v1";
+
+/** Everything the creator has entered so far, so closing or reloading never loses their work. */
+interface Draft {
+  step: number;
+  url: string;
+  result: InspectResult | null;
+  tags: string[];
+  logoUrl?: string;
+  usageOk: boolean;
+  dryRunCost?: number;
+  models: DetectedModel[];
+  dryInput?: Record<string, unknown>;
+  pricing?: PricingDraft;
+}
+
+function loadDraft(): Draft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as Draft) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(draft: Draft | null) {
+  try {
+    if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // storage full or blocked: the draft just won't survive a reload
+  }
+}
+
+// Dev mode: set to true to bypass all step validations and move through steps 1, 2, 3 without filling anything
+const DEV_MODE = false;
+
+const devFallbackManifest: Manifest = {
+  id: "dev-agent",
+  name: "Dev Mode Agent",
+  version: "1.0.0",
+  description: "Dev mode agent placeholder for UI testing",
+  capabilities: { streaming: true },
+};
+
+const CHECK_STAGES = [
+  "Reaching your server",
+  "Checking /health",
+  "Identifying schema",
+  "Validating protocol",
+];
+
+type JsonObj = Record<string, unknown>;
+
+interface Manifest {
+  id?: string;
+  name?: string;
+  version?: string;
+  description?: string;
+  protocol_version?: string;
+  capabilities?: {
+    streaming?: boolean;
+    delta_stream?: boolean;
+    max_timeout_seconds?: number;
+    execution_modes?: string[];
+  };
+  input_schema?: JsonObj;
+  output_schema?: JsonObj;
+}
+
+interface Health {
+  status?: string;
+  protocol_version?: string;
+  uptime_seconds?: number;
+  environment_ready?: boolean;
+}
+
+interface InspectResult {
+  health: Health;
+  manifest: Manifest;
+  latencyMs: number;
+}
+
+type Phase = "idle" | "checking" | "done" | "error";
+
+interface Row {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+}
+
+function typeOf(p: JsonObj): string {
+  if (Array.isArray(p.enum))
+    return `enum(${(p.enum as unknown[]).join(" | ")})`;
+  const t = Array.isArray(p.type) ? (p.type as string[]).join(" | ") : p.type;
+  if (t === "array") {
+    const items = p.items as JsonObj | undefined;
+    return `${items ? typeOf(items) : "any"}[]`;
+  }
+  return typeof t === "string" ? t : "any";
+}
+
+function toRows(schema?: JsonObj): Row[] {
+  const props = schema?.properties as Record<string, JsonObj> | undefined;
+  if (!props) return [];
+  const required = new Set((schema?.required as string[] | undefined) ?? []);
+  return Object.entries(props).map(([name, p]) => ({
+    name,
+    type: typeOf(p ?? {}),
+    required: required.has(name),
+    description: typeof p?.description === "string" ? p.description : undefined,
+  }));
+}
+
+function SchemaBlock({ title, schema }: { title: string; schema?: JsonObj }) {
+  const [raw, setRaw] = useState(false);
+  const rows = toRows(schema);
+  const open = schema?.additionalProperties === true && rows.length === 0;
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="flex items-center justify-between px-3.5 py-2 border-b border-border bg-muted/40">
+        <span className="text-xs font-medium text-foreground">{title}</span>
+        <button
+          type="button"
+          onClick={() => setRaw(!raw)}
+          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        >
+          {raw ? "Table" : "JSON"}
+        </button>
+      </div>
+      {raw ? (
+        <pre className="p-3.5 text-[11px] font-mono leading-relaxed overflow-auto max-h-64 text-foreground/80">
+          {JSON.stringify(schema ?? {}, null, 2)}
+        </pre>
+      ) : rows.length > 0 ? (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-[11px] text-muted-foreground">
+              <th className="font-normal px-3.5 py-2 w-1/4">Field</th>
+              <th className="font-normal px-3.5 py-2 w-1/4">Type</th>
+              <th className="font-normal px-3.5 py-2">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.name} className="border-t border-border align-top">
+                <td className="px-3.5 py-2 font-mono text-foreground">
+                  {r.name}
+                  {r.required && (
+                    <span
+                      className="ml-1 text-muted-foreground"
+                      title="Required"
+                    >
+                      *
+                    </span>
+                  )}
+                </td>
+                <td className="px-3.5 py-2 font-mono text-muted-foreground">
+                  {r.type}
+                </td>
+                <td className="px-3.5 py-2 text-muted-foreground">
+                  {r.description ?? "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="px-3.5 py-3 text-xs text-muted-foreground">
+          {open
+            ? "Accepts any JSON object. Define an inputSchema in your agent to generate a buyer form."
+            : "No fields declared."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The SDK sets the limit in minutes and advertises it in seconds; show it the way it was written. */
+function fmtTimeout(seconds?: number): string {
+  if (!seconds || seconds <= 0) return "—";
+  if (seconds < 60) return `${seconds} sec`;
+  const min = seconds / 60;
+  return `${Number.isInteger(min) ? min : min.toFixed(1)} min`;
+}
+
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-xs font-medium text-foreground mt-0.5 truncate">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+export function RegisterAgentDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [stage, setStage] = useState(0);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<InspectResult | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(120);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdown = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stop = () => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+    if (countdown.current) clearInterval(countdown.current);
+    countdown.current = null;
+  };
+
+  const check = async () => {
+    if (!url.trim() || phase === "checking") return;
+    setPhase("checking");
+    setStage(0);
+    setError("");
+    setResult(null);
+    setSecondsLeft(120);
+    countdown.current = setInterval(
+      () => setSecondsLeft((n) => Math.max(n - 1, 0)),
+      1000,
+    );
+
+    timer.current = setInterval(
+      () => setStage((s) => Math.min(s + 1, CHECK_STAGES.length - 1)),
+      900,
+    );
+
+    try {
+      const res = await fetch("/api/agents/inspect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      stop();
+      if (!res.ok) throw new Error(data.error ?? "Check failed.");
+      setStage(CHECK_STAGES.length);
+      setResult(data as InspectResult);
+      // A new check means a new agent: the old dry-run outcome no longer applies
+      setUsageOk(false);
+      setDryRunCost(undefined);
+      setModels([]);
+      setPhase("done");
+    } catch (e) {
+      stop();
+      setError(e instanceof Error ? e.message : "Check failed.");
+      setPhase("error");
+    }
+  };
+
+  const [currentStep, setCurrentStep] = useState(0);
+  const [usageOk, setUsageOk] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [logoUrl, setLogoUrl] = useState<string | undefined>();
+  const [plan, setPlan] = useState<PricingPlan | null>(null);
+  const [planValid, setPlanValid] = useState(false);
+  const [contractOk, setContractOk] = useState(false);
+  const [dryRunCost, setDryRunCost] = useState<number | undefined>();
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+  const [models, setModels] = useState<DetectedModel[]>([]);
+  const [dryInput, setDryInput] = useState<
+    Record<string, unknown> | undefined
+  >();
+  const [pricingDraft, setPricingDraft] = useState<PricingDraft | undefined>();
+  const [formNonce, setFormNonce] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+  const registerAgent = useMutation(api.agents.register);
+  const m = result?.manifest ?? (DEV_MODE ? devFallbackManifest : undefined);
+  const ready = result?.health.status === "ready" || DEV_MODE;
+
+  // Restore the draft once after mount (localStorage doesn't exist during SSR)
+  useEffect(() => {
+    const d = loadDraft();
+    if (d) {
+      setUrl(d.url ?? "");
+      setResult(d.result ?? null);
+      setPhase(d.result ? "done" : "idle");
+      setStage(CHECK_STAGES.length);
+      setTags(d.tags ?? []);
+      setLogoUrl(d.logoUrl);
+      setUsageOk(!!d.usageOk);
+      setDryRunCost(d.dryRunCost);
+      setModels(d.models ?? []);
+      setDryInput(d.dryInput);
+      setPricingDraft(d.pricing);
+      setCurrentStep(Math.min(Math.max(d.step ?? 0, 0), FLOW.length - 2));
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveDraft({
+      step: currentStep,
+      url,
+      result,
+      tags,
+      logoUrl,
+      usageOk,
+      dryRunCost,
+      models,
+      dryInput,
+      pricing: pricingDraft,
+    });
+  }, [
+    hydrated,
+    currentStep,
+    url,
+    result,
+    tags,
+    logoUrl,
+    usageOk,
+    dryRunCost,
+    models,
+    dryInput,
+    pricingDraft,
+  ]);
+
+  const resetAll = () => {
+    saveDraft(null);
+    setUrl("");
+    setPhase("idle");
+    setStage(0);
+    setError("");
+    setResult(null);
+    setCurrentStep(0);
+    setUsageOk(false);
+    setTags([]);
+    setLogoUrl(undefined);
+    setPlan(null);
+    setPlanValid(false);
+    setContractOk(false);
+    setDryRunCost(undefined);
+    setModels([]);
+    setDryInput(undefined);
+    setPricingDraft(undefined);
+    setFormNonce((n) => n + 1);
+  };
+
+  const complete = () => {
+    if (!m || !plan || !validateTags(tags).ok) {
+      toast.error("Add 2 to 4 tags and a valid price before completing.");
+      return;
+    }
+    const caps = m.capabilities;
+    const payload = {
+      name: m.name ?? "",
+      description: m.description ?? "",
+      logoUrl,
+      baseUrl: url.trim() || (DEV_MODE ? "http://localhost:4000" : ""),
+      version: m.version ?? "0.0.0",
+      manifestAgentId: m.id,
+      capabilities: caps && {
+        streaming: caps.streaming,
+        delta_stream: caps.delta_stream,
+        max_timeout_seconds: caps.max_timeout_seconds,
+        execution_modes: caps.execution_modes,
+      },
+      inputSchemaJson: JSON.stringify(m.input_schema ?? {}),
+      outputSchemaJson: JSON.stringify(m.output_schema ?? {}),
+      tags,
+      plan: JSON.parse(JSON.stringify(plan)) as PricingPlan,
+      models: models.map((mod) => ({ id: mod.id, provider: mod.provider })),
+      latencyMs: result?.latencyMs ?? 0,
+    };
+
+    // Close right away; the toast carries progress. On failure the draft is kept for a retry.
+    onOpenChange(false);
+    toast.promise(registerAgent(payload), {
+      loading: "Verifying and saving your agent…",
+      success: (r) => {
+        resetAll();
+        return `${r.name} is live on the marketplace`;
+      },
+      error: (e) =>
+        (e instanceof Error
+          ? e.message.replace(/^[\s\S]*Uncaught Error:\s*/, "").split("\n")[0]
+          : "") || "Could not register the agent.",
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) stop(); // the draft stays in localStorage so reopening resumes where they left off
+        onOpenChange(o);
+      }}
+    >
+      <DialogContent className="min-w-3xl max-w-3xl h-[78vh] flex flex-col p-0 gap-0 overflow-hidden">
+        {/* Fixed Top: Stepper */}
+        <div className="p-6 pb-4 border-b border-border shrink-0 mt-2">
+          <div className="grid grid-cols-4 gap-2 pr-8">
+            {FLOW.map((label, i) => (
+              <div key={label} className="space-y-1.5">
+                <div
+                  className={`h-1 rounded-full ${
+                    i === currentStep
+                      ? "bg-foreground"
+                      : i < currentStep
+                        ? "bg-foreground/50"
+                        : "bg-border"
+                  }`}
+                />
+                <p
+                  className={`text-[11px] ${
+                    i === currentStep
+                      ? "text-foreground font-medium"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Scrollable Middle: Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {(DEV_MODE || (result && m)) && (
+            <div className={currentStep === 1 ? "block" : "hidden"}>
+              <DryRunStep
+                key={`${url}-${m?.id ?? ""}-${result?.latencyMs ?? 0}-${formNonce}`}
+                url={url || "http://localhost:4000"}
+                inputSchema={m?.input_schema}
+                agentName={m?.name}
+                initialValues={dryInput}
+                onValuesChange={setDryInput}
+                onUsageCheck={(ok, info) => {
+                  setUsageOk(ok);
+                  setDryRunCost(info?.costUsd);
+                  setModels(info?.models ?? []);
+                }}
+              />
+            </div>
+          )}
+
+          {(DEV_MODE || (result && m)) && currentStep === 2 && (
+            <div className="space-y-8">
+              <TagsStep
+                selected={tags}
+                onChange={setTags}
+                onRegisterAi={() => setAiPromptOpen(true)}
+              />
+              {models.length > 0 && (
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">
+                      Models used
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1.5">
+                      Detected from your dry run and saved with your agent.
+                    </p>
+                  </div>
+                  <ul className="flex flex-wrap gap-2">
+                    {models.map((mod) => {
+                      const icon = modelIcon(mod.id, mod.provider);
+                      return (
+                        <li
+                          key={mod.id}
+                          className="rounded-lg border border-border px-3 py-2 text-xs flex items-center gap-2.5"
+                        >
+                          {icon ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={icon.src}
+                              alt={icon.name}
+                              className={`size-5 shrink-0 ${icon.theme ?? ""}`}
+                            />
+                          ) : (
+                            <Brain className="size-5 shrink-0 text-foreground" />
+                          )}
+                          <div>
+                            <p className="font-mono font-medium text-foreground">
+                              {mod.id}
+                            </p>
+                            <p className="text-[11px] text-foreground mt-0.5">
+                              {mod.provider ?? "Unknown provider"}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
+              <PricingStep
+                initialDraft={pricingDraft}
+                onDraftChange={setPricingDraft}
+                inputSchema={m?.input_schema as Record<string, any> | undefined}
+                outputSchema={
+                  m?.output_schema as Record<string, any> | undefined
+                }
+                tags={tags}
+                dryRunCostUsd={dryRunCost}
+                onChange={(p, valid) => {
+                  setPlan(p);
+                  setPlanValid(valid);
+                }}
+              />
+            </div>
+          )}
+
+          {currentStep === 3 && (
+            <ContractStep onAcceptedChange={setContractOk} />
+          )}
+
+          <div className={currentStep === 0 ? "space-y-6" : "hidden"}>
+            <div className="flex items-start justify-between gap-4">
+              <DialogHeader className="space-y-1.5 text-left">
+                <DialogTitle className="text-base font-semibold flex items-center gap-2">
+                  <div className="size-7 rounded-md border border-zinc-300 dark:border-zinc-700 bg-muted flex items-center justify-center shrink-0 shadow!">
+                    <Brain className="size-4 text-foreground" />
+                  </div>
+                  <span>Verify Agent Server</span>
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+                  Enter your agent&apos;s public URL to verify reachability,
+                  probe{" "}
+                  <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
+                    /health
+                  </code>
+                  , and inspect{" "}
+                  <code className="font-mono text-foreground font-medium px-1 py-0.5 rounded bg-muted/70">
+                    /schema
+                  </code>{" "}
+                  endpoints.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="shrink-0">
+                <RainbowButton
+                  type="button"
+                  size="sm"
+                  onClick={() => setAiPromptOpen(true)}
+                  className="h-8 rounded-md px-3 text-xs font-medium cursor-pointer"
+                >
+                  Register with AI
+                </RainbowButton>
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                check();
+              }}
+              className="relative flex items-center rounded-lg border border-zinc-300 dark:border-zinc-700 bg-background shadow-2xs focus-within:border-foreground focus-within:ring-2 focus-within:ring-foreground/10 transition-all p-1 pl-3"
+            >
+              <Globe className="size-4 text-muted-foreground shrink-0 mr-2.5" />
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://my-agent.fly.dev"
+                spellCheck={false}
+                autoComplete="off"
+                className="flex-1 h-9 bg-transparent text-xs sm:text-sm font-mono text-foreground placeholder:text-muted-foreground/60 outline-none border-none pr-2"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!url.trim() || phase === "checking"}
+                className="h-8 px-4 rounded-md font-medium text-xs bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40 transition-all cursor-pointer shadow-xs shrink-0 gap-1.5"
+              >
+                {phase === "checking" ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    <span>Checking...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search className="size-3.5" />
+                    <span>Check Server</span>
+                  </>
+                )}
+              </Button>
+            </form>
+
+            {phase === "checking" && (
+              <ul className="space-y-2.5 rounded-lg border border-border p-4">
+                {CHECK_STAGES.map((label, i) => (
+                  <li key={label} className="flex items-center gap-2.5 text-xs">
+                    {i < stage ? (
+                      <Check className="size-3.5 text-foreground" />
+                    ) : i === stage ? (
+                      <Loader2 className="size-3.5 animate-spin text-foreground" />
+                    ) : (
+                      <span className="size-3.5 flex items-center justify-center">
+                        <span className="size-1.5 rounded-full bg-border" />
+                      </span>
+                    )}
+                    <span
+                      className={
+                        i <= stage ? "text-foreground" : "text-muted-foreground"
+                      }
+                    >
+                      {label}
+                      {i === stage ? "…" : ""}
+                    </span>
+                  </li>
+                ))}
+                <li className="pt-1 text-[11px] tabular-nums text-muted-foreground">
+                  {secondsLeft}s
+                </li>
+              </ul>
+            )}
+
+            {phase === "error" && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+                <CircleAlert className="size-4 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-medium text-foreground">
+                    Couldn&apos;t verify this server
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {error}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {phase === "done" && m && result && (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-border p-4 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {m.name ?? "Unnamed agent"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                        {m.description || "No description provided."}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-foreground">
+                      {ready ? (
+                        <CircleCheck className="size-3.5" />
+                      ) : (
+                        <CircleAlert className="size-3.5" />
+                      )}
+                      {ready
+                        ? "Reachable"
+                        : (result.health.status ?? "Unknown")}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-border">
+                    <Stat label="Version" value={m.version ?? "—"} />
+                    <Stat
+                      label="Health ping"
+                      value={`${result.latencyMs} ms`}
+                    />
+                    <Stat
+                      label="Execution modes"
+                      value={m.capabilities?.execution_modes?.join(", ") ?? "—"}
+                    />
+                    <Stat
+                      label="Max timeout"
+                      value={fmtTimeout(m.capabilities?.max_timeout_seconds)}
+                    />
+                    <Stat label="Agent ID" value={m.id ?? "—"} />
+                  </div>
+                </div>
+
+                <SchemaBlock title="Input schema" schema={m.input_schema} />
+                <SchemaBlock title="Output schema" schema={m.output_schema} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Fixed Bottom: Previous / Next */}
+        <div className="p-4 px-6 border-t border-border bg-card/50 flex items-center justify-between shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={currentStep === 0}
+            onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+            className="cursor-pointer"
+          >
+            Previous
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={
+              !DEV_MODE &&
+              (currentStep === 0
+                ? !(phase === "done" && ready)
+                : currentStep === 1
+                  ? !usageOk
+                  : currentStep === 2
+                    ? !validateTags(tags).ok || !planValid
+                    : !contractOk)
+            }
+            onClick={() => {
+              if (currentStep === FLOW.length - 1) {
+                complete();
+                return;
+              }
+              setCurrentStep((s) => Math.min(FLOW.length - 1, s + 1));
+            }}
+            className="cursor-pointer"
+          >
+            {currentStep === FLOW.length - 1 ? "Complete" : "Next"}
+          </Button>
+        </div>
+      </DialogContent>
+
+      <AgentPromptDialog open={aiPromptOpen} onOpenChange={setAiPromptOpen} />
+    </Dialog>
+  );
+}

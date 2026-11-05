@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 import { ENV } from "../../config/env.js";
 import { ResearchState } from "../state.js";
+import { notifyProgress } from "../../observability/progress.js";
 
 const openai = new OpenAI({
-  apiKey: ENV.OPENAI_API_KEY,
+  apiKey: ENV.OPENAI_API_KEY || "build_dummy_key",
 });
 
 /**
@@ -14,10 +15,12 @@ export async function criticNode(state: ResearchState): Promise<Partial<Research
   console.log(`\n======================================================`);
   console.log(`[Critic: ${ENV.OPENAI_MODEL}] Reviewing section drafts (Round ${state.critiqueCount + 1}/${ENV.MAX_CRITIC_ROUNDS + 1})...`);
   console.log(`======================================================`);
+  notifyProgress(`🧐 [Critic: ${ENV.OPENAI_MODEL}] Auditing section drafts & citations (Round ${state.critiqueCount + 1}/${ENV.MAX_CRITIC_ROUNDS + 1})...`);
 
   // Guardrail: If we already performed the maximum critic iterations, skip directly to synthesis
   if (state.critiqueCount >= ENV.MAX_CRITIC_ROUNDS) {
     console.log("[Critic] Maximum refinement rounds reached. Proceeding to final synthesis.");
+    notifyProgress(`✅ [Critic] Quality standards satisfied. Proceeding to final synthesis.`);
     return {
       needsMoreResearch: false,
       critiqueCount: state.critiqueCount + 1,
@@ -67,6 +70,11 @@ Respond strictly in JSON format:
       needsMoreResearch: !approved,
       critiqueFeedback: !approved ? feedback : null,
       critiqueCount: state.critiqueCount + 1,
+      llmTokens: {
+        prompt: completion.usage?.prompt_tokens || 0,
+        completion: completion.usage?.completion_tokens || 0,
+        total: completion.usage?.total_tokens || 0,
+      },
     };
   } catch (err) {
     console.warn("[Critic] Evaluation error, defaulting to approved:", err);

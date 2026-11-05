@@ -8,8 +8,19 @@
  * @module
  */
 
+import type * as agentPage from "../agentPage.js";
+import type * as agents from "../agents.js";
+import type * as apiKeys from "../apiKeys.js";
+import type * as apiKeysActions from "../apiKeysActions.js";
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
+import type * as escrow from "../escrow.js";
+import type * as health from "../health.js";
 import type * as http from "../http.js";
+import type * as reviews from "../reviews.js";
+import type * as runs from "../runs.js";
+import type * as search from "../search.js";
+import type * as temporal from "../temporal.js";
 import type * as wallet from "../wallet.js";
 
 import type {
@@ -19,8 +30,19 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agentPage: typeof agentPage;
+  agents: typeof agents;
+  apiKeys: typeof apiKeys;
+  apiKeysActions: typeof apiKeysActions;
   auth: typeof auth;
+  crons: typeof crons;
+  escrow: typeof escrow;
+  health: typeof health;
   http: typeof http;
+  reviews: typeof reviews;
+  runs: typeof runs;
+  search: typeof search;
+  temporal: typeof temporal;
   wallet: typeof wallet;
 }>;
 

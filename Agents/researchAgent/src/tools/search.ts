@@ -1,6 +1,7 @@
 import { getJson } from "serpapi";
 import { ENV } from "../config/env.js";
 import { FirecrawlAppV1 } from "@mendable/firecrawl-js";
+import { notifyProgress } from "../observability/progress.js";
 
 export interface SearchResultItem {
   title: string;
@@ -13,6 +14,7 @@ export interface SearchResultItem {
  */
 export async function searchWeb(query: string, maxResults: number = 3): Promise<SearchResultItem[]> {
   console.log(`[Search] Query: "${query}"`);
+  notifyProgress(`🔍 [Search] Query: "${query}"`);
 
   // Option 1: SerpAPI (Google Search)
   if (ENV.SERPAPI_KEY) {

@@ -162,13 +162,12 @@ function handleSSEEvent(type, data, elements) {
     console.log("Needs Research Probability:", data.scores.needsResearchProb);
     console.log("Is Allowed:", data.isAllowed);
     console.log("Selected Route:", data.route);
-    console.log("Execution Engine:", data.targetModel);
-    console.log("Trigger.dev Task ID:", data.triggerTaskId);
+    console.log("Temporal Workflow ID:", data.temporalWorkflowId || data.workflowId || "none (direct)");
     console.groupEnd();
 
     const routePill = data.needsResearch
       ? `<span class="telemetry-pill pill-research">Deep Research</span>`
-      : `<span class="telemetry-pill pill-chitchat">Chit-chat</span>`;
+      : `<span class="telemetry-pill pill-chitchat">Chit-chat (Instant)</span>`;
 
     const statusPill = data.isAllowed
       ? `<span class="telemetry-pill pill-research">Safe (P=${data.scores.inappropriateProb})</span>`
@@ -179,30 +178,40 @@ function handleSSEEvent(type, data, elements) {
         <strong>JEV 1.14:</strong> ${statusPill} &bull; Route: ${routePill} &bull; Engine: <code>${data.targetModel}</code>
       </div>
       <div class="telemetry-line" style="font-size: 11px;">
-        Research Prob: ${(data.scores.needsResearchProb * 100).toFixed(1)}% &bull; Task: <code>${data.triggerTaskId || "local-sync"}</code>
+        Research Prob: ${(data.scores.needsResearchProb * 100).toFixed(1)}% &bull; Orchestration: <code>${data.needsResearch ? "Temporal Workflow" : "Groq Direct"}</code>
       </div>
     `;
   }
 
   if (type === "progress") {
+    // Avoid repeating identical step consecutively
+    const active = progressContainer.querySelector(".progress-step.active");
+    if (active && active.textContent.trim().includes(data.step.trim())) {
+      return;
+    }
+
+    if (active) {
+      active.className = "progress-step";
+      active.innerHTML = `✓ <span>${active.textContent.replace("✓", "").trim()}</span>`;
+    }
+
     const step = document.createElement("div");
     step.className = "progress-step active";
     step.innerHTML = `<span class="spinner"></span> <span>${data.step}</span>`;
 
-    // Remove active spinner on previous step
-    const prev = progressContainer.querySelector(".progress-step.active");
-    if (prev) {
-      prev.className = "progress-step";
-      prev.innerHTML = `✓ <span>${prev.textContent.replace("✓", "").trim()}</span>`;
-    }
-
     progressContainer.appendChild(step);
+    progressContainer.scrollTop = progressContainer.scrollHeight;
     chatFeed.scrollTop = chatFeed.scrollHeight;
   }
 
   if (type === "result") {
-    // Hide progress container once result arrives
-    progressContainer.style.display = "none";
+    // Complete the last active spinner with a checkmark
+    const active = progressContainer.querySelector(".progress-step.active");
+    if (active) {
+      active.className = "progress-step";
+      active.innerHTML = `✓ <span>${active.textContent.replace("✓", "").trim()}</span>`;
+    }
+
     if (window.marked) {
       bubble.innerHTML = window.marked.parse(data.answer);
     } else {

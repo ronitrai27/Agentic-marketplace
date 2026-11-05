@@ -7,7 +7,8 @@ The agent architecture uses an **Orchestrator-Worker Pattern** combined with **D
 ### Why This Pattern?
 - **Avoids the 20–30 Minute Token Burn:** A flat, single-agent loop can wander indefinitely. Decomposing the research into 3 independent parallel streams hits the target **4–6 minute sweet spot**.
 - **Bounded Recursive Loop:** The critic is hard-capped at **1 refinement pass**. If metrics, dates, or counterpoints are missing, it triggers a single targeted refinement pass before automatically proceeding to final report synthesis.
-- **Durable Execution:** Wrapped in **Trigger.dev v3**, shielding the agent from HTTP server timeouts (10-minute max duration limit).
+- **Durable Execution:** Orchestrated by **Temporal.io**, shielding the deep research execution from HTTP server timeouts (10-minute task activity timeout, durable state and events, and automatic retries with backoff).
+- **Zero-Worker Chit-Chat:** Conversational queries bypass background workers entirely and are answered via Groq in 1-2 seconds.
 
 ---
 
@@ -18,10 +19,16 @@ flowchart TD
     User([User Prompt]) --> JEV[TypeSafe JEV-1.14 Decisions Guardrail]
     
     JEV -->|is_inappropriate >= 0.5| Blocked[Safety Rejection Message]
-    JEV -->|needs_research < 0.5| Quick[Direct Answer Node<br/>Groq: openai/gpt-oss-120b]
-    JEV -->|needs_research >= 0.5| Orch[Orchestrator Planner Node<br/>OpenAI: gpt-4.1-mini]
+    JEV -->|needs_research < 0.5| Quick[Direct Answer Node<br/>Groq: openai/gpt-oss-120b<br/>1-2s No Worker Invoked]
+    JEV -->|needs_research >= 0.5| TemporalClient[Temporal Workflow Start<br/>deepResearchWorkflow]
 
-    subgraph TriggerDev ["Trigger.dev Durable Task Environment (10-min Timeout)"]
+    subgraph TemporalCluster ["Temporal.io Durable Cluster (research-2-langgraph.odwdl)"]
+        TemporalClient --> TaskQueue[Task Queue: deep-research]
+    end
+
+    subgraph TemporalWorker ["Temporal Worker (src/temporal/worker.ts)"]
+        TaskQueue --> Orch[Orchestrator Planner Node<br/>OpenAI: gpt-4.1-mini]
+        
         Orch -->|Dynamic Send Fan-Out| Workers
         
         subgraph Workers ["Parallel Section Workers (3 Concurrently)"]
@@ -68,7 +75,7 @@ flowchart TD
 ## 4. Technology Stack & Integrations
 
 - **Orchestration Runtime:** `@langchain/langgraph` (v1.5.1) — Pregel graph execution, state reducers, and conditional branching.
-- **Background Job Runner:** `@trigger.dev/sdk` (v4.7.4) — Durable execution, retries with exponential backoff, and 10-minute task limits.
+- **Background Job Runner:** `@temporalio/client`, `@temporalio/worker`, `@temporalio/workflow` — Durable distributed workflow execution, heartbeats, task retries, and state inspection.
 - **Observability & Tracing:** `langfuse` & `langfuse-langchain` (v3.39.2) — Full trace lifecycle, spans, token tracking, and latency monitoring on HIPAA Cloud.
 - **Search Tooling:**
   - `serpapi` (v2.2.1) — Real-time Google organic search discovery.
@@ -101,28 +108,30 @@ GROQ_API_KEY=gsk-...
 GROQ_MODEL=openai/gpt-oss-120b
 OPENROUTER_JEV=sk-or-v1-...
 JEV_MODEL=typesafe/jev-1.14
-TRIGGER_SECRET_KEY=tr_dev_sk-...
+TEMPORAL_ADDRESS=research-2-langgraph.odwdl.tmprl.cloud:7233
+TEMPORAL_NAMESPACE=research-2-langgraph.odwdl
+TEMPORAL_API_KEY=eyJhbGci...
+TEMPORAL_TASK_QUEUE=deep-research
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_BASE_URL="https://hipaa.cloud.langfuse.com"
 ```
 
-### 1. Launch the Real-Time SSE Web UI
+### 1. Launch the Server & Web UI
 ```bash
-npm run ui
+npm run dev
 ```
 - Open [http://localhost:3005](http://localhost:3005) in your browser.
-- Open Developer Tools (`F12`) to view real-time JEV telemetry in the console.
+- Chit-chat queries (e.g. "hello", "how are you") execute instantly in 1-2s via Groq with zero background worker interaction.
 
-### 2. Run Direct CLI Benchmark Test
+### 2. Launch the Temporal Research Worker (For Deep Research)
+```bash
+npm run worker
+```
+- Listens on Task Queue `deep-research`.
+- Executes LangGraph research workflows when deep research is triggered.
+
+### 3. Run Direct CLI Benchmark Test
 ```bash
 npm run test:run "Analyze current trends in humanoid robotics in 2025"
 ```
-
-### 3. Launch Trigger.dev Development Worker
-```bash
-npm run trigger:dev
-```
-- Connects local worker to project `proj_fvuyopahfcetqlubfpmx`.
-- View and trigger runs live from the [Trigger.dev Dashboard](https://cloud.trigger.dev).
-- View traces, tokens, and latency live on your [Langfuse Dashboard](https://hipaa.cloud.langfuse.com).

@@ -1,5 +1,6 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { components } from "./_generated/api";
+import { escrowCredits } from "./escrow";
 import { v } from "convex/values";
 
 export const getWallet = query({
@@ -27,7 +28,7 @@ export const getWallet = query({
       );
 
       const credits = Number(user?.credits ?? 0);
-      const escrow = 0; // Active agent holds in escrow
+      const escrow = await escrowCredits(ctx, identity.subject); // credits held for runs in progress
 
       // Platform rule: User must maintain at least 500 credits ($5.00) reserve.
       // Funds in escrow cannot be withdrawn.
@@ -121,7 +122,7 @@ export const deductCreditsForWithdrawal = mutation({
     }
 
     const currentCredits = Number(user.credits ?? 0);
-    const escrow = 0;
+    const escrow = await escrowCredits(ctx, identity.subject);
     const maxWithdrawable = Math.max(0, currentCredits - 500 - escrow);
 
     if (args.amountCredits > maxWithdrawable) {
@@ -144,5 +145,29 @@ export const deductCreditsForWithdrawal = mutation({
     });
 
     return { success: true, newCredits };
+  },
+});
+
+/** Wallet by explicit user id, for server-to-server callers (the MCP server). Not client-callable. */
+export const getWalletByUserId = internalQuery({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await (ctx as any).runQuery(
+      components.betterAuth.adapter.findOne,
+      { model: "user", where: [{ field: "_id", value: args.userId }] },
+    );
+    if (!user) return null;
+
+    const credits = Number(user.credits ?? 0);
+    const escrow = await escrowCredits(ctx, args.userId);
+    const withdrawableCredits = Math.max(0, credits - 500 - escrow);
+    return {
+      credits,
+      escrow,
+      withdrawableCredits,
+      totalUsd: (credits / 100).toFixed(2),
+      escrowUsd: (escrow / 100).toFixed(2),
+      withdrawableUsd: (withdrawableCredits / 100).toFixed(2),
+    };
   },
 });

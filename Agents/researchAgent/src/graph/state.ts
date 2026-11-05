@@ -45,6 +45,14 @@ export const ResearchStateAnnotation = Annotation.Root({
     reducer: (_, next) => next,
     default: () => "",
   }),
+  llmTokens: Annotation<{ prompt: number; completion: number; total: number }>({
+    reducer: (current, update) => ({
+      prompt: (current?.prompt || 0) + (update?.prompt || 0),
+      completion: (current?.completion || 0) + (update?.completion || 0),
+      total: (current?.total || 0) + (update?.total || 0),
+    }),
+    default: () => ({ prompt: 0, completion: 0, total: 0 }),
+  }),
 });
 
 export type ResearchState = typeof ResearchStateAnnotation.State;

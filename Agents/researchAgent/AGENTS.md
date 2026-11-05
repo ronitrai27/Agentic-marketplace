@@ -1,5 +1,5 @@
-<!-- TRIGGER.DEV SKILLS START -->
-## Trigger.dev agent skills
+## Temporal Agent Skills
 
-This project has Trigger.dev agent skills installed in `.agents/skills/`. Before writing or changing Trigger.dev code (background tasks, scheduled tasks, realtime, or chat.agent AI agents), load the most relevant skill: `trigger-authoring-tasks`, `trigger-chat-agent-advanced`, `trigger-cost-savings`, `trigger-getting-started`, `trigger-realtime-and-frontend`, `trigger-authoring-chat-agent`.
-<!-- TRIGGER.DEV SKILLS END -->
+This project uses Temporal (`@temporalio/*`) for durable deep-research background execution.
+Workflows are defined in `src/temporal/workflows.ts`, activities in `src/temporal/activities.ts`, and the worker in `src/temporal/worker.ts`.
+Direct chit-chat responses bypass Temporal workers and are handled instantly via Groq in `src/index.ts`.

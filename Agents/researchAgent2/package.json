@@ -1,0 +1,28 @@
+{
+  "name": "research-agent-2",
+  "version": "1.0.0",
+  "description": "Simple dual-mode research agent using OpenAI Responses API and Web Search",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "ui": "tsx src/server.ts",
+    "worker": "tsx src/temporal/worker.ts"
+  },
+  "dependencies": {
+    "@temporalio/activity": "^1.24.0",
+    "@temporalio/client": "^1.24.0",
+    "@temporalio/worker": "^1.24.0",
+    "@temporalio/workflow": "^1.24.0",
+    "catelog": "^1.0.6",
+    "dotenv": "^18.0.8",
+    "openai": "^7.39.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

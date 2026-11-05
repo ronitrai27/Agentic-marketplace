@@ -1,0 +1,228 @@
+# Temporal Python SDK Reference
+
+## Overview
+
+The Temporal Python SDK (`temporalio`) provides a fully async, type-safe approach to building durable workflows. Python 3.9+ required. Workflows run in a sandbox by default for determinism protection.
+
+## Quick Demo of Temporal
+
+**Add Dependency on Temporal:** In the package management system of the Python project you are working on, add a dependency on `temporalio`.
+
+**models/greeting.py** - Shared input model:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class GreetingInput:
+    first_name: str
+    last_name: str
+```
+
+**activities/greet.py** - Activity definitions (separate file for performance):
+
+```python
+from temporalio import activity
+from models.greeting import GreetingInput
+
+@activity.defn
+def greet(input: GreetingInput) -> str:
+    return f"Hello, {input.first_name} {input.last_name}!"
+```
+
+**workflows/greeting.py** - Workflow definition (import activities through sandbox):
+
+```python
+from datetime import timedelta
+from temporalio import workflow
+
+with workflow.unsafe.imports_passed_through():
+    from activities.greet import greet
+    from models.greeting import GreetingInput
+
+@workflow.defn
+class GreetingWorkflow:
+    @workflow.run
+    async def run(self, input: GreetingInput) -> str:
+        return await workflow.execute_activity(
+            greet,
+            input,
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+```
+
+For `execute_activity()`, pass a single input directly as the second positional
+argument. Use `args=[...]` when passing multiple inputs.
+
+**worker.py** - Worker setup (registers activity and workflow, runs indefinitely and processes tasks):
+
+```python
+import asyncio
+import concurrent.futures
+from temporalio.client import Client
+from temporalio.envconfig import ClientConfig
+from temporalio.worker import Worker
+
+# Import the activity and workflow from our other files
+from activities.greet import greet
+from workflows.greeting import GreetingWorkflow
+
+async def main():
+    connect_config = ClientConfig.load_client_connect_config()
+    connect_config.setdefault("target_host", "localhost:7233")
+    client = await Client.connect(**connect_config)
+
+    # Run the worker
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as activity_executor:
+        worker = Worker(
+          client,
+          task_queue="my-task-queue",
+          workflows=[GreetingWorkflow],
+          activities=[greet],
+          activity_executor=activity_executor,
+        )
+        await worker.run()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**Start the dev server:** Start `temporal server start-dev` in the background.
+
+**Start the worker:** Start `python worker.py` in the background (appropriately adjust command for your project, like `uv run python worker.py`)
+
+**starter.py** - Start a workflow execution:
+
+```python
+import asyncio
+from temporalio.client import Client
+from temporalio.envconfig import ClientConfig
+import uuid
+
+# Import the workflow from the previous code
+from workflows.greeting import GreetingWorkflow
+from models.greeting import GreetingInput
+
+async def main():
+    connect_config = ClientConfig.load_client_connect_config()
+    connect_config.setdefault("target_host", "localhost:7233")
+    client = await Client.connect(**connect_config)
+
+    # Execute a workflow
+    result = await client.execute_workflow(
+        GreetingWorkflow.run,
+        GreetingInput(first_name="Ada", last_name="Lovelace"),
+        id=str(uuid.uuid4()),
+        task_queue="my-task-queue",
+    )
+
+    print(f"Result: {result}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+For `execute_workflow()`, pass a single input directly as the second positional
+argument. Use `args=[...]` when passing multiple inputs.
+
+**Run the workflow:** Run `python starter.py` (or uv run, etc.). Should output: `Result: Hello, Ada Lovelace!`.
+
+## Key Concepts
+
+### Workflow Definition
+
+- Use `@workflow.defn` decorator on class
+- Put any state initialization logic in the `__init__` of your workflow class to guarantee that it happens before signals/updates arrive. If your state initialization logic requires the workflow parameters, then add the `@workflow.init` decorator and parameters to your `__init__`.
+- Use `@workflow.run` on the entry point method
+- Must be async (`async def`)
+- Use `@workflow.signal`, `@workflow.query`, `@workflow.update` for handlers
+
+### Activity Definition
+
+- Use `@activity.defn` decorator
+- Can be sync or async functions
+- **Default to sync activities** - safer and easier to debug
+- Sync activities need `activity_executor` (ThreadPoolExecutor)
+- Async activities require async-safe libraries throughout (e.g., `aiohttp` not `requests`)
+
+See [sync and async Activity guide](sync-vs-async.md) for detailed guidance on choosing between sync and async.
+
+### Evolving Inputs and Results
+
+Prefer one `dataclass` or Pydantic model for Workflow and Activity inputs that may grow, and a structured result when needed. Give new fields defaults; changing an existing scalar input to a model requires a migration because old payloads remain in history.
+
+### Worker Setup
+
+- Load connection settings with `ClientConfig.load_client_connect_config()`, connect the client, and create a Worker with workflows and activities
+- Run the worker
+- Activities can specify custom executor
+
+### Determinism
+
+**Workflow code must be deterministic!**. All sources of non-determinism should either use Temporal-provided actions or (primarily) be defined in Activities. Read [Temporal determinism rules](../core/determinism.md) and [Python determinism rules](determinism.md) to understand more.
+
+## File Organization Best Practice
+
+**Keep Workflow definitions in separate files from Activity definitions.** The Python SDK sandbox reloads Workflow definition files on every execution for determinism protection. Minimizing file contents improves Worker performance.
+
+```
+my_temporal_app/
+├── models/
+│   └── greeting.py      # Shared input model
+├── workflows/
+│   └── greeting.py      # Only Workflow classes
+├── activities/
+│   └── translate.py     # Only Activity functions/classes
+├── worker.py            # Worker setup, imports both
+└── starter.py           # Client code to start workflows
+```
+
+**In the Workflow file, import Activities through the sandbox:**
+
+```python
+# workflows/greeting.py
+from temporalio import workflow
+
+with workflow.unsafe.imports_passed_through():
+    from activities.translate import TranslateActivities
+```
+
+## Common Pitfalls
+
+1. **Non-deterministic code in workflows** - Use activities for all non-deterministic and/or fallible code
+2. **Blocking in async activities** - Use sync activities or async-safe libraries only
+3. **Missing executor for sync activities** - Add `activity_executor=ThreadPoolExecutor()`
+4. **Forgetting to heartbeat** - Long activities need `activity.heartbeat()`
+5. **Using gevent** - Incompatible with SDK
+6. **Using `print()` in workflows** - Use `workflow.logger` instead for replay-safe logging
+7. **Mixing Workflows and Activities in same file** - Causes unnecessary reloads, hurts performance, bad structure
+8. **Forgetting to wait on activity calls** - `workflow.execute_activity()` is async; you must eventually await it (directly or via `asyncio.gather()` for parallel execution)
+
+## Writing Tests
+
+See [Python testing guide](testing.md) for info on writing tests.
+
+## Additional Resources
+
+### Reference Files
+
+- **[Python workflow patterns](patterns.md)** - Signals, queries, child workflows, saga pattern, etc.
+- **[Python determinism rules](determinism.md)** - Sandbox behavior, safe alternatives, pass-through pattern, history replay
+- **[Python common pitfalls](gotchas.md)** - Python-specific mistakes and anti-patterns
+- **[Python error handling guide](error-handling.md)** - ApplicationError, retry policies, non-retryable errors, idempotency
+- **[Python observability guide](observability.md)** - Logging, metrics, tracing, Search Attributes
+- **[Python testing guide](testing.md)** - WorkflowEnvironment, time-skipping, activity mocking
+- **[Python sync and async Activity guide](sync-vs-async.md)** - Sync vs async activities, event loop blocking, executor configuration
+- **[Python advanced features guide](advanced-features.md)** - Schedules, worker tuning, and more
+- **[Python data handling guide](data-handling.md)** - Data converters, Pydantic, payload encryption
+- **[Python external storage guide](external-storage.md)** - Claim-check pattern for large payloads (S3 driver, custom drivers, codec-server handling, multi-region durability)
+- **[Python versioning guide](versioning.md)** - Patching API, workflow type versioning, Worker Versioning
+- **[Python standalone Activities guide](standalone-activities.md)** - Standalone Activities: run an Activity directly from a Client without a Workflow. Concept overview at [Temporal standalone Activities guide](../core/standalone-activities.md).
+- **[Python Task Queue priority and fairness guide](priority-fairness.md)** - Task Queue Priority and Fairness SDK options and examples. Concept overview at [Temporal Task Queue priority and fairness guide](../core/priority-fairness.md).
+- **[Python determinism protection guide](determinism-protection.md)** - Python sandbox specifics, forbidden operations, pass-through imports
+- **[Python AI integration patterns](ai-patterns.md)** - LLM integration, Pydantic data converter, AI workflow patterns
+- **[Python Workflow Streams guide](workflow-streams.md)** - Public-Preview `temporalio.contrib.workflow_streams` library: durable, offset-addressed event channel for streaming progress to subscribers.
+
+### Python Integrations
+
+For Python-specific third-party integrations (OpenAI Agents SDK, Google ADK, etc.), see [integrations catalog](../integrations.md) and filter for Python. Reference files live under `references/python/integrations/`.
