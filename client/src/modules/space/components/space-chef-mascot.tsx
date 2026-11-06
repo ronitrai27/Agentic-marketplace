@@ -4,6 +4,9 @@ import { useState, useRef, useEffect } from "react";
 import { Mascot } from "page-mascot";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChefBottomInput } from "./chef-bottom-input";
+import { useRouter } from "next/navigation";
+import { ChefMessages, useChefChat } from "./chef-chat";
+import { ChefChatActions } from "./chef-chat-actions";
 import {
   Tooltip,
   TooltipContent,
@@ -108,7 +111,13 @@ const PLACEHOLDER_STRINGS = [
 ];
 
 /** Content that fades and folds away smoothly once the first message is sent. */
-function Fade({ show, children }: { show: boolean; children: React.ReactNode }) {
+function Fade({
+  show,
+  children,
+}: {
+  show: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <AnimatePresence initial={false}>
       {show && (
@@ -124,8 +133,36 @@ function Fade({ show, children }: { show: boolean; children: React.ReactNode }) 
   );
 }
 
-export function SpaceChefMascot() {
-  const [sent, setSent] = useState(false);
+export function SpaceChefMascot({ chatId }: { chatId?: string }) {
+  const [sent, setSent] = useState(!!chatId);
+  const [activeChatId, setActiveChatId] = useState<string | null>(
+    chatId ?? null,
+  );
+  const chat = useChefChat(activeChatId);
+  const router = useRouter();
+
+  /** Back to the start screen. The chat stays in History. */
+  const clearChat = () => {
+    setSent(false);
+    setActiveChatId(null);
+    router.push("/space");
+  };
+
+  /** First message creates the chat id and puts it in the URL; every message then goes to the chef route. */
+  const sendMessage = (text: string) => {
+    let id = activeChatId;
+    if (!id) {
+      id = crypto.randomUUID();
+      setActiveChatId(id);
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `/space/chat/${id}`,
+      );
+    }
+    setSent(true);
+    void chat.send(id, text);
+  };
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -199,165 +236,172 @@ export function SpaceChefMascot() {
   };
 
   const submit = () => {
-    if (!promptInput.trim()) return;
+    const text = promptInput.trim();
+    if (!text) return;
     setPromptInput("");
-    setSent(true);
+    sendMessage(text);
   };
 
   return (
-    <div className="w-full h-full flex flex-col select-none">
-    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto px-4 py-4 md:py-6 2xl:py-10 scrollbar-thin">
-      <motion.div layout className={`max-w-4xl 2xl:max-w-5xl w-full mx-auto flex flex-col items-center ${sent ? "mt-0" : "my-auto"}`}>
-        {/* Mascot & Heading */}
-        <div className="relative flex flex-col items-center mb-3 2xl:mb-5">
-          <TooltipProvider>
-            <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
-              <TooltipTrigger
-                render={<div />}
-                onClick={handleMascotClick}
-                className="inline-block cursor-pointer outline-none focus:outline-none bg-transparent border-0 p-0 transition-transform active:scale-95"
-              >
-                <div className="2xl:hidden">
-                  <Mascot
-                    directions="/mascots/chef-directions.webp"
-                    reactions="/mascots/chef-reactions.webp"
-                    size={115}
-                    label="Chef Mascot"
-                  />
-                </div>
-                <div className="hidden 2xl:block">
-                  <Mascot
-                    directions="/mascots/chef-directions.webp"
-                    reactions="/mascots/chef-reactions.webp"
-                    size={135}
-                    label="Chef Mascot"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent
-                side="top"
-                sideOffset={8}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg shadow-lg border border-border/70 bg-neutral-900 text-neutral-100 dark:bg-white dark:text-neutral-900 tracking-tight"
-              >
-                hy, im chef , are u ready to cook with me ?
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+    <div className="relative w-full h-full flex flex-col select-none">
+      {sent && <ChefChatActions onClear={clearChat} />}
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto px-4 py-4 md:py-6 2xl:py-10 scrollbar-thin">
+        <motion.div
+          layout
+          className={`max-w-4xl 2xl:max-w-5xl w-full mx-auto flex flex-col items-center ${sent ? "mt-0 flex-1" : "my-auto"}`}
+        >
+          {/* Mascot & Heading */}
+          <div className="relative flex flex-col items-center mb-3 2xl:mb-5">
+            <TooltipProvider>
+              <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
+                <TooltipTrigger
+                  render={<div />}
+                  onClick={handleMascotClick}
+                  className="inline-block cursor-pointer outline-none focus:outline-none bg-transparent border-0 p-0 transition-transform active:scale-95"
+                >
+                  <div className="2xl:hidden">
+                    <Mascot
+                      directions="/mascots/chef-directions.webp"
+                      reactions="/mascots/chef-reactions.webp"
+                      size={sent ? 90 : 120}
+                      label="Chef Mascot"
+                    />
+                  </div>
+                  <div className="hidden 2xl:block">
+                    <Mascot
+                      directions="/mascots/chef-directions.webp"
+                      reactions="/mascots/chef-reactions.webp"
+                      size={sent ? 90 : 120}
+                      label="Chef Mascot"
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  sideOffset={8}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg shadow-lg border border-border/70 bg-neutral-900 text-neutral-100 dark:bg-white dark:text-neutral-900 tracking-tight"
+                >
+                  hy, im chef , are u ready to cook with me ?
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
-            {/* <h2 className="text-sm md:text-base 2xl:text-lg font-medium text-foreground tracking-tight">
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+              {/* <h2 className="text-sm md:text-base 2xl:text-lg font-medium text-foreground tracking-tight">
               What are we cooking up today?
             </h2> */}
-            <Fade show={!sent}>
-            <button
-              type="button"
-              onClick={() => copyAgentPrompt()}
-              className="inline-flex items-center gap-2 rounded-full border border-border dark:border-neutral-800 bg-linear-to-br from-white via-white to-neutral-300 px-3 py-1 text-[11px] 2xl:text-xs font-medium text-foreground tracking-tight shadow-2xs transition-all duration-150 hover:bg-neutral-100/60 dark:hover:bg-neutral-900 active:scale-[0.98]"
-            >
-              Plug your agent into catelog
-              <span className="flex items-center gap-1.5">
-                {AGENT_TARGETS.map((t) => (
-                  <img
-                    key={t.id}
-                    src={t.src}
-                    alt={t.name}
-                    className={`size-5 ${t.invertOnDark ? "dark:invert" : ""}`}
-                  />
-                ))}
-              </span>
-            </button>
-            </Fade>
-          </div>
-        </div>
-
-        <Fade show={!sent}>
-        {/* Ultra-slim Linear-Style Input Bar */}
-        <div
-          className={`relative w-full mb-5 mt-4 transition-[max-width] duration-1000 ease-in-out ${
-            promptInput.length > 0 ? "max-w-3xl" : "max-w-2xl"
-          }`}
-        >
-          {/* Outer ring (Cloudflare-style) */}
-          <div className="rounded-2xl! border border-border/30 dark:border-neutral-800/80 bg-gray-100 dark:bg-neutral-900/40 p-1">
-            <div className="relative group rounded-xl! border border-border/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-4 pr-1.5 py-2 2xl:py-2.5 shadow-2xs transition-all duration-200 focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:bg-background focus-within:shadow-xs flex items-center gap-2">
-              <input
-                ref={inputRef}
-                type="text"
-                value={promptInput}
-                onChange={(e) => setPromptInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={placeholderText}
-                className="flex-1 bg-transparent text-xs 2xl:text-sm text-foreground placeholder:text-muted-foreground outline-none leading-none"
-              />
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-lg text-muted-foreground hidden sm:inline font-mono pr-0.5">
-                  ↵
-                </span>
+              <Fade show={!sent}>
                 <button
                   type="button"
-                  onClick={submit}
-                  disabled={!promptInput.trim()}
-                  className="size-6 2xl:size-7 rounded-md bg-foreground text-background inline-flex items-center justify-center transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed hover:opacity-90 active:scale-95"
+                  onClick={() => copyAgentPrompt()}
+                  className="inline-flex items-center gap-2 rounded-full border border-border dark:border-neutral-800 bg-linear-to-br from-white via-white to-neutral-300 px-3 py-1 text-[11px] 2xl:text-xs font-medium text-foreground tracking-tight shadow-2xs transition-all duration-150 hover:bg-neutral-100/60 dark:hover:bg-neutral-900 active:scale-[0.98]"
                 >
-                  <ArrowUp className="size-3.5 2xl:size-4" />
-                </button>
-
-                {/* Copy prompt: inside input bar to the right of the send button */}
-                <div className="group/copy flex items-center">
-                  <button
-                    type="button"
-                    aria-label="Copy prompt"
-                    onClick={() => copyAgentPrompt()}
-                    className="size-6 2xl:size-7 rounded-md border border-border/80 dark:border-neutral-800 bg-background dark:bg-neutral-800/80 inline-flex items-center justify-center text-muted-foreground transition-colors hover:bg-neutral-200/70 dark:hover:bg-neutral-800 hover:text-foreground active:scale-95"
-                  >
-                    <Copy className="size-3.5 2xl:size-4" />
-                  </button>
-                  <div className="flex items-center gap-0.5 overflow-hidden max-w-0 opacity-0 transition-all duration-300 ease-out group-hover/copy:max-w-32 group-hover/copy:opacity-100 group-hover/copy:ml-1">
+                  Plug your agent into catelog
+                  <span className="flex items-center gap-1.5">
                     {AGENT_TARGETS.map((t) => (
-                      <button
+                      <img
                         key={t.id}
-                        type="button"
-                        title={`Copy prompt for ${t.name}`}
-                        aria-label={`Copy prompt for ${t.name}`}
-                        onClick={() => copyAgentPrompt(t.name)}
-                        className="size-6 2xl:size-7 shrink-0 rounded-md inline-flex items-center justify-center transition-colors hover:bg-neutral-200/70 dark:hover:bg-neutral-800 active:scale-95"
-                      >
-                        <img
-                          src={t.src}
-                          alt=""
-                          className={`size-5 ${t.invertOnDark ? "dark:invert" : ""}`}
-                        />
-                      </button>
+                        src={t.src}
+                        alt={t.name}
+                        className={`size-5 ${t.invertOnDark ? "dark:invert" : ""}`}
+                      />
                     ))}
+                  </span>
+                </button>
+              </Fade>
+            </div>
+          </div>
+
+          <Fade show={!sent}>
+            {/* Ultra-slim Linear-Style Input Bar */}
+            <div
+              className={`relative w-full mb-5 mt-4 transition-[max-width] duration-1000 ease-in-out ${
+                promptInput.length > 0 ? "max-w-3xl" : "max-w-2xl"
+              }`}
+            >
+              {/* Outer ring (Cloudflare-style) */}
+              <div className="rounded-2xl! border border-border/30 dark:border-neutral-800/80 bg-gray-100 dark:bg-neutral-900/40 p-1">
+                <div className="relative group rounded-xl! border border-border/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-4 pr-1.5 py-2 2xl:py-2.5 shadow-2xs transition-all duration-200 focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:bg-background focus-within:shadow-xs flex items-center gap-2">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={promptInput}
+                    onChange={(e) => setPromptInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={placeholderText}
+                    className="flex-1 bg-transparent text-xs 2xl:text-sm text-foreground placeholder:text-muted-foreground outline-none leading-none"
+                  />
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-lg text-muted-foreground hidden sm:inline font-mono pr-0.5">
+                      ↵
+                    </span>
+                    <button
+                      type="button"
+                      onClick={submit}
+                      disabled={!promptInput.trim()}
+                      className="size-6 2xl:size-7 rounded-md bg-foreground text-background inline-flex items-center justify-center transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed hover:opacity-90 active:scale-95"
+                    >
+                      <ArrowUp className="size-3.5 2xl:size-4" />
+                    </button>
+
+                    {/* Copy prompt: inside input bar to the right of the send button */}
+                    <div className="group/copy flex items-center">
+                      <button
+                        type="button"
+                        aria-label="Copy prompt"
+                        onClick={() => copyAgentPrompt()}
+                        className="size-6 2xl:size-7 rounded-md border border-border/80 dark:border-neutral-800 bg-background dark:bg-neutral-800/80 inline-flex items-center justify-center text-muted-foreground transition-colors hover:bg-neutral-200/70 dark:hover:bg-neutral-800 hover:text-foreground active:scale-95"
+                      >
+                        <Copy className="size-3.5 2xl:size-4" />
+                      </button>
+                      <div className="flex items-center gap-0.5 overflow-hidden max-w-0 opacity-0 transition-all duration-300 ease-out group-hover/copy:max-w-32 group-hover/copy:opacity-100 group-hover/copy:ml-1">
+                        {AGENT_TARGETS.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            title={`Copy prompt for ${t.name}`}
+                            aria-label={`Copy prompt for ${t.name}`}
+                            onClick={() => copyAgentPrompt(t.name)}
+                            className="size-6 2xl:size-7 shrink-0 rounded-md inline-flex items-center justify-center transition-colors hover:bg-neutral-200/70 dark:hover:bg-neutral-800 active:scale-95"
+                          >
+                            <img
+                              src={t.src}
+                              alt=""
+                              className={`size-5 ${t.invertOnDark ? "dark:invert" : ""}`}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </Fade>
 
-        </Fade>
+          <Fade show={!sent}>
+            <TryAgents />
+          </Fade>
 
-        <Fade show={!sent}>
-          <TryAgents />
-        </Fade>
+          <Fade show={!sent}>
+            {/* Try These Recipes: 4 Compact Gradient Boxes */}
+            <div className="w-full mt-6 2xl:mt-7">
+              <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
+                <span className="text-[10px] 2xl:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Try These Recipes
+                </span>
+              </div>
 
-        <Fade show={!sent}>
-        {/* Try These Recipes: 4 Compact Gradient Boxes */}
-        <div className="w-full mt-6 2xl:mt-7">
-          <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
-            <span className="text-[10px] 2xl:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Try These Recipes
-            </span>
-          </div>
-
-          <RecipeCards onSelect={handleSelectRecipe} />
-        </div>
-        </Fade>
-      </motion.div>
-    </div>
-      {sent && <ChefBottomInput onSubmit={() => undefined} />}
+              <RecipeCards onSelect={handleSelectRecipe} />
+            </div>
+          </Fade>
+          {sent && (
+            <ChefMessages messages={chat.messages} traces={chat.traces} />
+          )}
+        </motion.div>
+      </div>
+      {sent && <ChefBottomInput onSubmit={sendMessage} />}
     </div>
   );
 }

@@ -190,6 +190,34 @@ export default defineSchema({
     .index("by_agent_created", ["agentId", "createdAt"])
     .index("by_agent_user", ["agentId", "userId"]),
 
+  // ─── Chef chats ────────────────────────────────────────────────────
+  // Read model for the UI. The LangGraph checkpoint in Postgres is the execution truth; these rows are
+  // written by a background outbox and never block the chat.
+  chats: defineTable({
+    chatId: v.string(), // uuid in the URL and the LangGraph thread id (namespaced by user there)
+    userId: v.string(),
+    title: v.string(),
+    createdAt: v.number(),
+    lastMessageAt: v.number(),
+  })
+    .index("by_chatId", ["chatId"])
+    .index("by_user_last", ["userId", "lastMessageAt"]),
+
+  chat_messages: defineTable({
+    chatId: v.string(),
+    userId: v.string(),
+    /** Client/service generated uuid: makes a retried write a no-op. */
+    messageId: v.string(),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    kind: v.union(v.literal("text"), v.literal("refusal")),
+    text: v.string(),
+    createdAt: v.number(),
+    /** Position inside one batch, to keep order when createdAt ties. */
+    ord: v.number(),
+  })
+    .index("by_chat_order", ["chatId", "createdAt", "ord"])
+    .index("by_chat_message", ["chatId", "messageId"]),
+
   // For daily stats store.
   agent_stats_daily: defineTable({
     agentId: v.id("agents"),

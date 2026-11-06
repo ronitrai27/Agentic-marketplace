@@ -6,10 +6,16 @@ import { ArrowUp, Mic, Plus } from "lucide-react";
 import { ComposerLoader } from "@/components/application/composer-loader/composer-loader";
 
 /** The chat input that rises from the bottom once a first message is sent: sweeping border, plus, mic, send. */
-export function ChefBottomInput({ onSubmit }: { onSubmit: (text: string) => void }) {
+export function ChefBottomInput({
+  onSubmit,
+}: {
+  onSubmit: (text: string) => void;
+}) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => ref.current?.focus(), []);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
 
   const send = () => {
     const t = text.trim();
@@ -28,7 +34,7 @@ export function ChefBottomInput({ onSubmit }: { onSubmit: (text: string) => void
       <ComposerLoader
         className="mx-auto max-w-3xl"
         colors={["#fde68a", "#fbbf24", "#f59e0b", "#fcd34d"]}
-        speed={4.5}
+        speed={6.5}
         arc={120}
         intensity={0.7}
         bloom={16}

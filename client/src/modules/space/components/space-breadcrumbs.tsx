@@ -20,7 +20,9 @@ export function SpaceBreadcrumbs() {
 
   // Determine sub-segments relative to "space"
   const spaceIndex = segments.indexOf("space");
-  const subSegments = spaceIndex !== -1 ? segments.slice(spaceIndex + 1) : [];
+  const allSub = spaceIndex !== -1 ? segments.slice(spaceIndex + 1) : [];
+  // /space/chat/<uuid> shows just "Chat"; the id is noise
+  const subSegments = allSub[0] === "chat" ? ["chat"] : allSub;
 
   // Helper to format titles nicely (e.g. "wallet" -> "Wallet", "my-tasks" -> "My Tasks")
   const formatTitle = (segment: string) => {
