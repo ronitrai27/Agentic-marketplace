@@ -3,21 +3,42 @@
 import React from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { CheckCircle2, CircleAlert, Eraser, Lock, WifiOff, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleAlert,
+  Eraser,
+  Lock,
+  WifiOff,
+  XCircle,
+} from "lucide-react";
 import { Terminal } from "@lucasmarkes/hairline/react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RunConsole, RunOutput, outputFromEvents } from "./run-console";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { SchemaForm, buildInput, fieldsFromSchema, initialValues, type FormValues } from "./schema-form";
+import {
+  SchemaForm,
+  buildInput,
+  fieldsFromSchema,
+  initialValues,
+  type FormValues,
+} from "./schema-form";
 
 const HOLD_TTL_MS = 15 * 60_000;
 const ACTIVE = new Set(["awaiting_input", "queued", "running"]);
 
-const fmtCredits = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, "")} credits`;
+const fmtCredits = (n: number) =>
+  `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, "")} credits`;
 
 function clock(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -50,11 +71,23 @@ function useOnline() {
 }
 
 const STATUS: Record<string, { label: string; tone: string }> = {
-  awaiting_input: { label: "Waiting for your input", tone: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  awaiting_input: {
+    label: "Waiting for your input",
+    tone: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  },
   queued: { label: "Queued", tone: "bg-muted text-muted-foreground" },
-  running: { label: "Running", tone: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300" },
-  succeeded: { label: "Completed", tone: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
-  failed: { label: "Failed", tone: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300" },
+  running: {
+    label: "Running",
+    tone: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+  },
+  succeeded: {
+    label: "Completed",
+    tone: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  },
+  failed: {
+    label: "Failed",
+    tone: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+  },
   cancelled: { label: "Cancelled", tone: "bg-muted text-muted-foreground" },
 };
 
@@ -68,15 +101,29 @@ function parse(json: string): any {
 
 /** Long strings (uploaded files as base64) would flood the panel: show their length instead. */
 function clip(value: unknown): unknown {
-  if (typeof value === "string") return value.length > 160 ? `${value.slice(0, 80)}… (${value.length.toLocaleString()} characters)` : value;
+  if (typeof value === "string")
+    return value.length > 160
+      ? `${value.slice(0, 80)}… (${value.length.toLocaleString()} characters)`
+      : value;
   if (Array.isArray(value)) return value.map(clip);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, clip(v)]));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, clip(v)]),
+    );
   return value;
 }
 
 type RunEvent = { seq: number; type: string; dataJson: string; at: number };
 
-function Row({ at, base, children }: { at: number; base: number; children: React.ReactNode }) {
+function Row({
+  at,
+  base,
+  children,
+}: {
+  at: number;
+  base: number;
+  children: React.ReactNode;
+}) {
   return (
     <li className="flex gap-3 text-xs">
       <span className="w-12 shrink-0 pt-0.5 text-right font-mono text-[10px] tabular-nums text-muted-foreground">
@@ -93,28 +140,54 @@ function EventRow({ event, base }: { event: RunEvent; base: number }) {
 
   let body: React.ReactNode;
   if (type === "task.delta") {
-    body = <pre className="whitespace-pre-wrap rounded-lg bg-muted/60 p-2.5 font-mono text-xs leading-relaxed">{String(d.content ?? "")}</pre>;
+    body = (
+      <pre className="whitespace-pre-wrap rounded-lg bg-muted/60 p-2.5 font-mono text-xs leading-relaxed">
+        {String(d.content ?? "")}
+      </pre>
+    );
   } else if (type === "task.progress") {
     body = (
       <p>
-        <span className="font-medium">Progress {typeof d.percent === "number" ? `${Math.round(d.percent)}%` : ""}</span>
-        {d.message ? <span className="text-muted-foreground"> · {String(d.message)}</span> : null}
+        <span className="font-medium">
+          Progress{" "}
+          {typeof d.percent === "number" ? `${Math.round(d.percent)}%` : ""}
+        </span>
+        {d.message ? (
+          <span className="text-muted-foreground"> · {String(d.message)}</span>
+        ) : null}
       </p>
     );
   } else if (type === "task.status") {
-    body = <p className="text-muted-foreground">Agent status: <span className="text-foreground">{String(d.status)}</span></p>;
+    body = (
+      <p className="text-muted-foreground">
+        Agent status:{" "}
+        <span className="text-foreground">{String(d.status)}</span>
+      </p>
+    );
   } else if (type === "task.activity") {
     body = (
       <p>
-        <span className="font-medium">{String(d.activity_type ?? "activity")}</span>
-        {d.data ? <span className="text-muted-foreground"> · {JSON.stringify(d.data).slice(0, 160)}</span> : null}
+        <span className="font-medium">
+          {String(d.activity_type ?? "activity")}
+        </span>
+        {d.data ? (
+          <span className="text-muted-foreground">
+            {" "}
+            · {JSON.stringify(d.data).slice(0, 160)}
+          </span>
+        ) : null}
       </p>
     );
   } else if (type === "health") {
     body = d.ok ? (
-      <p className="text-emerald-600">Agent server is healthy{typeof d.latencyMs === "number" ? ` · ${d.latencyMs} ms` : ""}</p>
+      <p className="text-emerald-600">
+        Agent server is healthy
+        {typeof d.latencyMs === "number" ? ` · ${d.latencyMs} ms` : ""}
+      </p>
     ) : (
-      <p className="text-amber-600">Agent server did not answer its health check</p>
+      <p className="text-amber-600">
+        Agent server did not answer its health check
+      </p>
     );
   } else if (type === "schema.check") {
     body = d.valid ? (
@@ -123,7 +196,8 @@ function EventRow({ event, base }: { event: RunEvent; base: number }) {
       </p>
     ) : (
       <p className="flex items-center gap-1.5 text-red-600">
-        <XCircle className="size-3.5" /> Output broke the schema: {String(d.problem ?? "")}
+        <XCircle className="size-3.5" /> Output broke the schema:{" "}
+        {String(d.problem ?? "")}
       </p>
     );
   } else if (type === "task.completed") {
@@ -131,18 +205,37 @@ function EventRow({ event, base }: { event: RunEvent; base: number }) {
     body = (
       <div className="space-y-1.5">
         <p className="font-medium text-emerald-600">Agent finished</p>
-        <pre className="max-h-80 overflow-auto rounded-lg bg-muted/60 p-2.5 font-mono text-xs">{out}</pre>
-        {d.truncated && <p className="text-[11px] text-muted-foreground">Long output, showing the start only.</p>}
+        <pre className="max-h-80 overflow-auto rounded-lg bg-muted/60 p-2.5 font-mono text-xs">
+          {out}
+        </pre>
+        {d.truncated && (
+          <p className="text-[11px] text-muted-foreground">
+            Long output, showing the start only.
+          </p>
+        )}
       </div>
     );
   } else if (type === "task.failed") {
-    body = <p className="text-red-600">Agent failed: {String(d.error?.message ?? "unknown error")}</p>;
+    body = (
+      <p className="text-red-600">
+        Agent failed: {String(d.error?.message ?? "unknown error")}
+      </p>
+    );
   } else if (type === "run.note") {
-    body = <p className={d.level === "error" ? "text-red-600" : "text-muted-foreground"}>{String(d.message ?? "")}</p>;
+    body = (
+      <p
+        className={
+          d.level === "error" ? "text-red-600" : "text-muted-foreground"
+        }
+      >
+        {String(d.message ?? "")}
+      </p>
+    );
   } else {
     body = (
       <p className="text-muted-foreground">
-        <span className="font-mono text-foreground">{type}</span> {JSON.stringify(d).slice(0, 160)}
+        <span className="font-mono text-foreground">{type}</span>{" "}
+        {JSON.stringify(d).slice(0, 160)}
       </p>
     );
   }
@@ -153,7 +246,15 @@ function EventRow({ event, base }: { event: RunEvent; base: number }) {
   );
 }
 
-function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () => void; onClear: () => void }) {
+function RunBody({
+  runId,
+  onClose,
+  onClear,
+}: {
+  runId: Id<"runs">;
+  onClose: () => void;
+  onClear: () => void;
+}) {
   const run = useQuery(api.runs.get, { runId });
   const events = useQuery(api.runs.events, { runId });
   const start = useAction(api.temporal.start);
@@ -163,7 +264,10 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
   const active = !!run && ACTIVE.has(run.status);
   const now = useNow(active);
 
-  const fields = React.useMemo(() => (run ? fieldsFromSchema(run.agent.inputSchemaJson) : []), [run?.agent.inputSchemaJson]);
+  const fields = React.useMemo(
+    () => (run ? fieldsFromSchema(run.agent.inputSchemaJson) : []),
+    [run?.agent.inputSchemaJson],
+  );
   const [values, setValues] = React.useState<FormValues | null>(null);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [sendError, setSendError] = React.useState<string | null>(null);
@@ -171,7 +275,14 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
   const [tab, setTab] = React.useState<"traces" | "output">("traces");
 
   const fileNames = React.useMemo(
-    () => new Set(fields.flatMap((f) => (f.kind === "file" ? [f.name, ...(f.filenameField ? [f.filenameField] : [])] : []))),
+    () =>
+      new Set(
+        fields.flatMap((f) =>
+          f.kind === "file"
+            ? [f.name, ...(f.filenameField ? [f.filenameField] : [])]
+            : [],
+        ),
+      ),
     [fields],
   );
 
@@ -198,7 +309,10 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
 
   const logRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+    logRef.current?.scrollTo({
+      top: logRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [events?.length]);
 
   if (run === undefined) {
@@ -212,7 +326,9 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
         <CircleAlert className="size-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">This run could not be found.</p>
+        <p className="text-sm text-muted-foreground">
+          This run could not be found.
+        </p>
         <Button variant="outline" onClick={onClose}>
           Close
         </Button>
@@ -237,7 +353,10 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
     setSending(true);
     try {
       // Best effort: the trace records where the run came from, but never blocks it
-      const where: { ip?: string | null; region?: string | null } = await fetch("/api/client-info", { cache: "no-store" })
+      const where: { ip?: string | null; region?: string | null } = await fetch(
+        "/api/client-info",
+        { cache: "no-store" },
+      )
         .then((r) => r.json())
         .catch(() => ({}));
       await start({
@@ -252,8 +371,11 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
         /* ignore */
       }
     } catch (err) {
-      const data = err instanceof ConvexError ? (err.data as { message?: string }) : null;
-      setSendError(data?.message ?? "Could not start the run. Please try again.");
+      const data =
+        err instanceof ConvexError ? (err.data as { message?: string }) : null;
+      setSendError(
+        data?.message ?? "Could not start the run. Please try again.",
+      );
     } finally {
       setSending(false);
     }
@@ -278,27 +400,47 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
         <div className="flex items-center gap-2.5 pr-8">
           {run.agent.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={run.agent.logoUrl} alt="" className="size-8 shrink-0 rounded-lg object-cover" />
+            <img
+              src={run.agent.logoUrl}
+              alt=""
+              className="size-8 shrink-0 rounded-lg object-cover"
+            />
           ) : (
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold">
               {run.agent.name.slice(0, 1).toUpperCase()}
             </span>
           )}
-          <SheetTitle className="min-w-0 flex-1 truncate text-lg">{run.agent.name}</SheetTitle>
-          <Button variant="outline" size="sm" onClick={onClear} title="Clear this view">
+          <SheetTitle className="min-w-0 flex-1 truncate text-lg">
+            {run.agent.name}
+          </SheetTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClear}
+            title="Clear this view"
+          >
             <Eraser className="size-3.5" /> Clear
           </Button>
         </div>
         <SheetDescription className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${status.tone}`}>
-            {run.status === "running" && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${status.tone}`}
+          >
+            {run.status === "running" && (
+              <span className="size-1.5 animate-pulse rounded-full bg-current" />
+            )}
             {status.label}
           </span>
           {run.status === "awaiting_input" ? (
-            <span className="tabular-nums">Hold expires in {clock(run.createdAt + HOLD_TTL_MS - now)}</span>
+            <span className="tabular-nums">
+              Hold expires in {clock(run.createdAt + HOLD_TTL_MS - now)}
+            </span>
           ) : (
             <span className="tabular-nums">
-              {clock(elapsed)} <span className="text-muted-foreground/70">/ {clock(limitMs)} limit</span>
+              {clock(elapsed)}{" "}
+              <span className="text-muted-foreground/70">
+                / {clock(limitMs)} limit
+              </span>
             </span>
           )}
           {run.holdCredits !== null && (
@@ -317,20 +459,25 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
       {!online && (
         <div className="mx-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
           <WifiOff className="mt-0.5 size-3.5 shrink-0" />
-          You are offline. The run keeps going on our servers, and this panel catches up when you are back.
+          You are offline. The run keeps going on our servers, and this panel
+          catches up when you are back.
         </div>
       )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
         {run.status === "awaiting_input" && values ? (
           <section className="min-h-0 flex-1 space-y-4 overflow-y-auto">
-            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Input</h3>
+            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Input
+            </h3>
             <SchemaForm
               fields={fields}
               values={values}
               errors={errors}
               disabled={sending}
-              onChange={(name, value) => setValues((v) => ({ ...(v ?? {}), [name]: value }))}
+              onChange={(name, value) =>
+                setValues((v) => ({ ...(v ?? {}), [name]: value }))
+              }
             />
             {sendError && <p className="text-xs text-red-600">{sendError}</p>}
           </section>
@@ -338,21 +485,38 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
           <>
             {(run.inputJson || run.inputLarge) && (
               <details className="rounded-lg border border-border px-3 py-2 text-xs">
-                <summary className="cursor-pointer font-medium text-muted-foreground">Input you sent</summary>
+                <summary className="cursor-pointer font-medium text-muted-foreground">
+                  Input you sent
+                </summary>
                 {run.inputJson ? (
-                  <pre className="mt-2 max-h-48 overflow-auto font-mono">{JSON.stringify(clip(parse(run.inputJson)), null, 2)}</pre>
+                  <pre className="mt-2 max-h-48 overflow-auto font-mono">
+                    {JSON.stringify(clip(parse(run.inputJson)), null, 2)}
+                  </pre>
                 ) : (
-                  <p className="mt-2 text-muted-foreground">Included uploaded files. They are deleted as soon as the run ends.</p>
+                  <p className="mt-2 text-muted-foreground">
+                    Included uploaded files. They are deleted as soon as the run
+                    ends.
+                  </p>
                 )}
               </details>
             )}
-            <Tabs value={tab} onValueChange={(v) => setTab(v as "traces" | "output")} className="flex-none gap-0">
+            <Tabs
+              value={tab}
+              onValueChange={(v) => setTab(v as "traces" | "output")}
+              className="flex-none gap-0"
+            >
               <TabsList>
                 <TabsTrigger value="traces">
-                  Traces <span className="tabular-nums text-muted-foreground">{events?.length ?? 0}</span>
+                  Traces{" "}
+                  <span className="tabular-nums text-muted-foreground">
+                    {events?.length ?? 0}
+                  </span>
                 </TabsTrigger>
                 <TabsTrigger value="output">
-                  Output {run.outputJson && <span className="size-1.5 rounded-full bg-emerald-500" />}
+                  Output{" "}
+                  {run.outputJson && (
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                  )}
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -365,7 +529,10 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
                 error={run.error?.message}
               />
             ) : (
-              <RunOutput outputJson={run.outputJson ?? outputFromEvents(events)} status={run.status} />
+              <RunOutput
+                outputJson={run.outputJson ?? outputFromEvents(events)}
+                status={run.status}
+              />
             )}
           </>
         )}
@@ -392,7 +559,10 @@ function RunBody({ runId, onClose, onClear }: { runId: Id<"runs">; onClose: () =
   );
 }
 
-class Boundary extends React.Component<{ children: React.ReactNode; onClose: () => void }, { failed: boolean }> {
+class Boundary extends React.Component<
+  { children: React.ReactNode; onClose: () => void },
+  { failed: boolean }
+> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
@@ -402,7 +572,9 @@ class Boundary extends React.Component<{ children: React.ReactNode; onClose: () 
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
         <CircleAlert className="size-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">This run could not be opened.</p>
+        <p className="text-sm text-muted-foreground">
+          This run could not be opened.
+        </p>
         <Button variant="outline" onClick={this.props.onClose}>
           Close
         </Button>
@@ -412,12 +584,27 @@ class Boundary extends React.Component<{ children: React.ReactNode; onClose: () 
 }
 
 /** Right-hand panel for one run. Everything shown comes from Convex, so a reload or a dropped connection loses nothing. */
-export function RunSheet({ runId, onClose, onClear }: { runId: string; onClose: () => void; onClear: () => void }) {
+export function RunSheet({
+  runId,
+  onClose,
+  onClear,
+}: {
+  runId: string;
+  onClose: () => void;
+  onClear: () => void;
+}) {
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-xl">
+      <SheetContent
+        side="right"
+        className="w-full gap-0 data-[side=right]:sm:max-w-[660px]"
+      >
         <Boundary onClose={onClose}>
-          <RunBody runId={runId as Id<"runs">} onClose={onClose} onClear={onClear} />
+          <RunBody
+            runId={runId as Id<"runs">}
+            onClose={onClose}
+            onClear={onClear}
+          />
         </Boundary>
       </SheetContent>
     </Sheet>
@@ -428,7 +615,10 @@ export function RunSheet({ runId, onClose, onClear }: { runId: string; onClose: 
 export function EmptyRunSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-xl">
+      <SheetContent
+        side="right"
+        className="w-full gap-0 data-[side=right]:sm:max-w-3xl"
+      >
         <SheetHeader className="border-b border-border">
           <SheetTitle className="text-lg">Runs</SheetTitle>
           <SheetDescription>Agent activity shows up here.</SheetDescription>

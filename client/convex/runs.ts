@@ -3,6 +3,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { components, internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { escrowCredits, getCredits, setCredits } from "./escrow";
 import { chargeMicrosFor, microsToCredits, runQuote, type PlanMicros } from "../src/lib/agent-display";
 
@@ -728,5 +729,50 @@ export const myRecent = query({
       });
     }
     return out;
+  },
+});
+
+/** All of the buyer's runs, newest first and paged, for the /space/runs table. */
+export const myAll = query({
+  args: {
+    filter: v.union(v.literal("all"), v.literal("succeeded"), v.literal("failed"), v.literal("active"), v.literal("cancelled")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { filter, paginationOpts }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return { page: [], isDone: true, continueCursor: "" };
+    const res = await ctx.db
+      .query("runs")
+      .withIndex("by_user_created", (q) => q.eq("userId", identity.subject))
+      .order("desc")
+      .filter((q) =>
+        filter === "all"
+          ? q.neq(q.field("status"), "awaiting_input")
+          : filter === "active"
+            ? q.or(q.eq(q.field("status"), "queued"), q.eq(q.field("status"), "running"))
+            : q.eq(q.field("status"), filter),
+      )
+      .paginate(paginationOpts);
+    const agents = new Map<string, Doc<"agents"> | null>();
+    const page = [];
+    for (const r of res.page) {
+      if (!agents.has(r.agentId)) agents.set(r.agentId, await ctx.db.get(r.agentId));
+      const agent = agents.get(r.agentId);
+      page.push({
+        id: r._id as string,
+        status: r.status,
+        agentName: agent?.name ?? "Deleted agent",
+        agentSlug: agent?.slug ?? null,
+        logoUrl: agent?.logoUrl ?? null,
+        createdAt: r.createdAt,
+        durationMs: r.durationMs ?? (r.finishedAt ? r.finishedAt - (r.startedAt ?? r.createdAt) : null),
+        progressPct: r.progressPct ?? null,
+        chargedCredits: r.chargedCredits ?? null,
+        holdCredits: r.holdCredits ?? null,
+        holdStatus: r.holdStatus ?? null,
+        errorMessage: r.error?.message ?? null,
+      });
+    }
+    return { ...res, page };
   },
 });

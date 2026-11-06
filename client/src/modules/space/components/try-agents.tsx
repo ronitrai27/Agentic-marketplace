@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
-import { Star, Sparkles, Plus } from "lucide-react";
+import { Star, Sparkles, Plus, FolderDownIcon } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
 import { tagById } from "@/lib/agent-tags";
 import { uniqueModelIcons } from "@/lib/agent-display";
@@ -67,7 +67,7 @@ export function TryAgents() {
     <div className="w-full mb-5 2xl:mb-7">
       <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
         <span className="text-[10px] 2xl:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-          <Sparkles className="size-3 2xl:size-3.5 text-muted-foreground" />
+          <FolderDownIcon className="size-3 2xl:size-3.5 text-muted-foreground" />
           Try these Agents
         </span>
       </div>
@@ -86,13 +86,20 @@ export function TryAgents() {
             <>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <AgentLogo name={agent.name} logoUrl={agent.logoUrl} className="size-7 text-xs shrink-0" />
+                  <AgentLogo
+                    name={agent.name}
+                    logoUrl={agent.logoUrl}
+                    className="size-7 text-xs shrink-0"
+                  />
                   <span className="text-xs 2xl:text-sm font-medium text-foreground tracking-tight truncate">
                     {agent.name}
                   </span>
                 </div>
                 <span className="flex items-center gap-1 text-xs text-foreground tabular-nums shrink-0">
-                  <Star className="size-3.5 fill-amber-400 text-amber-400" strokeWidth={1.5} />
+                  <Star
+                    className="size-3.5 fill-amber-400 text-amber-400"
+                    strokeWidth={1.5}
+                  />
                   {agent.rating.toFixed(1)}
                 </span>
               </div>
@@ -110,7 +117,10 @@ export function TryAgents() {
                   {remainingTags > 0 && (
                     <span
                       className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0"
-                      title={agent.tags.slice(maxTags).map((id) => tagById(id)?.label ?? id).join(", ")}
+                      title={agent.tags
+                        .slice(maxTags)
+                        .map((id) => tagById(id)?.label ?? id)
+                        .join(", ")}
                     >
                       <Plus className="size-2.5" />
                       {remainingTags}
