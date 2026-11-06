@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/trace";
 import { Spinner } from "@/components/ui/spinner";
 import { DotmSquare1 } from "@/components/ui/dotm-square-1";
+import { ChefMarkdown } from "./chef-markdown";
 import { api } from "../../../../convex/_generated/api";
 
 export type ChatMsg = {
@@ -139,13 +140,30 @@ export function useChefChat(chatId: string | null) {
           const payload = JSON.parse(data);
           if (event === "trace") setStep(payload as Step);
           if (event === "message")
-            setLocal((l) => [...l.filter((m) => m.id !== (payload as ChatMsg).id), payload as ChatMsg]);
+            setLocal((l) => [
+              ...l.filter((m) => m.id !== (payload as ChatMsg).id),
+              payload as ChatMsg,
+            ]);
           if (event === "token") {
-            const { id: replyId, text: chunkText } = payload as { id: string; text: string };
+            const { id: replyId, text: chunkText } = payload as {
+              id: string;
+              text: string;
+            };
             setLocal((l) =>
               l.some((m) => m.id === replyId)
-                ? l.map((m) => (m.id === replyId ? { ...m, text: m.text + chunkText } : m))
-                : [...l, { id: replyId, role: "assistant", kind: "text", text: chunkText, createdAt: Date.now() }],
+                ? l.map((m) =>
+                    m.id === replyId ? { ...m, text: m.text + chunkText } : m,
+                  )
+                : [
+                    ...l,
+                    {
+                      id: replyId,
+                      role: "assistant",
+                      kind: "text",
+                      text: chunkText,
+                      createdAt: Date.now(),
+                    },
+                  ],
             );
           }
           if (event === "error")
@@ -205,10 +223,19 @@ function StepTrace({ steps, startedAt }: { steps: Step[]; startedAt: number }) {
     return (
       <Trace>
         {steps.map((s) => (
-          <TraceLine key={s.id} status={s.status === "running" ? "running" : undefined}>
-            <TraceIcon>{s.status === "running" ? <Spinner /> : <Check />}</TraceIcon>
-            <TraceTitle>{s.status === "running" ? `${s.label}…` : s.label}</TraceTitle>
-            {s.status === "running" && <TraceDescription>{fmtSecs(elapsed)}</TraceDescription>}
+          <TraceLine
+            key={s.id}
+            status={s.status === "running" ? "running" : undefined}
+          >
+            <TraceIcon>
+              {s.status === "running" ? <Spinner /> : <Check />}
+            </TraceIcon>
+            <TraceTitle>
+              {s.status === "running" ? `${s.label}…` : s.label}
+            </TraceTitle>
+            {s.status === "running" && (
+              <TraceDescription>{fmtSecs(elapsed)}</TraceDescription>
+            )}
           </TraceLine>
         ))}
       </Trace>
@@ -252,7 +279,9 @@ function ReplyFooter({ m }: { m: ChatMsg }) {
   const [vote, setVote] = useState<"up" | "down" | null>(null);
   return (
     <MessageFooter className="mt-1 gap-1">
-      {m.durationMs !== undefined && <span className="mr-1 tabular-nums">{fmtSecs(m.durationMs)}</span>}
+      {m.durationMs !== undefined && (
+        <span className="mr-1 tabular-nums">{fmtSecs(m.durationMs)}</span>
+      )}
       <CopyButton text={m.text} />
       <button
         type="button"
@@ -261,7 +290,9 @@ function ReplyFooter({ m }: { m: ChatMsg }) {
         onClick={() => setVote(vote === "up" ? null : "up")}
         className={`${iconBtn} ${vote === "up" ? "text-foreground" : ""}`}
       >
-        <ThumbsUp className={`size-3.5 ${vote === "up" ? "fill-current" : ""}`} />
+        <ThumbsUp
+          className={`size-3.5 ${vote === "up" ? "fill-current" : ""}`}
+        />
       </button>
       <button
         type="button"
@@ -270,7 +301,9 @@ function ReplyFooter({ m }: { m: ChatMsg }) {
         onClick={() => setVote(vote === "down" ? null : "down")}
         className={`${iconBtn} ${vote === "down" ? "text-foreground" : ""}`}
       >
-        <ThumbsDown className={`size-3.5 ${vote === "down" ? "fill-current" : ""}`} />
+        <ThumbsDown
+          className={`size-3.5 ${vote === "down" ? "fill-current" : ""}`}
+        />
       </button>
     </MessageFooter>
   );
@@ -294,14 +327,16 @@ export function ChefMessages({
   }, [messages, traces, waiting]);
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-1 pb-4 -mt-4!">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-1.5! px-1 pb-4 -mt-4!">
       {messages.map((m) =>
         m.role === "user" ? (
-          <div key={m.id} className="flex flex-col gap-3">
+          <div key={m.id} className="flex flex-col gap-2!">
             <Message align="end">
               <MessageContent>
                 <Bubble align="end" variant="muted">
-                  <BubbleContent className="rounded-3xl px-4 py-2.5 text-[13px]">{m.text}</BubbleContent>
+                  <BubbleContent className="rounded-3xl px-4 py-2.5 text-[13px]">
+                    {m.text}
+                  </BubbleContent>
                 </Bubble>
                 <MessageFooter className="gap-1.5">
                   <CopyButton text={m.text} />
@@ -311,19 +346,25 @@ export function ChefMessages({
             </Message>
             {waiting && m.id === last?.id && (
               <div aria-label="Chef is thinking" className="px-1">
-                <DotmSquare1 size={20} dotSize={3} speed={1.2} bloom />
+                <DotmSquare1 size={20} dotSize={3} speed={1.8} bloom />
               </div>
             )}
-            {traces[m.id] && <StepTrace steps={traces[m.id]} startedAt={m.createdAt} />}
+            {traces[m.id] && (
+              <StepTrace steps={traces[m.id]} startedAt={m.createdAt} />
+            )}
           </div>
         ) : (
           <Message key={m.id}>
             <MessageContent>
               <Bubble variant="ghost">
-                <BubbleContent className="text-[15px] leading-relaxed">{m.text}</BubbleContent>
+                <BubbleContent className="text-[12px] leading-relaxed">
+                  <ChefMarkdown>{m.text}</ChefMarkdown>
+                </BubbleContent>
               </Bubble>
-              {/* hidden while the reply is still streaming in */}
-              {!(busy && m.id === last?.id) && <ReplyFooter m={m} />}
+              {/* shown the moment the reply is final (it carries its time), not when the connection closes */}
+              {!(busy && m.id === last?.id && m.durationMs === undefined) && (
+                <ReplyFooter m={m} />
+              )}
             </MessageContent>
           </Message>
         ),
