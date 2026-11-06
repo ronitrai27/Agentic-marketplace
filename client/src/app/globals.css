@@ -308,3 +308,10 @@
 }
 .heartbeat-icon { transform-box: fill-box; transform-origin: center; animation: heartbeat-beat 1.4s ease-in-out infinite; }
 .heartbeat-line { stroke-dasharray: 0.35 1; stroke-dashoffset: 1; animation: heartbeat-trace 1.4s linear infinite; }
+
+/* Composer Loader (components/application/composer-loader): the band lap. The component lives in src/styles/globals.css,
+   which the app does not import, so the keyframes are here. */
+@keyframes bui-composer-loader-dash {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -100; }
+}

@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Mascot } from "page-mascot";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChefBottomInput } from "./chef-bottom-input";
 import {
   Tooltip,
   TooltipContent,
@@ -105,7 +107,25 @@ const PLACEHOLDER_STRINGS = [
   "Give any Topic to research deep , and compare different agents.",
 ];
 
+/** Content that fades and folds away smoothly once the first message is sent. */
+function Fade({ show, children }: { show: boolean; children: React.ReactNode }) {
+  return (
+    <AnimatePresence initial={false}>
+      {show && (
+        <motion.div
+          className="flex w-full flex-col items-center overflow-hidden"
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.6, ease: "easeInOut" }}
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 export function SpaceChefMascot() {
+  const [sent, setSent] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -174,13 +194,20 @@ export function SpaceChefMascot() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      // Handle submit action
+      submit();
     }
   };
 
+  const submit = () => {
+    if (!promptInput.trim()) return;
+    setPromptInput("");
+    setSent(true);
+  };
+
   return (
-    <div className="w-full h-full flex flex-col overflow-y-auto px-4 py-4 md:py-6 2xl:py-10 select-none scrollbar-thin">
-      <div className="max-w-4xl 2xl:max-w-5xl w-full mx-auto my-auto flex flex-col items-center">
+    <div className="w-full h-full flex flex-col select-none">
+    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto px-4 py-4 md:py-6 2xl:py-10 scrollbar-thin">
+      <motion.div layout className={`max-w-4xl 2xl:max-w-5xl w-full mx-auto flex flex-col items-center ${sent ? "mt-0" : "my-auto"}`}>
         {/* Mascot & Heading */}
         <div className="relative flex flex-col items-center mb-3 2xl:mb-5">
           <TooltipProvider>
@@ -221,6 +248,7 @@ export function SpaceChefMascot() {
             {/* <h2 className="text-sm md:text-base 2xl:text-lg font-medium text-foreground tracking-tight">
               What are we cooking up today?
             </h2> */}
+            <Fade show={!sent}>
             <button
               type="button"
               onClick={() => copyAgentPrompt()}
@@ -238,9 +266,11 @@ export function SpaceChefMascot() {
                 ))}
               </span>
             </button>
+            </Fade>
           </div>
         </div>
 
+        <Fade show={!sent}>
         {/* Ultra-slim Linear-Style Input Bar */}
         <div
           className={`relative w-full mb-5 mt-4 transition-[max-width] duration-1000 ease-in-out ${
@@ -266,6 +296,7 @@ export function SpaceChefMascot() {
                 </span>
                 <button
                   type="button"
+                  onClick={submit}
                   disabled={!promptInput.trim()}
                   className="size-6 2xl:size-7 rounded-md bg-foreground text-background inline-flex items-center justify-center transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed hover:opacity-90 active:scale-95"
                 >
@@ -306,8 +337,13 @@ export function SpaceChefMascot() {
           </div>
         </div>
 
-        <TryAgents />
+        </Fade>
 
+        <Fade show={!sent}>
+          <TryAgents />
+        </Fade>
+
+        <Fade show={!sent}>
         {/* Try These Recipes: 4 Compact Gradient Boxes */}
         <div className="w-full mt-6 2xl:mt-7">
           <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
@@ -318,7 +354,10 @@ export function SpaceChefMascot() {
 
           <RecipeCards onSelect={handleSelectRecipe} />
         </div>
-      </div>
+        </Fade>
+      </motion.div>
+    </div>
+      {sent && <ChefBottomInput onSubmit={() => undefined} />}
     </div>
   );
 }
