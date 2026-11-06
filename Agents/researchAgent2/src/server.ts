@@ -37,6 +37,7 @@ const InputSchema = z.object({
   prompt: z
     .string()
     .min(2)
+    .max(4000)
     .describe("Research question or topic to investigate"),
   mode: z
     .enum(["fast", "deep"])
@@ -71,31 +72,48 @@ type AgentOutput = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
-  name: "Universal Research Agent 2",
-  version: "1.0.0", // tell developer agent version
+  name: "Nova Research ",
+  version: "2.1.0",
   description:
-    "Dual-mode research agent using OpenAI Responses API + live Web Search (fast & deep reasoning)",
+    "Dual-mode research agent using OpenAI Responses API + live Web Search (fast & deep reasoning). For your any Next patent or Project , Research will be gurantted Plagrism free and well Cited.",
 
   // Keys are read automatically from CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY env vars.
   // Explicit overrides kept as fallback for local development without .env.
   secretKey: process.env.CATELOG_SECRET_KEY,
   publicKey: process.env.CATELOG_PUBLIC_KEY,
 
+  // Hard per-run ceiling (deep mode can take minutes).
+  maxTimeoutMinute: 5,
+  limits: {
+    maxConcurrent: 10,
+    maxBodyBytes: 64_000,
+    rateLimit: { max: 60, windowMs: 60_000 },
+  },
+  telemetry: {
+    endpoint: process.env.CATELOG_TELEMETRY_URL,
+    disabled: process.env.CATELOG_TELEMETRY_DISABLED === "true",
+  },
+
   inputSchema: InputSchema as any,
   outputSchema: OutputSchema as any,
 
-  async execute({ input, stream, signal }) {
+  async execute({ input, stream, signal, log, metric, usage }) {
     const startTime = Date.now();
 
     // ── Fast Mode: synchronous web-search response ──
     if (input.mode === "fast" || !input.mode) {
       stream.step("Running web search with gpt-6-luna...");
 
-      const response: any = await client.responses.create({
-        model: "gpt-6-luna",
-        input: input.prompt,
-        tools: [{ type: "web_search" }],
-      });
+      const response: any = await client.responses.create(
+        {
+          model: "gpt-6-luna",
+          input: input.prompt,
+          tools: [{ type: "web_search" }],
+        },
+        { signal },
+      );
+      log.info("fast research completed", { model: "gpt-6-luna" });
+      metric.timing("openai_fast_ms", Date.now() - startTime);
 
       // Pipe response → SSE activity events + telemetry via the new adapter
       const adapterResult = await pipeOpenAiResponsesStream(response, stream);
@@ -149,6 +167,20 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
       );
 
       stream.delta(workflowResult.answer);
+      log.info("temporal workflow completed", { workflowId });
+      metric.timing("temporal_workflow_ms", Date.now() - startTime);
+      // Temporal hides the OpenAI call from the adapter, so record usage explicitly.
+      const wfTokens = workflowResult.tokens;
+      if (wfTokens) {
+        usage.record({
+          model: workflowResult.model,
+          provider: "openai",
+          tokens: {
+            prompt: wfTokens.prompt_tokens,
+            completion: wfTokens.completion_tokens,
+          },
+        });
+      }
 
       return {
         output: {
@@ -164,21 +196,23 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
         },
       };
     } catch (temporalErr: any) {
-      console.warn(
-        "⚠️ Temporal workflow failed or timed out, falling back to local runner:",
-        temporalErr.message,
-      );
+      log.warn("temporal workflow failed, falling back to local runner", {
+        error: temporalErr?.message,
+      });
       stream.step(
         "Temporal fallback: executing local OpenAI background reasoning...",
       );
 
-      let response: any = await client.responses.create({
-        model: "gpt-5.4-mini",
-        input: input.prompt,
-        background: true,
-        reasoning: { effort: "medium" },
-        tools: [{ type: "web_search" }],
-      });
+      let response: any = await client.responses.create(
+        {
+          model: "gpt-5.4-mini",
+          input: input.prompt,
+          background: true,
+          reasoning: { effort: "medium" },
+          tools: [{ type: "web_search" }],
+        },
+        { signal },
+      );
 
       stream.activity("background_task", {
         taskId: response.id,
@@ -254,11 +288,6 @@ const server = http.createServer(async (req, res) => {
     return agent.handleRequest(req, res);
   }
 
-  // CORS for the web UI
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
@@ -273,6 +302,7 @@ const server = http.createServer(async (req, res) => {
     });
 
     req.on("end", async () => {
+
       let prompt = "";
       let mode = "fast";
 
@@ -573,3 +603,12 @@ server.listen(PORT, async () => {
     console.warn("⚠️ Could not start background Temporal worker:", err.message);
   }
 });
+
+// Graceful shutdown (Render/Fly/Railway send SIGTERM on deploy)
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.on(sig, () => {
+    console.log(`${sig} received, shutting down...`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 25_000).unref();
+  });
+}

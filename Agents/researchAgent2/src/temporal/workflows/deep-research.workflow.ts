@@ -20,6 +20,7 @@ export interface DeepResearchWorkflowResult {
   duration_seconds: number;
   taskId: string;
   status: string;
+  tokens?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
 // Queries and Signals for real-time progress observation
@@ -52,5 +53,6 @@ export async function deepResearchWorkflow(
     duration_seconds: result.duration_seconds,
     taskId: result.taskId,
     status: result.status,
+    tokens: result.tokens,
   };
 }
