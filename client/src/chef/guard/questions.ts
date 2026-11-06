@@ -23,18 +23,18 @@ export const GUARD_QUESTIONS: Record<string, JevQuestion> = {
   in_scope: {
     type: "noul",
     instructions:
-      "Is this a request to get work done by an AI agent (research, analysis, writing, leads, outreach, jobs, SEO, data, documents, and similar business or professional tasks), a question about agents, prices, ratings or results, a reply in an ongoing conversation, or a greeting or thanks?",
+      "Does this message belong in a chat with the assistant of Catelog, an AI-agent marketplace? That includes: asking what Catelog or the assistant is, how the marketplace works (pricing, wallet, credits, payments, reviews, publishing or earning as a creator), asking to find, compare or run agents, any task someone wants an agent to do (research, analysis, writing, leads, outreach, jobs, SEO, data, documents), a reply in an ongoing conversation, a greeting or thanks.",
     criteria: {
-      true: "Any task someone wants done, even a broad one such as researching a market or finding leads; a question about agents, budget or results; a short reply such as 'yes', 'the second one' or 'under 5 dollars'; a greeting or thanks.",
-      false: "Only requests that are clearly not work for an agent, such as answering a homework question, trivia, personal or medical advice, politics, or casual banter unrelated to any task.",
+      true: "A question about Catelog or the assistant, how the marketplace works, a task someone wants done by an agent (even a broad one), a question about agents, budget or results, a short reply such as 'yes', 'the second one' or 'under 5 dollars', a greeting or thanks.",
+      false: "Clearly unrelated to Catelog and to getting work done, such as homework answers, trivia, personal or medical advice, politics, jokes, or casual banter about other topics.",
     },
   },
   route: {
     type: "choice",
     instructions: "What kind of message is this?",
     criteria: {
-      chitchat: "A greeting, thanks, small talk, or a question about what the chef is.",
-      task: "A request to get something done, find or compare agents, set a budget, pick an option or confirm an action.",
+      chitchat: "A greeting, thanks, small talk, or a question about Catelog itself or the chef: what it is, how it works, pricing, wallet and payments, reviews, publishing or earning as a creator.",
+      task: "A request to get something done by an agent, to find or compare agents for a job, to set a budget, to pick an option or to confirm an action.",
     },
   },
 };

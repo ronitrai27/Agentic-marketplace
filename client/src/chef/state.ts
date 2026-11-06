@@ -142,6 +142,8 @@ export const ChefGraphState = new StateSchema({
   blocked: z.boolean().default(false),
   /** Which GPT answers this turn (chosen by the guard). */
   modelKind: z.enum(["instant", "heavy"]).default("heavy"),
+  /** The instant model's answer, produced in parallel with the guard and kept only if the guard allows it. */
+  draft: z.string().default(""),
   /** The guard asked for the hardened system prompt. */
   hardened: z.boolean().default(false),
   guards: new ReducedValue(z.array(Guard).default(() => []), { reducer: (a, b) => [...a, ...b] }),

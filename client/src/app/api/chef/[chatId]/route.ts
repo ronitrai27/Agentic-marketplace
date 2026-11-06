@@ -59,31 +59,73 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
         const graph = await getChefGraph();
         const tGraph = ms();
         let tGuard = 0;
+        let tFirstToken = 0;
+        const replyId = crypto.randomUUID();
+        // The instant model starts together with the guard. Its tokens are held until the verdict is in:
+        // dropped if the turn is refused or is a task, released if it is chit-chat.
+        let path: "pending" | "instant" | "dropped" = "pending";
+        let held = "";
+        let refused = false;
+
         const run = await graph.stream(
           { messages: [new HumanMessage({ content: text, id: messageId })], chatId, userId },
           // threads are namespaced by user, so a guessed chat id can never reach someone else's state
-          { configurable: { thread_id: `${userId}:${chatId}` }, streamMode: "updates", durability: "async" },
+          { configurable: { thread_id: `${userId}:${chatId}` }, streamMode: ["updates", "messages"], durability: "async" },
         );
 
         for await (const chunk of run) {
-          const update = chunk as Record<string, unknown>;
-          if ("guard" in update) {
+          const [mode, data] = chunk as [string, any];
+
+          if (mode === "messages") {
+            const [msg, meta] = data;
+            if (meta?.langgraph_node !== "instant" || msg?.type !== "ai") continue;
+            const t = typeof msg.content === "string" ? msg.content : "";
+            if (!t) continue;
+            if (!tFirstToken) tFirstToken = ms();
+            if (path === "instant") send("token", { id: replyId, text: t });
+            else if (path === "pending") held += t;
+            continue;
+          }
+
+          const update = data as Record<string, any>;
+          if (update.guard) {
             tGuard = ms();
             send("trace", { id: "check", label: "Checking query", status: "done" });
-            const blocked = (update.guard as { blocked?: boolean } | undefined)?.blocked;
-            if (blocked) {
-              // 3a. Refused: the fixed reply goes to the browser and to Convex immediately.
-              const replyId = crypto.randomUUID();
-              send("message", { id: replyId, role: "assistant", kind: "refusal", text: REFUSAL_TEXT, createdAt: Date.now() });
-              outbox.push({ messageId: replyId, role: "assistant", kind: "refusal", text: REFUSAL_TEXT, createdAt: Date.now() });
+            if (update.guard.blocked) {
+              // Refused: the fixed reply goes to the browser and to Convex immediately; the held draft is discarded.
+              path = "dropped";
+              refused = true;
+              held = "";
+              const refusalId = crypto.randomUUID();
+              const refusalMs = ms();
+              send("message", { id: refusalId, role: "assistant", kind: "refusal", text: REFUSAL_TEXT, durationMs: refusalMs, createdAt: Date.now() });
+              outbox.push({ messageId: refusalId, role: "assistant", kind: "refusal", text: REFUSAL_TEXT, durationMs: refusalMs, createdAt: Date.now() });
+            } else if (update.guard.modelKind === "instant") {
+              path = "instant";
+              if (held) send("token", { id: replyId, text: held });
+              held = "";
             } else {
+              path = "dropped";
+              held = "";
               send("trace", { id: "intent", label: "Understanding intent", status: "running" });
             }
           }
-          if ("understand" in update) send("trace", { id: "intent", label: "Understanding intent", status: "done" });
+
+          if (update.finalize) {
+            if (path === "instant") {
+              const reply = update.finalize.messages?.[0]?.content;
+              if (typeof reply === "string" && reply) {
+                const replyMs = ms();
+                send("message", { id: replyId, role: "assistant", kind: "text", text: reply, durationMs: replyMs, createdAt: Date.now() });
+                outbox.push({ messageId: replyId, role: "assistant", kind: "text", text: reply, durationMs: replyMs, createdAt: Date.now() });
+              }
+            } else if (!refused) {
+              send("trace", { id: "intent", label: "Understanding intent", status: "done" });
+            }
+          }
         }
         send("done", {});
-        console.log(`[chef:latency] chat=${chatId} auth=${tAuth}ms graphReady=${tGraph - tAuth}ms guardDone@${tGuard}ms streamEnd@${ms()}ms`);
+        console.log(`[chef:latency] chat=${chatId} auth=${tAuth}ms graphReady=${tGraph - tAuth}ms guardDone@${tGuard}ms firstToken@${tFirstToken}ms streamEnd@${ms()}ms`);
       } catch (e) {
         console.error("[chef] turn failed:", e);
         send("error", { message: "Something went wrong. Please try again." });
@@ -97,6 +139,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
   after(() => outbox.idle());
 
   return new Response(stream, {
-    headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store, no-transform", Connection: "keep-alive" },
+    headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" },
   });
 }

@@ -9,6 +9,7 @@ const messageArg = v.object({
   role: v.union(v.literal("user"), v.literal("assistant")),
   kind: v.union(v.literal("text"), v.literal("refusal")),
   text: v.string(),
+  durationMs: v.optional(v.number()),
   createdAt: v.number(),
   ord: v.number(),
 });
@@ -78,6 +79,7 @@ export const messages = query({
         role: r.role,
         kind: r.kind,
         text: r.text,
+        durationMs: r.durationMs,
         createdAt: r.createdAt,
       }));
   },

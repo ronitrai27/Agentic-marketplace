@@ -5,6 +5,7 @@
   "scripts": {
     "chef:test": "tsx --test src/chef/guard/router.test.ts",
     "chef:ping": "tsx --env-file=.env.local src/chef/ping.mts",
+    "chef:bench-instant": "tsx --env-file=.env.local src/chef/instant/bench.mts",
     "chef:quickstart": "tsx --env-file=.env.local src/chef/quickstart.ts",
     "dev": "next dev",
     "build": "next build",

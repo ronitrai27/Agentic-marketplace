@@ -6,6 +6,8 @@ export type OutMessage = {
   role: "user" | "assistant";
   kind: "text" | "refusal";
   text: string;
+  /** Time the chef took to answer, stored with the reply. */
+  durationMs?: number;
   createdAt: number;
 };
 

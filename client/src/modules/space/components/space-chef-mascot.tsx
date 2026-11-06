@@ -397,7 +397,7 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
             </div>
           </Fade>
           {sent && (
-            <ChefMessages messages={chat.messages} traces={chat.traces} />
+            <ChefMessages messages={chat.messages} traces={chat.traces} busy={chat.busy} />
           )}
         </motion.div>
       </div>

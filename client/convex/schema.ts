@@ -211,6 +211,8 @@ export default defineSchema({
     role: v.union(v.literal("user"), v.literal("assistant")),
     kind: v.union(v.literal("text"), v.literal("refusal")),
     text: v.string(),
+    /** How long the chef took to answer, saved with the reply. */
+    durationMs: v.optional(v.number()),
     createdAt: v.number(),
     /** Position inside one batch, to keep order when createdAt ties. */
     ord: v.number(),

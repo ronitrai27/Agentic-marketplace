@@ -62,10 +62,12 @@ export const guardNode: GraphNode<typeof ChefGraphState> = async (state) => {
   };
 };
 
-/** Refused turn: the fixed reply goes into the thread as the assistant's message. */
-export const refuseNode: GraphNode<typeof ChefGraphState> = async () => ({
-  messages: [new AIMessage(REFUSAL_TEXT)],
-});
-
-/** Placeholder for the next layer (intent). It only marks the phase for now. */
-export const intentNode: GraphNode<typeof ChefGraphState> = async () => ({ phase: "understand" as const });
+/**
+ * Join after the guard and the instant model. Blocked: the fixed reply. Instant route: the draft becomes the reply.
+ * Anything else is left for the next layer (nothing is said yet).
+ */
+export const finalizeNode: GraphNode<typeof ChefGraphState> = async (state) => {
+  if (state.blocked) return { messages: [new AIMessage(REFUSAL_TEXT)], draft: "" };
+  if (state.modelKind === "instant" && state.draft) return { messages: [new AIMessage(state.draft)], draft: "" };
+  return { phase: "understand" as const, draft: "" };
+};
