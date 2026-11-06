@@ -3,17 +3,23 @@
 import React from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
+import { toast } from "sonner";
+import { usePathname, useRouter } from "next/navigation";
 import {
   CheckCircle2,
   CircleAlert,
   Eraser,
+  FileText,
   Lock,
+  MessageSquare,
+  ScrollText,
   WifiOff,
   XCircle,
 } from "lucide-react";
 import { Terminal } from "@lucasmarkes/hairline/react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RunConsole, RunOutput, outputFromEvents } from "./run-console";
+import { DownloadAs, RunConsole, RunOutput, outputFromEvents } from "./run-console";
+import { outputToMarkdown } from "@/lib/export-output";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -33,6 +39,10 @@ import {
   initialValues,
   type FormValues,
 } from "./schema-form";
+
+/** Dark tabs in the light theme; the dark theme keeps its own look. */
+const TAB_TONE =
+  "px-2.5 text-neutral-400 hover:text-white data-active:bg-neutral-700 data-active:text-white dark:text-muted-foreground dark:hover:text-foreground dark:data-active:bg-input/30 dark:data-active:text-foreground";
 
 const HOLD_TTL_MS = 15 * 60_000;
 const ACTIVE = new Set(["awaiting_input", "queued", "running"]);
@@ -260,6 +270,8 @@ function RunBody({
   const start = useAction(api.temporal.start);
   const cancelAwaiting = useMutation(api.runs.cancelAwaiting);
 
+  const router = useRouter();
+  const pathname = usePathname();
   const online = useOnline();
   const active = !!run && ACTIVE.has(run.status);
   const now = useNow(active);
@@ -359,12 +371,13 @@ function RunBody({
       )
         .then((r) => r.json())
         .catch(() => ({}));
-      await start({
+      const started = await start({
         runId,
         inputJson: JSON.stringify(built.input),
         clientIp: where.ip ?? undefined,
         clientRegion: where.region ?? undefined,
       });
+      if (started.heldCredits) toast(`${fmtCredits(started.heldCredits)} held for this run`);
       try {
         localStorage.removeItem(draftKey);
       } catch {
@@ -379,6 +392,20 @@ function RunBody({
     } finally {
       setSending(false);
     }
+  }
+
+  /** Closes the sheet, opens the agent's page if needed, and glides down to its Reviews section. */
+  function goToReview() {
+    const page = `/space/marketplace/${run!.agent.slug}`;
+    onClose();
+    if (pathname !== page) router.push(page);
+    let tries = 0;
+    const scroll = () => {
+      const el = document.getElementById("agent-reviews");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      else if (tries++ < 40) setTimeout(scroll, 100);
+    };
+    setTimeout(scroll, 250);
   }
 
   async function cancel() {
@@ -464,7 +491,7 @@ function RunBody({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-3">
         {run.status === "awaiting_input" && values ? (
           <section className="min-h-0 flex-1 space-y-4 overflow-y-auto">
             <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -500,26 +527,37 @@ function RunBody({
                 )}
               </details>
             )}
-            <Tabs
-              value={tab}
-              onValueChange={(v) => setTab(v as "traces" | "output")}
-              className="flex-none gap-0"
-            >
-              <TabsList>
-                <TabsTrigger value="traces">
-                  Traces{" "}
-                  <span className="tabular-nums text-muted-foreground">
-                    {events?.length ?? 0}
-                  </span>
-                </TabsTrigger>
-                <TabsTrigger value="output">
-                  Output{" "}
-                  {run.outputJson && (
-                    <span className="size-1.5 rounded-full bg-emerald-500" />
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex items-center justify-between gap-2">
+              <Tabs
+                value={tab}
+                onValueChange={(v) => setTab(v as "traces" | "output")}
+                className="flex-none gap-0"
+              >
+                <TabsList className="bg-neutral-900 dark:bg-muted">
+                  <TabsTrigger value="traces" className={TAB_TONE}>
+                    <ScrollText />
+                    Traces{" "}
+                    <span className="tabular-nums opacity-60">
+                      {events?.filter((e) => e.type !== "task.delta").length ?? 0}
+                    </span>
+                  </TabsTrigger>
+                  <TabsTrigger value="output" className={TAB_TONE}>
+                    <FileText />
+                    Output{" "}
+                    {run.outputJson && (
+                      <span className="size-1.5 rounded-full bg-emerald-500" />
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {tab === "output" && (run.outputJson || outputFromEvents(events)) && (
+                <DownloadAs
+                  markdown={outputToMarkdown((run.outputJson ?? outputFromEvents(events))!)}
+                  title={run.agent.name}
+                  filename={run.agent.slug}
+                />
+              )}
+            </div>
             {tab === "traces" ? (
               <RunConsole
                 events={events}
@@ -532,6 +570,8 @@ function RunBody({
               <RunOutput
                 outputJson={run.outputJson ?? outputFromEvents(events)}
                 status={run.status}
+                filename={run.agent.slug}
+                title={run.agent.name}
               />
             )}
           </>
@@ -542,7 +582,7 @@ function RunBody({
         {run.status === "awaiting_input" ? (
           <>
             <Button variant="outline" onClick={cancel} disabled={sending}>
-              Cancel &amp; release hold
+              {run.holdStatus === "held" ? "Cancel & release hold" : "Cancel"}
             </Button>
             <Button onClick={send} disabled={sending || !values}>
               {sending && <Spinner className="mr-1" />}
@@ -550,9 +590,20 @@ function RunBody({
             </Button>
           </>
         ) : (
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
+          <>
+            {run.status === "succeeded" && (
+              <div className="flex items-center gap-3 sm:mr-auto">
+                <span className="text-xs text-muted-foreground">Provide feedback as review</span>
+                <Button size="sm" className="gap-1.5" onClick={goToReview}>
+                  <MessageSquare className="size-3.5" />
+                  Review
+                </Button>
+              </div>
+            )}
+            <Button variant="outline" onClick={onClose}>
+              Close
+            </Button>
+          </>
         )}
       </SheetFooter>
     </>
@@ -617,14 +668,16 @@ export function EmptyRunSheet({ onClose }: { onClose: () => void }) {
     <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-full gap-0 data-[side=right]:sm:max-w-3xl"
+        className="w-full gap-0 data-[side=right]:sm:max-w-[660px]"
       >
         <SheetHeader className="border-b border-border">
           <SheetTitle className="text-lg">Runs</SheetTitle>
           <SheetDescription>Agent activity shows up here.</SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <Terminal />
+          <div className="w-56 max-w-full">
+            <Terminal />
+          </div>
           <p className="text-sm text-muted-foreground">No runs right now</p>
         </div>
         <SheetFooter>

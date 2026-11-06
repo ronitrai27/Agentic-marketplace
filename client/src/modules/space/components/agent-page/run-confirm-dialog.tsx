@@ -108,7 +108,21 @@ export function RunConfirmDialog({
   const cancelHold = useMutation(api.runs.cancelAwaiting);
 
   const quote = runQuote(pricing);
-  const needed = quote.holdMicros === null ? null : microsToCredits(quote.holdMicros);
+  // Tiered agents: every mode with its price (platform fee included), shown as a hint under the price range.
+  const modes =
+    pricing?.shape === "tiered" && new Set(pricing.tiers.map((t) => t.priceMicros)).size > 1
+      ? pricing.tiers.map((t) => ({ label: t.value, price: fmtMicros(t.priceMicros + Math.round(t.priceMicros * PLATFORM_FEE_RATE)) }))
+      : null;
+  // Tiered: nothing is held here. The payment is held when the buyer sends their chosen mode, so only the cheapest mode must be affordable now.
+  const tiered = pricing?.shape === "tiered";
+  const needed =
+    quote.holdMicros === null
+      ? null
+      : microsToCredits(
+          pricing?.shape === "tiered"
+            ? Math.min(...pricing.tiers.map((t) => t.priceMicros + Math.round(t.priceMicros * PLATFORM_FEE_RATE)))
+            : quote.holdMicros,
+        );
 
   const [showFee, setShowFee] = React.useState(false);
   const [phase, setPhase] = React.useState<"confirm" | "checking">("confirm");
@@ -223,10 +237,23 @@ export function RunConfirmDialog({
               </Line>
               <Line
                 label="You will be charged"
-                hint="This amount will be held during execution from your wallet."
+                hint={modes ? undefined : "This amount will be held during execution from your wallet."}
               >
                 {quote.charge}
               </Line>
+              {modes && (
+                <div className="py-3">
+                  <p className="text-xs text-muted-foreground">Modes available to select</p>
+                  <dl className="mt-1.5 space-y-1 text-xs tabular-nums">
+                    {modes.map((m) => (
+                      <div key={m.label} className="flex justify-between text-foreground">
+                        <dt className="capitalize">{m.label}</dt>
+                        <dd className="font-medium">{m.price}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
               {quote.holdMicros !== null && (
                 <div className="py-2">
                   <button
@@ -295,8 +322,12 @@ export function RunConfirmDialog({
               />
               <StepRow
                 step={steps[2]}
-                title="Holding the payment"
-                detail="This will not be deducted on a failed or wrong output."
+                title={tiered ? "Opening your run" : "Holding the payment"}
+                detail={
+                  tiered
+                    ? "The payment is held after you pick a mode and send."
+                    : "This will not be deducted on a failed or wrong output."
+                }
               />
             </ol>
 

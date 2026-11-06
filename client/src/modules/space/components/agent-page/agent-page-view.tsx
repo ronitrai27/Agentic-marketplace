@@ -50,13 +50,15 @@ function Row({
   label,
   icon: Icon,
   children,
+  id,
 }: {
+  id?: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
 }) {
   return (
-    <section className=" py-4">
+    <section id={id} className=" py-4 scroll-mt-4">
       <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
         <Icon className="size-4 text-muted-foreground" />
         {label}
@@ -176,6 +178,7 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
               <AgentRating
                 value={agent.ratingAvg}
                 reviewCount={agent.ratingCount}
+                scrollTo="agent-reviews"
               />
               <RunAgentButton
                 agentName={agent.name}
@@ -312,7 +315,7 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
               </div>
             </Row>
 
-            <Row label="Reviews" icon={MessageSquare}>
+            <Row id="agent-reviews" label="Reviews" icon={MessageSquare}>
               <AgentReviews
                 slug={agent.slug}
                 initial={agent.reviews.map((r) => ({ ...r, userAvatar: r.userAvatar }))}

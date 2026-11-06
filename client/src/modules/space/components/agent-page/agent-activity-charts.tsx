@@ -12,6 +12,13 @@ export interface DailyPoint {
   totalLatencyMs: number;
 }
 
+/** One finished run: when it ended, how long it took. */
+export interface RunPoint {
+  at: number;
+  ms: number;
+  ok: boolean;
+}
+
 const RANGES = [7, 30, 45] as const;
 type Range = (typeof RANGES)[number];
 
@@ -151,7 +158,7 @@ function Tip({ active, payload, render }: { active?: boolean; payload?: any[]; r
   );
 }
 
-export function AgentActivityCharts({ daily }: { daily: DailyPoint[] }) {
+export function AgentActivityCharts({ daily, runs: runPoints }: { daily: DailyPoint[]; runs?: RunPoint[] }) {
   const [range, setRange] = useState<Range>(30);
 
   const data = useMemo(() => window(daily, range), [daily, range]);
@@ -164,14 +171,23 @@ export function AgentActivityCharts({ daily }: { daily: DailyPoint[] }) {
 
   const avgNow = runs > 0 ? sum(data.map((d) => d.latencyMs)) / runs : 0;
   const prevAvg = prevRuns > 0 ? sum(prev.map((d) => d.latencyMs)) / prevRuns : 0;
-  const points = data.filter((d) => d.avgMs !== null) as Array<(typeof data)[number] & { avgMs: number }>;
-  const fastest = points.length ? Math.min(...points.map((p) => p.avgMs)) : null;
-  const slowest = points.length ? Math.max(...points.map((p) => p.avgMs)) : null;
+  // One dot per run inside the chosen range. Until the per-run data arrives, fall back to one dot per day.
+  const windowStart = Date.parse(dayStr(range - 1));
+  const dayAvgs = data
+    .filter((d) => d.avgMs !== null)
+    .map((d) => ({ x: d.x + 0.5, ms: d.avgMs as number, ok: d.failedRuns === 0, at: Date.parse(d.day), perRun: false }));
+  const points = runPoints
+    ? runPoints
+        .map((r) => ({ x: (r.at - windowStart) / 86_400_000, ms: r.ms, ok: r.ok, at: r.at, perRun: true }))
+        .filter((p) => p.x >= 0 && p.x <= range)
+    : dayAvgs;
+  const fastest = points.length ? Math.min(...points.map((p) => p.ms)) : null;
+  const slowest = points.length ? Math.max(...points.map((p) => p.ms)) : null;
 
   const tickEvery = range === 7 ? 1 : range === 30 ? 6 : 8;
   const ticks = data.filter((d) => d.x % tickEvery === 0 || d.x === range - 1).map((d) => d.x);
-  const healthy = points.filter((p) => p.failedRuns === 0);
-  const hadFailures = points.filter((p) => p.failedRuns > 0);
+  const healthy = points.filter((p) => p.ok);
+  const hadFailures = points.filter((p) => !p.ok);
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -229,9 +245,9 @@ export function AgentActivityCharts({ daily }: { daily: DailyPoint[] }) {
         onRange={setRange}
         legend={
           <>
-            <LegendCard color={GREEN_LINE} label="Fastest day" value={fastest !== null ? fmtSec(fastest) : "—"} />
+            <LegendCard color={GREEN_LINE} label="Fastest run" value={fastest !== null ? fmtSec(fastest) : "—"} />
             <LegendCard color={BLUE} label="Average" value={runs > 0 ? fmtSec(avgNow) : "—"} />
-            <LegendCard color={RED} label="Slowest day" value={slowest !== null ? fmtSec(slowest) : "—"} />
+            <LegendCard color={RED} label="Slowest run" value={slowest !== null ? fmtSec(slowest) : "—"} />
           </>
         }
       >
@@ -241,9 +257,9 @@ export function AgentActivityCharts({ daily }: { daily: DailyPoint[] }) {
             <XAxis
               type="number"
               dataKey="x"
-              domain={[-0.5, range - 0.5]}
+              domain={[0, range]}
               ticks={ticks}
-              tickFormatter={(x: number) => data[x]?.label ?? ""}
+              tickFormatter={(x: number) => data[Math.min(range - 1, Math.floor(x))]?.label ?? ""}
               tickLine={false}
               axisLine={false}
               fontSize={11}
@@ -251,23 +267,26 @@ export function AgentActivityCharts({ daily }: { daily: DailyPoint[] }) {
             />
             <YAxis
               type="number"
-              dataKey="avgMs"
+              dataKey="ms"
               tickFormatter={(v: number) => fmtSec(v)}
               tickLine={false}
               axisLine={false}
               fontSize={11}
               width={52}
             />
-            <ZAxis type="number" dataKey="totalRuns" range={[70, 340]} />
+            <ZAxis type="number" dataKey="ms" range={[90, 90]} />
             <ChartTooltip
               cursor={{ strokeDasharray: "3 3" }}
               content={
                 <Tip
                   render={(p) => (
                     <>
-                      <p className="font-medium">{p.day}</p>
+                      <p className="font-medium">
+                        {new Date(p.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
                       <p className="text-muted-foreground">
-                        {fmtSec(p.avgMs)} avg · {p.totalRuns} {p.totalRuns === 1 ? "run" : "runs"}
+                        {fmtSec(p.ms)}
+                        {p.perRun ? (p.ok ? " · succeeded" : " · failed") : " avg that day"}
                       </p>
                     </>
                   )}

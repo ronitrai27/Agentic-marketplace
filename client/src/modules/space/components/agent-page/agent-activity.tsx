@@ -23,6 +23,7 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 export function AgentActivity({ slug, initial }: { slug: string; initial: { stats: Stats; daily: DailyPoint[] } }) {
   const live = useQuery(api.agentPage.activity, { slug });
   const { stats, daily } = live ?? initial;
+  const latency = live?.latency;
   const hasRuns = stats.totalRuns > 0;
   const avgLatency = hasRuns ? Math.round(stats.totalLatencyMs / stats.totalRuns) : null;
   const successRate = hasRuns ? Math.round((stats.successRuns / stats.totalRuns) * 100) : null;
@@ -44,7 +45,7 @@ export function AgentActivity({ slug, initial }: { slug: string; initial: { stat
       </div>
 
       {hasRuns ? (
-        <AgentActivityCharts daily={daily} />
+        <AgentActivityCharts daily={daily} runs={latency} />
       ) : (
         <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center">
           <p className="text-sm font-medium text-foreground">No runs before</p>

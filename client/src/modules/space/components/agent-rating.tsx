@@ -40,18 +40,28 @@ export function AgentRating({
   align = "right",
   className = "",
   reviewCount,
+  scrollTo,
 }: {
   value: number;
   align?: "left" | "right";
   className?: string;
   /** When set, shown under the star instead of the verdict; a value of 0 renders an empty 0.0 star. */
   reviewCount?: number;
+  /** Element id to glide to when the rating is clicked (a string, so server components can pass it). */
+  scrollTo?: string;
 }) {
   const r = value <= 0 ? 0 : normaliseRating(value);
   const fill = (r / 5) * 100;
 
+  const onClick = scrollTo
+    ? () => document.getElementById(scrollTo)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    : undefined;
+  const Wrapper = onClick ? "button" : "div";
   return (
-    <div className={`flex flex-col ${align === "right" ? "items-end" : "items-start"} ${className}`}>
+    <Wrapper
+      {...(onClick ? { type: "button" as const, onClick, title: "See reviews" } : {})}
+      className={`flex flex-col ${align === "right" ? "items-end" : "items-start"} ${onClick ? "cursor-pointer rounded-md transition-opacity hover:opacity-75" : ""} ${className}`}
+    >
       <div className="flex items-center gap-1.5">
         <span className="relative size-4 shrink-0" aria-hidden>
           <Star className="absolute inset-0 size-4 text-muted-foreground/40" strokeWidth={1.5} />
@@ -60,6 +70,7 @@ export function AgentRating({
           </span>
         </span>
         <span className="text-sm font-semibold text-foreground tabular-nums">{r.toFixed(1)}</span>
+        {reviewCount !== undefined && r > 0 && <span className="text-sm text-muted-foreground">· {ratingLabel(r)}</span>}
       </div>
       <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">
         {reviewCount !== undefined
@@ -68,6 +79,6 @@ export function AgentRating({
             ? ratingLabel(r)
             : null}
       </span>
-    </div>
+    </Wrapper>
   );
 }

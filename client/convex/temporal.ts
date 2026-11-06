@@ -61,7 +61,7 @@ export const start = action({
     clientIp: v.optional(v.string()),
     clientRegion: v.optional(v.string()),
   },
-  handler: async (ctx, { runId, inputJson, clientIp, clientRegion }): Promise<{ ok: true }> => {
+  handler: async (ctx, { runId, inputJson, clientIp, clientRegion }): Promise<{ ok: true; heldCredits?: number }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Please sign in." });
 
@@ -84,7 +84,19 @@ export const start = action({
       userId: identity.subject,
       clientIp: clientIp?.slice(0, 64),
       clientRegion: clientRegion?.slice(0, 64),
-      ...(stored ? { inputStorageId: stored } : { inputJson }),
+      ...(stored
+        ? {
+            inputStorageId: stored,
+            // Short top-level values only: enough to read a tiered option without sending the whole upload
+            pricingInputJson: JSON.stringify(
+              Object.fromEntries(
+                Object.entries(JSON.parse(inputJson) as Record<string, unknown>).filter(
+                  ([, v]) => typeof v === "number" || typeof v === "boolean" || (typeof v === "string" && v.length <= 200),
+                ),
+              ),
+            ),
+          }
+        : { inputJson }),
     });
     if (!begun.ok) {
       if (stored) await ctx.storage.delete(stored).catch(() => {});
@@ -109,6 +121,6 @@ export const start = action({
       });
       throw new ConvexError({ code: "WORKFLOW_START_FAILED", message });
     }
-    return { ok: true };
+    return { ok: true, heldCredits: begun.heldCredits };
   },
 });

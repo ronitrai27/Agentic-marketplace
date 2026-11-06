@@ -110,6 +110,23 @@ async function signingKeysFor(ctx: QueryCtx, agent: Doc<"agents">): Promise<Arra
   return usable.slice(0, 5).map((k) => ({ keyId: k._id as string, sealed: k.sealed! }));
 }
 
+/**
+ * Tiered plans: the price depends on the option the buyer picks in the input form, so it is only known once the
+ * input is sent. The option comes from the input, or from the input schema's default when the form left it out.
+ */
+function pickedTier(plan: PlanMicros | null, input: Record<string, unknown>, schemaJson: string) {
+  if (plan?.shape !== "tiered") return null;
+  let picked: unknown = input[plan.fieldKey];
+  if (picked === undefined || picked === null || picked === "") {
+    try {
+      picked = (JSON.parse(schemaJson)?.properties?.[plan.fieldKey] as { default?: unknown } | undefined)?.default;
+    } catch {
+      picked = undefined;
+    }
+  }
+  return plan.tiers.find((t) => t.value === String(picked)) ?? null;
+}
+
 async function releaseHold(ctx: MutationCtx, run: Doc<"runs">) {
   if (run.holdStatus === "held") await ctx.db.patch(run._id, { holdStatus: "released" });
 }
@@ -280,12 +297,19 @@ export const hold = mutation({
       .withIndex("by_user_created", (q) => q.eq("userId", userId))
       .order("desc")
       .take(20);
-    const existing = open.find((r) => r.agentId === agent._id && r.status === "awaiting_input" && r.holdStatus === "held");
+    const plan = await latestPlan(ctx, agent._id);
+    const tiered = plan?.shape === "tiered";
+    const existing = open.find(
+      (r) => r.agentId === agent._id && r.status === "awaiting_input" && (tiered || r.holdStatus === "held"),
+    );
     if (existing) return { runId: existing._id, holdCredits: existing.holdCredits ?? 0 };
 
-    const quote = runQuote(await latestPlan(ctx, agent._id));
+    const quote = runQuote(plan);
     if (!quote.holdMicros) throw new ConvexError({ code: "NO_PRICE", message: "This agent has no price set." });
-    const holdCredits = microsToCredits(quote.holdMicros);
+    // Tiered: nothing is held yet (the option is not chosen), the wallet only has to cover the cheapest option
+    const holdCredits = microsToCredits(
+      tiered ? runQuote({ ...plan, tiers: [plan.tiers.reduce((a, b) => (b.priceMicros < a.priceMicros ? b : a))] }).holdMicros! : quote.holdMicros,
+    );
 
     const available = (await getCredits(ctx, userId)) - (await escrowCredits(ctx, userId));
     if (available < holdCredits) {
@@ -303,15 +327,14 @@ export const hold = mutation({
       source: "session",
       status: "awaiting_input",
       inputJson: "{}",
-      holdCredits,
-      holdStatus: "held",
+      ...(tiered ? {} : { holdCredits, holdStatus: "held" as const }),
       timeoutSeconds: timeoutFor(agent),
       createdAt: Date.now(),
       callerName: identity.name || identity.email || undefined,
       callerAvatar: identity.pictureUrl || undefined,
     });
     await ctx.scheduler.runAfter(HOLD_TTL_MS, internal.runs.expireAwaiting, { runId });
-    return { runId, holdCredits };
+    return { runId, holdCredits: tiered ? 0 : holdCredits };
   },
 });
 
@@ -350,10 +373,12 @@ export const beginRun = internalMutation({
     userId: v.string(),
     inputJson: v.optional(v.string()),
     inputStorageId: v.optional(v.id("_storage")),
+    /** Short top-level values of a large input (which lives in file storage), so a tiered price can be read from it. */
+    pricingInputJson: v.optional(v.string()),
     clientIp: v.optional(v.string()),
     clientRegion: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ ok: true; timeoutSeconds: number } | Rejection> => {
+  handler: async (ctx, args): Promise<{ ok: true; timeoutSeconds: number; heldCredits?: number } | Rejection> => {
     const run = await ctx.db.get(args.runId);
     if (!run || run.userId !== args.userId) {
       return { ok: false, status: 404, code: "NOT_FOUND", message: "Run not found" };
@@ -382,7 +407,39 @@ export const beginRun = internalMutation({
     const limited = await checkAgentLimits(ctx, agent, run.timeoutSeconds);
     if (limited) return limited;
 
+    // Tiered plans are held only now, for the option the buyer chose (other plans were held when the run opened)
+    let heldCredits: number | undefined;
+    let holdPatch: { holdCredits: number; holdStatus: "held" } | undefined;
+    if (run.holdStatus !== "held") {
+      const plan = await latestPlan(ctx, agent._id);
+      if (plan?.shape === "tiered") {
+        let input: Record<string, unknown> = {};
+        try {
+          input = JSON.parse(args.inputJson ?? args.pricingInputJson ?? "{}");
+        } catch {
+          /* handled below: no option found */
+        }
+        const tier = pickedTier(plan, input, agent.inputSchemaJson);
+        if (!tier) {
+          return { ok: false, status: 400, code: "INVALID_INPUT", message: `Pick one of the available options for "${plan.fieldKey}".` };
+        }
+        const holdMicros = runQuote({ ...plan, tiers: [tier] }).holdMicros!;
+        heldCredits = microsToCredits(holdMicros);
+        const available = (await getCredits(ctx, run.userId)) - (await escrowCredits(ctx, run.userId));
+        if (available < heldCredits) {
+          return {
+            ok: false,
+            status: 402,
+            code: "INSUFFICIENT_FUNDS",
+            message: `Not enough credits for "${tier.value}". You need ${heldCredits} credits and have ${Math.max(0, Math.round(available * 100) / 100)} available.`,
+          };
+        }
+        holdPatch = { holdCredits: heldCredits, holdStatus: "held" };
+      }
+    }
+
     await ctx.db.patch(args.runId, {
+      ...holdPatch,
       status: "queued",
       inputJson: args.inputJson ?? "{}",
       ...(args.inputStorageId ? { inputStorageId: args.inputStorageId, inputLarge: true } : {}),
@@ -390,7 +447,7 @@ export const beginRun = internalMutation({
       clientRegion: args.clientRegion,
       createdAt: Date.now(),
     });
-    return { ok: true, timeoutSeconds: run.timeoutSeconds };
+    return { ok: true, timeoutSeconds: run.timeoutSeconds, heldCredits };
   },
 });
 

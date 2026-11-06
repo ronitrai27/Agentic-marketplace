@@ -24,6 +24,22 @@ export const activity = query({
       .query("agent_stats_daily")
       .withIndex("by_agent_day", (q) => q.eq("agentId", agent._id).gte("day", start))
       .collect();
+    // One point per finished run (time and duration only, nothing about who ran it) for the latency chart
+    const cutoff = Date.now() - CHART_DAYS * 86_400_000;
+    const latency: Array<{ at: number; ms: number; ok: boolean }> = [];
+    for (const status of ["succeeded", "failed"] as const) {
+      const rows = await ctx.db
+        .query("runs")
+        .withIndex("by_agent_status", (q) => q.eq("agentId", agent._id).eq("status", status))
+        .order("desc")
+        .take(300);
+      for (const r of rows) {
+        const at = r.finishedAt ?? r.createdAt;
+        const ms = r.durationMs ?? (r.finishedAt && r.startedAt ? r.finishedAt - r.startedAt : undefined);
+        if (ms !== undefined && at >= cutoff) latency.push({ at, ms, ok: status === "succeeded" });
+      }
+    }
+    latency.sort((a, b) => a.at - b.at);
     return {
       stats: {
         totalRuns: stats?.totalRuns ?? 0,
@@ -38,6 +54,7 @@ export const activity = query({
         failedRuns: d.failedRuns,
         totalLatencyMs: d.totalLatencyMs,
       })),
+      latency,
     };
   },
 });
