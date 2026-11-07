@@ -114,17 +114,29 @@ const PLACEHOLDER_STRINGS = [
 function Fade({
   show,
   children,
+  delay = 0,
 }: {
   show: boolean;
   children: React.ReactNode;
+  /** Seconds to wait before the entrance animation, for a staggered reveal. */
+  delay?: number;
 }) {
   return (
-    <AnimatePresence initial={false}>
+    <AnimatePresence>
       {show && (
         <motion.div
           className="flex w-full flex-col items-center overflow-hidden"
-          exit={{ opacity: 0, height: 0 }}
-          transition={{ duration: 0.6, ease: "easeInOut" }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{
+            opacity: 1,
+            y: 0,
+            transition: { duration: 0.55, ease: "easeOut", delay },
+          }}
+          exit={{
+            opacity: 0,
+            height: 0,
+            transition: { duration: 0.6, ease: "easeInOut" },
+          }}
         >
           {children}
         </motion.div>
@@ -251,7 +263,12 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
           className={`max-w-4xl 2xl:max-w-5xl w-full mx-auto flex flex-col items-center ${sent ? "mt-0 flex-1" : "my-auto"}`}
         >
           {/* Mascot & Heading */}
-          <div className="relative flex flex-col items-center mb-3 2xl:mb-5">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="relative flex flex-col items-center mb-3 2xl:mb-5"
+          >
             <TooltipProvider>
               <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
                 <TooltipTrigger
@@ -290,7 +307,7 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
               {/* <h2 className="text-sm md:text-base 2xl:text-lg font-medium text-foreground tracking-tight">
               What are we cooking up today?
             </h2> */}
-              <Fade show={!sent}>
+              <Fade show={!sent} delay={0.12}>
                 <button
                   type="button"
                   onClick={() => copyAgentPrompt()}
@@ -310,9 +327,9 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
                 </button>
               </Fade>
             </div>
-          </div>
+          </motion.div>
 
-          <Fade show={!sent}>
+          <Fade show={!sent} delay={0.24}>
             {/* Ultra-slim Linear-Style Input Bar */}
             <div
               className={`relative w-full mb-5 mt-4 transition-[max-width] duration-1000 ease-in-out ${
@@ -380,11 +397,11 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
             </div>
           </Fade>
 
-          <Fade show={!sent}>
+          <Fade show={!sent} delay={0.36}>
             <TryAgents />
           </Fade>
 
-          <Fade show={!sent}>
+          <Fade show={!sent} delay={0.48}>
             {/* Try These Recipes: 4 Compact Gradient Boxes */}
             <div className="w-full mt-6 2xl:mt-7">
               <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">

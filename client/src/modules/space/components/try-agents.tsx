@@ -3,6 +3,8 @@
 import React from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
+import { motion } from "framer-motion";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Star, Sparkles, Plus, FolderDownIcon } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
 import { tagById } from "@/lib/agent-tags";
@@ -50,9 +52,9 @@ const DEMO_AGENTS: CardAgent[] = [
 
 export function TryAgents() {
   const featured = useQuery(api.agents.listFeatured);
-  if (featured === undefined) return null;
+  const loading = featured === undefined;
 
-  const real: CardAgent[] = featured.map((a) => ({
+  const real: CardAgent[] = (featured ?? []).map((a) => ({
     key: a._id,
     slug: a.slug,
     name: a.name,
@@ -73,7 +75,29 @@ export function TryAgents() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 2xl:gap-3">
-        {cards.map((agent) => {
+        {loading &&
+          [0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="p-2.5 2xl:p-3.5 rounded-lg border border-border/70 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col justify-between gap-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="size-7 rounded-md" />
+                  <Skeleton className="h-3.5 w-24" />
+                </div>
+                <Skeleton className="h-3.5 w-8" />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="h-4 w-14 rounded-full" />
+                  <Skeleton className="h-4 w-16 rounded-full" />
+                </div>
+                <Skeleton className="size-5 rounded-full" />
+              </div>
+            </div>
+          ))}
+        {!loading && cards.map((agent, idx) => {
           const modelIcons = uniqueModelIcons(agent.models);
           // If more model logos are present (>1), show only 1 tag to keep space for model logos
           const maxTags = modelIcons.length > 1 ? 1 : 2;
@@ -135,18 +159,25 @@ export function TryAgents() {
             </>
           );
 
+          const enter = {
+            initial: { opacity: 0, y: 8 },
+            animate: { opacity: 1, y: 0 },
+            transition: { duration: 0.35, ease: "easeOut" as const, delay: idx * 0.07 },
+          };
+
           return agent.slug ? (
-            <Link
-              key={agent.key}
-              href={`/space/marketplace/${agent.slug}`}
-              className={`${cardClass} hover:border-foreground/30 hover:bg-neutral-50 dark:hover:bg-neutral-950/70 transition-colors cursor-pointer`}
-            >
-              {inner}
-            </Link>
+            <motion.div key={agent.key} {...enter} className="flex flex-col">
+              <Link
+                href={`/space/marketplace/${agent.slug}`}
+                className={`${cardClass} flex-1 hover:border-foreground/30 hover:bg-neutral-50 dark:hover:bg-neutral-950/70 transition-colors cursor-pointer`}
+              >
+                {inner}
+              </Link>
+            </motion.div>
           ) : (
-            <div key={agent.key} className={cardClass}>
+            <motion.div key={agent.key} {...enter} className={cardClass}>
               {inner}
-            </div>
+            </motion.div>
           );
         })}
       </div>
