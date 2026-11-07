@@ -4,6 +4,7 @@ import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { ChefGraphState } from "./state";
 import { finalizeNode, guardNode } from "./guard/node";
 import { instantNode } from "./instant/node";
+import { heavyNode } from "./heavy/node";
 
 /**
  * Checkpointer + compiled graph, built once per server process. `setup()` creates the checkpoint tables
@@ -16,10 +17,13 @@ export function buildChefGraph(checkpointer: BaseCheckpointSaver) {
     .addNode("guard", guardNode)
     .addNode("instant", instantNode)
     .addNode("finalize", finalizeNode)
+    .addNode("heavy", heavyNode)
     .addEdge(START, "guard")
     .addEdge(START, "instant")
     .addEdge(["guard", "instant"], "finalize")
-    .addEdge("finalize", END)
+    // refused or chit-chat turns end here; tasks go on to the tool-using model
+    .addConditionalEdges("finalize", (s) => (s.blocked || s.modelKind === "instant" ? END : "heavy"), ["heavy", END])
+    .addEdge("heavy", END)
     .compile({ checkpointer });
 }
 

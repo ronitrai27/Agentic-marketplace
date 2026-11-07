@@ -414,7 +414,13 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
             </div>
           </Fade>
           {sent && (
-            <ChefMessages messages={chat.messages} traces={chat.traces} busy={chat.busy} />
+            <ChefMessages
+              messages={chat.messages}
+              traces={chat.traces}
+              blocks={chat.blocks}
+              busy={chat.busy}
+              onSelectAgent={sendMessage}
+            />
           )}
         </motion.div>
       </div>

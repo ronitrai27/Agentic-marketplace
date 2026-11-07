@@ -14,6 +14,7 @@ import type * as apiKeys from "../apiKeys.js";
 import type * as apiKeysActions from "../apiKeysActions.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
+import type * as chefAgents from "../chefAgents.js";
 import type * as crons from "../crons.js";
 import type * as escrow from "../escrow.js";
 import type * as health from "../health.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   apiKeysActions: typeof apiKeysActions;
   auth: typeof auth;
   chat: typeof chat;
+  chefAgents: typeof chefAgents;
   crons: typeof crons;
   escrow: typeof escrow;
   health: typeof health;

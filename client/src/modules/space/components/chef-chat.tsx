@@ -20,8 +20,7 @@ import {
   TraceLine,
   TraceTitle,
 } from "@/components/ui/trace";
-import { Spinner } from "@/components/ui/spinner";
-import { DotmSquare1 } from "@/components/ui/dotm-square-1";
+import { ChefBlocks, ThinkingMatrix, type Block } from "./chef-blocks";
 import { ChefMarkdown } from "./chef-markdown";
 import { api } from "../../../../convex/_generated/api";
 
@@ -50,6 +49,7 @@ export function useChefChat(chatId: string | null) {
   const saved = useQuery(api.chat.messages, chatId ? { chatId } : "skip");
   const [local, setLocal] = useState<ChatMsg[]>([]);
   const [traces, setTraces] = useState<Record<string, Step[]>>({});
+  const [blocks, setBlocks] = useState<Record<string, Block[]>>({});
   const [busy, setBusy] = useState(false);
 
   // Clear: no chat selected means nothing left over from the last one
@@ -57,6 +57,7 @@ export function useChefChat(chatId: string | null) {
     if (chatId === null) {
       setLocal([]);
       setTraces({});
+      setBlocks({});
     }
   }, [chatId]);
 
@@ -100,8 +101,19 @@ export function useChefChat(chatId: string | null) {
               : steps.map((s, j) => (j === i ? step : s)),
         };
       });
+    /** Add a block, or update the one with the same kind and id. `merge` can build on the old one (reasoning text grows). */
+    const putBlock = (next: Block, merge?: (old: Block) => Block) =>
+      setBlocks((all) => {
+        const list = all[id] ?? [];
+        const i = list.findIndex((b) => b.kind === next.kind && b.id === next.id);
+        return {
+          ...all,
+          [id]: i === -1 ? [...list, next] : list.map((b, j) => (j === i ? (merge ? merge(b) : next) : b)),
+        };
+      });
     const fail = (message: string) => {
       setTraces(({ [id]: _drop, ...rest }) => rest);
+      setBlocks(({ [id]: _gone, ...rest }) => rest);
       toast.error(message, {
         action: {
           label: "Retry",
@@ -139,6 +151,26 @@ export function useChefChat(chatId: string | null) {
           if (!event || !data) continue;
           const payload = JSON.parse(data);
           if (event === "trace") setStep(payload as Step);
+          if (event === "reasoning") {
+            const { id: rid, text: chunkText } = payload as { id: string; text: string };
+            putBlock({ kind: "reasoning", id: rid, text: chunkText, done: false }, (old) =>
+              old.kind === "reasoning" ? { ...old, text: old.text + chunkText } : old,
+            );
+          }
+          if (event === "reasoning_end") {
+            const { id: rid, durationMs } = payload as { id: string; durationMs: number };
+            putBlock({ kind: "reasoning", id: rid, text: "", done: true, durationMs }, (old) =>
+              old.kind === "reasoning" ? { ...old, done: true, durationMs } : old,
+            );
+          }
+          if (event === "tool") {
+            const p = payload as { id: string; name: string; status: "running" | "done" | "error"; args: unknown; output?: string };
+            putBlock({ kind: "tool", id: p.id, name: p.name, args: p.args, status: p.status, output: p.output });
+          }
+          if (event === "agents") {
+            const p = payload as Omit<Extract<Block, { kind: "agents" }>, "kind">;
+            putBlock({ kind: "agents", ...p });
+          }
           if (event === "message")
             setLocal((l) => [
               ...l.filter((m) => m.id !== (payload as ChatMsg).id),
@@ -180,7 +212,7 @@ export function useChefChat(chatId: string | null) {
     }
   }, []);
 
-  return { messages, traces, busy, send };
+  return { messages, traces, blocks, busy, send };
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -216,8 +248,18 @@ function useElapsed(start: number, active: boolean) {
 }
 
 /** Live steps while the chef works (with a running clock), folded into "Processed in N steps" when done. */
-function StepTrace({ steps, startedAt }: { steps: Step[]; startedAt: number }) {
-  const running = steps.some((s) => s.status === "running");
+function StepTrace({
+  steps,
+  startedAt,
+  pending,
+}: {
+  steps: Step[];
+  startedAt: number;
+  /** Reply not started yet: keep the live view even when every step is done. */
+  pending: boolean;
+}) {
+  const stepRunning = steps.some((s) => s.status === "running");
+  const running = stepRunning || pending;
   const elapsed = useElapsed(startedAt, running);
   if (running) {
     return (
@@ -228,7 +270,7 @@ function StepTrace({ steps, startedAt }: { steps: Step[]; startedAt: number }) {
             status={s.status === "running" ? "running" : undefined}
           >
             <TraceIcon>
-              {s.status === "running" ? <Spinner /> : <Check />}
+              {s.status === "running" ? <ThinkingMatrix /> : <Check />}
             </TraceIcon>
             <TraceTitle>
               {s.status === "running" ? `${s.label}…` : s.label}
@@ -238,6 +280,15 @@ function StepTrace({ steps, startedAt }: { steps: Step[]; startedAt: number }) {
             )}
           </TraceLine>
         ))}
+        {!stepRunning && (
+          <TraceLine status="running">
+            <TraceIcon>
+              <ThinkingMatrix />
+            </TraceIcon>
+            <TraceTitle>Thinking…</TraceTitle>
+            <TraceDescription>{fmtSecs(elapsed)}</TraceDescription>
+          </TraceLine>
+        )}
       </Trace>
     );
   }
@@ -312,11 +363,16 @@ function ReplyFooter({ m }: { m: ChatMsg }) {
 export function ChefMessages({
   messages,
   traces,
+  blocks,
   busy,
+  onSelectAgent,
 }: {
   messages: ChatMsg[];
   traces: Record<string, Step[]>;
+  blocks: Record<string, Block[]>;
   busy: boolean;
+  /** The user confirmed an agent in the picker: send this as their message. */
+  onSelectAgent: (message: string) => void;
 }) {
   const last = messages.at(-1);
   // checking / reasoning and nothing said back yet
@@ -324,7 +380,7 @@ export function ChefMessages({
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, traces, waiting]);
+  }, [messages, traces, blocks, waiting]);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-1.5! px-1 pb-4 -mt-4!">
@@ -344,14 +400,16 @@ export function ChefMessages({
                 </MessageFooter>
               </MessageContent>
             </Message>
-            {waiting && m.id === last?.id && (
-              <div aria-label="Chef is thinking" className="px-1">
-                <DotmSquare1 size={20} dotSize={3} speed={1.8} bloom />
-              </div>
-            )}
             {traces[m.id] && (
-              <StepTrace steps={traces[m.id]} startedAt={m.createdAt} />
+              <StepTrace
+                steps={traces[m.id]}
+                startedAt={m.createdAt}
+                pending={waiting && m.id === last?.id && !blocks[m.id]?.length}
+              />
             )}
+            {blocks[m.id]?.length ? (
+              <ChefBlocks blocks={blocks[m.id]} onConfirm={onSelectAgent} />
+            ) : null}
           </div>
         ) : (
           <Message key={m.id}>

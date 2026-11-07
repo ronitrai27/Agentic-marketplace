@@ -6,6 +6,7 @@ import { getToken } from "@/lib/auth-server";
 import { getChefGraph } from "@/chef/graph";
 import { REFUSAL_TEXT } from "@/chef/guard/node";
 import { ChatOutbox } from "@/chef/outbox";
+import { chefRequest } from "@/chef/tools/context";
 
 export const maxDuration = 300;
 
@@ -52,6 +53,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(sse(event, data)));
+      // tools read the user's Convex client and what they typed from here, never from the model
+      chefRequest.enterWith({ convex, lastUserText: text });
       try {
         // 2. The guard starts at once; the browser sees "Checking query" before any network work is done.
         send("trace", { id: "check", label: "Checking query", status: "running" });
@@ -70,11 +73,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
         const run = await graph.stream(
           { messages: [new HumanMessage({ content: text, id: messageId })], chatId, userId },
           // threads are namespaced by user, so a guessed chat id can never reach someone else's state
-          { configurable: { thread_id: `${userId}:${chatId}` }, streamMode: ["updates", "messages"], durability: "async" },
+          { configurable: { thread_id: `${userId}:${chatId}` }, streamMode: ["updates", "messages", "custom"], durability: "async" },
         );
 
         for await (const chunk of run) {
           const [mode, data] = chunk as [string, any];
+
+          if (mode === "custom") {
+            // live events from the heavy model: reasoning, tool runs, the agent picker, answer tokens
+            const { t, ...rest } = data as { t: string } & Record<string, unknown>;
+            if (t === "token") send("token", { id: replyId, text: rest.text });
+            else send(t, rest);
+            continue;
+          }
 
           if (mode === "messages") {
             const [msg, meta] = data;
@@ -108,6 +119,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
               path = "dropped";
               held = "";
               send("trace", { id: "intent", label: "Understanding intent", status: "running" });
+            }
+          }
+
+          if (update.heavy) {
+            const msgs = update.heavy.messages as Array<{ type?: string; content?: unknown; tool_calls?: unknown[] }> | undefined;
+            const last = msgs?.filter((m) => m.type === "ai" && !(m.tool_calls?.length)).at(-1);
+            const reply = typeof last?.content === "string" ? last.content : "";
+            if (reply) {
+              const replyMs = ms();
+              send("message", { id: replyId, role: "assistant", kind: "text", text: reply, durationMs: replyMs, createdAt: Date.now() });
+              outbox.push({ messageId: replyId, role: "assistant", kind: "text", text: reply, durationMs: replyMs, createdAt: Date.now() });
             }
           }
 
