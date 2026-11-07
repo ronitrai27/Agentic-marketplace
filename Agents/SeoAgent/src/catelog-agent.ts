@@ -96,7 +96,10 @@ function getTemporalClient(): Promise<Client> {
  * The audit, one row per Temporal activity. `start` is the progress shown when it begins and `done` when it ends,
  * so the bar moves at each real milestone and never goes backwards (parallel activities finish in any order).
  */
-const PHASES: Record<string, { label: string; start: number; done: number; doneLabel: string }> = {
+const PHASES: Record<
+  string,
+  { label: string; start: number; done: number; doneLabel: string }
+> = {
   staticCrawlActivity: {
     label: "Crawling the page (static ingestion)",
     start: 25,
@@ -147,8 +150,8 @@ const PHASES: Record<string, { label: string; start: number; done: number; doneL
 
 export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
   id: "seo-geo-intelligence-agent",
-  name: "Technical SEO & GEO Intelligence Agent",
-  version: "1.0.0",
+  name: "Henry",
+  version: "1.2.0",
   mode: "async", // Returns 202 Accepted, executes via Temporal Cloud, exposes live events on /tasks/:id
 
   // Authentication keys auto-read from CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY env vars
@@ -318,16 +321,23 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
         if (phase) bump(phase.start, `${label}...`);
         stream.activity("activity_started", { activity: e.name, label });
       } else if (e.kind === "completed") {
-        const secs = e.durationMs !== undefined ? ` (${(e.durationMs / 1000).toFixed(1)}s)` : "";
+        const secs =
+          e.durationMs !== undefined
+            ? ` (${(e.durationMs / 1000).toFixed(1)}s)`
+            : "";
         if (phase) bump(phase.done, `${phase.doneLabel}${secs}`);
         stream.activity("activity_completed", {
           activity: e.name,
           label,
           durationMs: e.durationMs ?? null,
         });
-        if (e.durationMs !== undefined) metric.timing(`activity_${e.name}_ms`, e.durationMs);
+        if (e.durationMs !== undefined)
+          metric.timing(`activity_${e.name}_ms`, e.durationMs);
       } else {
-        log.error("Temporal activity failed", { activity: e.name, error: e.error });
+        log.error("Temporal activity failed", {
+          activity: e.name,
+          error: e.error,
+        });
         stream.activity("activity_failed", {
           activity: e.name,
           label,
