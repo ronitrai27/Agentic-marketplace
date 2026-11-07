@@ -16,7 +16,11 @@ import {
   contractAsText,
 } from "@/lib/contract-text";
 
-export function ContractStep({ onAcceptedChange }: { onAcceptedChange: (accepted: boolean) => void }) {
+export function ContractStep({
+  onAcceptedChange,
+}: {
+  onAcceptedChange: (accepted: boolean) => void;
+}) {
   const [agreed, setAgreed] = useState(false);
   const [typed, setTyped] = useState("");
   const [copied, setCopied] = useState(false);
@@ -42,48 +46,77 @@ export function ContractStep({ onAcceptedChange }: { onAcceptedChange: (accepted
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-base font-semibold text-foreground">{CONTRACT_TITLE}</h3>
+          <h3 className="text-base font-semibold text-foreground">
+            {CONTRACT_TITLE}
+          </h3>
           <p className="text-sm text-muted-foreground mt-1.5">
-            Please read this before you publish. You can copy it to share with your team or your AI assistant.
+            Please read this before you publish. You can copy it to share with
+            your team or your AI assistant.
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={copy} className="shrink-0 cursor-pointer">
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={copy}
+          className="shrink-0 cursor-pointer"
+        >
+          {copied ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
 
       <section className="space-y-3">
         {DECLARATION_PARAGRAPHS.map((p) => (
-          <p key={p.slice(0, 24)} className="text-sm text-foreground/90 leading-relaxed">
+          <p
+            key={p.slice(0, 24)}
+            className="text-sm text-foreground/90 leading-relaxed"
+          >
             {p}
           </p>
         ))}
       </section>
 
       <section className="space-y-3">
-        <h4 className="text-sm font-semibold text-foreground">{PAYMENTS_TITLE}</h4>
+        <h4 className="text-sm font-semibold text-foreground">
+          {PAYMENTS_TITLE}
+        </h4>
         <ol className="space-y-3">
           {PAYMENT_RULES.map((r, i) => (
             <li key={r.title} className="flex gap-3 text-sm leading-relaxed">
-              <span className="text-muted-foreground tabular-nums w-4 shrink-0">{i + 1}.</span>
+              <span className="text-muted-foreground tabular-nums w-4 shrink-0">
+                {i + 1}.
+              </span>
               <p className="text-foreground/90">
-                <span className="font-medium text-foreground">{r.title}.</span> {r.body}
+                <span className="font-medium text-foreground">{r.title}.</span>{" "}
+                {r.body}
               </p>
             </li>
           ))}
         </ol>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-border p-4">
+      <section className="space-y-4 rounded-lg border border-border p-4 bg-neutral-100 dark:bg-neutral-900/50">
         <div className="flex items-start gap-3">
-          <Checkbox id="agree" checked={agreed} onCheckedChange={(v) => setAgreed(v === true)} className="mt-0.5" />
-          <Label htmlFor="agree" className="text-sm font-normal leading-relaxed cursor-pointer">
+          <Checkbox
+            id="agree"
+            checked={agreed}
+            onCheckedChange={(v) => setAgreed(v === true)}
+            className="mt-0.5 border-blue-600 data-checked:bg-blue-600 data-checked:border-blue-600 data-checked:text-white dark:border-blue-400 dark:data-checked:bg-blue-500 dark:data-checked:border-blue-500"
+          />
+          <Label
+            htmlFor="agree"
+            className="text-sm font-normal leading-relaxed cursor-pointer"
+          >
             {AGREEMENT_LABEL}
           </Label>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="confirm" className="text-xs text-muted-foreground">
+          <Label htmlFor="confirm" className="text-xs ">
             Type {CONFIRM_WORD} to acknowledge
           </Label>
           <Input
@@ -92,7 +125,7 @@ export function ContractStep({ onAcceptedChange }: { onAcceptedChange: (accepted
             onChange={(e) => setTyped(e.target.value)}
             placeholder={CONFIRM_WORD}
             autoComplete="off"
-            className="w-48"
+            className="w-48 bg-white dark:bg-input"
           />
         </div>
       </section>

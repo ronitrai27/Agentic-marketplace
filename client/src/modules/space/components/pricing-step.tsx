@@ -295,7 +295,11 @@ export function PricingStep({
                   Buyers can offer a lower price. You never go below your lowest price.
                 </p>
               </div>
-              <Switch checked={negotiate} onCheckedChange={edit(setNegotiate)} />
+              <Switch
+                checked={negotiate}
+                onCheckedChange={edit(setNegotiate)}
+                className="data-unchecked:bg-zinc-700 dark:data-unchecked:bg-zinc-600 border border-zinc-700 dark:border-zinc-600"
+              />
             </div>
             {negotiate && (
               <div className="space-y-1.5">

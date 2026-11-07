@@ -264,10 +264,14 @@ export function AgentSearch() {
     const recents = recentIds
       .map((id) => byId.get(id))
       .filter((a): a is CatalogAgent => !!a);
-    if (recents.length) return { title: "Recent", list: recents.slice(0, 4) };
+    if (recents.length) return { title: "Recent", list: recents.slice(0, 3) };
+    // only agents that actually have a rating, best first, at most 3 (the section is hidden when there are none)
     return {
       title: "Top rated",
-      list: [...catalog].sort((a, b) => b.ratingAvg - a.ratingAvg).slice(0, 4),
+      list: catalog
+        .filter((a) => a.ratingAvg > 0)
+        .sort((a, b) => b.ratingAvg - a.ratingAvg)
+        .slice(0, 3),
     };
   }, [catalog, recentIds, byId]);
 

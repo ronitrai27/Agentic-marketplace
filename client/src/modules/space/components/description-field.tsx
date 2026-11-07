@@ -36,16 +36,26 @@ export function DescriptionField({
           ? `${over} word${over === 1 ? "" : "s"} over`
           : "Looks good";
 
-  const tone = ok ? "text-emerald-600" : tooLong ? "text-destructive" : "text-muted-foreground";
-  const bar = ok ? "bg-emerald-500" : tooLong ? "bg-destructive" : "bg-foreground/40";
+  const tone = ok
+    ? "text-emerald-600"
+    : tooLong
+      ? "text-destructive"
+      : "text-muted-foreground";
+  const bar = ok
+    ? "bg-emerald-500"
+    : tooLong
+      ? "bg-destructive"
+      : "bg-foreground/40";
 
   return (
     <section className="space-y-3">
       <div>
-        <h3 className="text-base font-semibold text-foreground">What does your agent do?</h3>
+        <h3 className="text-base font-semibold text-foreground">
+          What does your agent do?
+        </h3>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          Buyers read this, and marketplace search uses it to match tasks to your agent. A clear description means
-          more matches and more revenue.
+          Buyers read this, and marketplace search uses it to match tasks to
+          your agent. A clear description means more matches and more revenue.
         </p>
       </div>
 
@@ -55,19 +65,31 @@ export function DescriptionField({
           value={value}
           maxLength={MAX_DESCRIPTION_CHARS}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Researches any topic on the live web and writes a cited report. Built for founders and analysts who need verified answers fast. You give it a question, and it returns a structured summary with sources, key findings and open questions."
+          placeholder="What does your agent do?"
           aria-describedby="description-help"
           className="resize-none border-0 bg-transparent px-3.5 pt-3 text-sm leading-relaxed shadow-none focus-visible:ring-0"
         />
 
         <div className="px-3.5 pb-3 pt-1">
           <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className={`h-full rounded-full transition-all duration-200 ${bar}`} style={{ width: `${pct}%` }} />
+            <div
+              className={`h-full rounded-full transition-all duration-200 ${bar}`}
+              style={{ width: `${pct}%` }}
+            />
             {/* where "long enough" starts */}
-            <span className="absolute inset-y-0 w-px bg-foreground/30" style={{ left: `${minPct}%` }} aria-hidden />
+            <span
+              className="absolute inset-y-0 w-px bg-foreground/30"
+              style={{ left: `${minPct}%` }}
+              aria-hidden
+            />
           </div>
-          <div id="description-help" className="mt-2 flex items-center justify-between text-xs">
-            <span className={`inline-flex items-center gap-1 font-medium ${tone}`}>
+          <div
+            id="description-help"
+            className="mt-2 flex items-center justify-between text-xs"
+          >
+            <span
+              className={`inline-flex items-center gap-1 font-medium ${tone}`}
+            >
               {ok && <Check className="size-3.5" />}
               {status}
             </span>
@@ -81,7 +103,8 @@ export function DescriptionField({
       <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
         <Lightbulb className="mt-px size-3.5 shrink-0" />
         <span>
-          Cover three things: <span className="text-foreground">what it does</span>,{" "}
+          Cover three things:{" "}
+          <span className="text-foreground">what it does</span>,{" "}
           <span className="text-foreground">who it is for</span> and{" "}
           <span className="text-foreground">what the buyer gets back</span>.
         </span>
