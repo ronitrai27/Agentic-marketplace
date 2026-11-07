@@ -1,5 +1,5 @@
 import { mutation, query, type MutationCtx } from "./_generated/server";
-import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { validateTags } from "../src/lib/agent-tags";
 import { cleanCapabilities } from "../src/lib/agent-capabilities";
@@ -48,7 +48,8 @@ function slugify(name: string): string {
   );
 }
 
-async function uniqueSlug(ctx: MutationCtx, name: string): Promise<string> {
+/** A free slug for this name. `selfId` lets an agent keep a slug it already owns when it is renamed. */
+async function uniqueSlug(ctx: MutationCtx, name: string, selfId?: Id<"agents">): Promise<string> {
   const base = slugify(name);
   for (let i = 1; i <= 50; i++) {
     const candidate = i === 1 ? base : `${base}-${i}`;
@@ -56,7 +57,7 @@ async function uniqueSlug(ctx: MutationCtx, name: string): Promise<string> {
       .query("agents")
       .withIndex("by_slug", (q) => q.eq("slug", candidate))
       .first();
-    if (!taken) return candidate;
+    if (!taken || taken._id === selfId) return candidate;
   }
   return `${base}-${Date.now().toString(36)}`;
 }
@@ -201,7 +202,6 @@ export const register = mutation({
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
 
     await ctx.db.insert("agent_pricing", {
       agentId,
@@ -254,7 +254,6 @@ export const setLogo = mutation({
     if (!agent || agent.ownerId !== identity.subject) throw new Error("Agent not found.");
 
     await ctx.db.patch(agentId, { logoUrl: cleanLogoUrl(logoUrl), updatedAt: Date.now() });
-    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
     return { agentId };
   },
 });
@@ -266,11 +265,13 @@ export const setLogo = mutation({
 export const updateDetails = mutation({
   args: {
     agentId: v.id("agents"),
+    /** New name; the slug (the agent's page address) follows it. Omit to keep the current name. */
+    name: v.optional(v.string()),
     description: v.string(),
     status: v.optional(v.union(v.literal("active"), v.literal("paused"))),
     keyCapabilities: v.array(v.string()),
   },
-  handler: async (ctx, { agentId, description, status, keyCapabilities }) => {
+  handler: async (ctx, { agentId, name, description, status, keyCapabilities }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Please sign in.");
 
@@ -282,13 +283,21 @@ export const updateDetails = mutation({
       throw new Error(`This agent is ${agent.status}; its status cannot be changed.`);
     }
 
+    let rename: { name: string; slug: string } | undefined;
+    if (name !== undefined && name.trim() !== agent.name) {
+      const clean = name.trim().replace(/\s+/g, " ");
+      if (clean.length < 2) throw new Error("Agent name must be at least 2 characters.");
+      if (clean.length > 60) throw new Error("Agent name must be 60 characters or fewer.");
+      rename = { name: clean, slug: await uniqueSlug(ctx, clean, agentId) };
+    }
+
     await ctx.db.patch(agentId, {
+      ...rename,
       description: description.trim(),
       ...(status && { status }),
       keyCapabilities: cleanCapabilities(keyCapabilities),
       updatedAt: Date.now(),
     });
-    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
     return { agentId };
   },
 });
@@ -305,7 +314,6 @@ export const archive = mutation({
     if (agent.status === "archived") return { agentId };
 
     await ctx.db.patch(agentId, { status: "archived", updatedAt: Date.now() });
-    await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId });
     return { agentId };
   },
 });

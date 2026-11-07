@@ -51,6 +51,7 @@ export type Block =
   | {
       kind: "tool";
       id: string;
+      step: number;
       name: string;
       args: unknown;
       status: "running" | "done" | "error";
@@ -59,6 +60,7 @@ export type Block =
   | {
       kind: "agents";
       id: string;
+      step: number;
       needsChoice: boolean;
       preselect?: string;
       agents: PickAgent[];
@@ -195,7 +197,7 @@ function AgentOption({
       aria-checked={selected}
       disabled={locked && !selected}
       onClick={onPick}
-      className={`flex flex-col justify-between gap-2.5 rounded-lg border p-2.5 text-left transition-all ${
+      className={`flex w-[calc((100%-1rem)/3)] min-w-[220px] shrink-0 snap-start flex-col justify-between gap-2.5 rounded-lg border p-2.5 text-left transition-all ${
         selected
           ? "border-foreground/70 bg-neutral-50 shadow-xs ring-1 ring-foreground/20 dark:bg-neutral-950/60"
           : "border-border/70 bg-neutral-50/50 hover:border-foreground/30 dark:border-neutral-800/80 dark:bg-neutral-950/40"
@@ -247,7 +249,12 @@ function AgentPicker({
       transition={{ duration: 0.35, ease: "easeOut" }}
       className="flex w-full flex-col gap-2.5"
     >
-      <div role="radiogroup" aria-label="Choose an agent" className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {/* one row that scrolls sideways when there are more agents than fit */}
+      <div
+        role="radiogroup"
+        aria-label="Choose an agent"
+        className="scrollbar-thin -mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-2"
+      >
         {b.agents.map((a) => (
           <AgentOption
             key={a.slug}
@@ -295,9 +302,16 @@ export function ChefBlocks({
   blocks: Block[];
   onConfirm: (message: string) => void;
 }) {
+  // Within one step the thinking always sits above the tool and the picker, whichever arrived first
+  const rank = (b: Block) => (b.kind === "reasoning" ? 0 : b.kind === "tool" ? 1 : 2);
+  const stepOf = (b: Block) => (b.kind === "reasoning" ? Number(b.id.slice(1)) || 0 : b.step);
+  const ordered = blocks
+    .map((b, i) => ({ b, i }))
+    .sort((x, y) => stepOf(x.b) - stepOf(y.b) || rank(x.b) - rank(y.b) || x.i - y.i)
+    .map((x) => x.b);
   return (
     <div className="flex flex-col gap-2.5 px-1">
-      {blocks.map((b) =>
+      {ordered.map((b) =>
         b.kind === "reasoning" ? (
           <ReasoningBlock key={`${b.kind}-${b.id}`} b={b} />
         ) : b.kind === "tool" ? (

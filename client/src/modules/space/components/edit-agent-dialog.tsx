@@ -34,6 +34,7 @@ export function EditAgentDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const update = useMutation(api.agents.updateDetails);
+  const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description);
   const [status, setStatus] = useState<"active" | "paused">(agent.status === "paused" ? "paused" : "active");
   const [caps, setCaps] = useState<string[]>(agent.keyCapabilities ?? []);
@@ -43,6 +44,7 @@ export function EditAgentDialog({
   // Reset to the saved values each time the dialog opens
   useEffect(() => {
     if (!open) return;
+    setName(agent.name);
     setDescription(agent.description);
     setStatus(agent.status === "paused" ? "paused" : "active");
     setCaps(agent.keyCapabilities ?? []);
@@ -64,6 +66,7 @@ export function EditAgentDialog({
     try {
       await update({
         agentId: agent._id,
+        name,
         description,
         ...(statusLocked ? {} : { status }),
         keyCapabilities: cleanCapabilities(draft.trim() ? [...caps, draft] : caps),
@@ -86,6 +89,16 @@ export function EditAgentDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-5 pr-1">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Name</label>
+            <Input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+            {name.trim() && name.trim() !== agent.name && (
+              <p className="text-[11px] text-muted-foreground">
+                Renaming also changes your agent&apos;s page address, so old links to it will stop working.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Description</label>
             <Textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -192,7 +205,7 @@ export function EditAgentDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="cursor-pointer">
             Cancel
           </Button>
-          <Button type="button" onClick={save} disabled={saving} className="cursor-pointer">
+          <Button type="button" onClick={save} disabled={saving || name.trim().length < 2} className="cursor-pointer">
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </DialogFooter>

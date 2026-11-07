@@ -6,7 +6,7 @@ import { getToken } from "@/lib/auth-server";
 import { getChefGraph } from "@/chef/graph";
 import { REFUSAL_TEXT } from "@/chef/guard/node";
 import { ChatOutbox } from "@/chef/outbox";
-import { chefRequest } from "@/chef/tools/context";
+import { chefRequest, createGuardGate } from "@/chef/tools/context";
 
 export const maxDuration = 300;
 
@@ -37,6 +37,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
   }
   const { messageId, text } = parsed.data;
 
+  // build/open the graph while the session token is being fetched: neither waits for the other
+  const graphPromise = getChefGraph();
+  graphPromise.catch(() => {}); // a failure is reported inside the stream below
   const token = await getToken();
   const tAuth = ms();
   const userId = token ? subjectOf(token) : null;
@@ -54,12 +57,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
     async start(controller) {
       const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(sse(event, data)));
       // tools read the user's Convex client and what they typed from here, never from the model
-      chefRequest.enterWith({ convex, lastUserText: text });
+      chefRequest.enterWith({ convex, lastUserText: text, gate: createGuardGate() });
       try {
         // 2. The guard starts at once; the browser sees "Checking query" before any network work is done.
         send("trace", { id: "check", label: "Checking query", status: "running" });
 
-        const graph = await getChefGraph();
+        const graph = await graphPromise;
         const tGraph = ms();
         let tGuard = 0;
         let tFirstToken = 0;

@@ -2,7 +2,7 @@ import { mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { components, internal } from "./_generated/api";
+import { components } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 
@@ -37,7 +37,7 @@ async function hasRun(ctx: Ctx, userId: string, agentId: Id<"agents">) {
   return rows.some((r) => r.agentId === agentId && (r.status === "succeeded" || r.status === "failed"));
 }
 
-/** Moves the agent's average and count when a review is added, replaced or removed, then re-syncs search. */
+/** Moves the agent's average and count when a review is added, replaced or removed, . */
 async function applyRating(
   ctx: MutationCtx,
   agent: Doc<"agents">,
@@ -49,7 +49,6 @@ async function applyRating(
   const newSum = sum + (change.add ?? 0) - (change.remove ?? 0);
   const ratingAvg = newCount > 0 ? Math.round((newSum / newCount) * 100) / 100 : 0;
   await ctx.db.patch(agent._id, { ratingAvg, ratingCount: newCount, updatedAt: Date.now() });
-  await ctx.scheduler.runAfter(0, internal.search.syncAgent, { agentId: agent._id });
 }
 
 /** Whether the signed-in user may review this agent, and their existing review if any. */

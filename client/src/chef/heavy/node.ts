@@ -9,7 +9,9 @@ import {
 } from "@langchain/core/messages";
 import { ChefGraphState, chefModelId } from "../state";
 import { HEAVY_SYSTEM_PROMPT } from "./prompt";
-import { CHEF_TOOLS, runTool } from "../tools";
+import { CHEF_TOOLS, runTool, type ToolRun } from "../tools";
+import { chefRequest } from "../tools/context";
+import { findAgents } from "../tools/find-agents";
 
 const MAX_STEPS = 4; // model calls per turn: tool, tool, ..., answer
 const HISTORY = 20;
@@ -18,10 +20,11 @@ const HISTORY = 20;
 export type HeavyEvent =
   | { t: "reasoning"; id: string; text: string }
   | { t: "reasoning_end"; id: string; durationMs: number }
-  | { t: "tool"; id: string; name: string; status: "running" | "done" | "error"; args: unknown; output?: string }
+  | { t: "tool"; id: string; step: number; name: string; status: "running" | "done" | "error"; args: unknown; output?: string }
   | {
       t: "agents";
       id: string;
+      step: number;
       needsChoice: boolean;
       preselect?: string;
       agents: { slug: string; name: string; logoUrl?: string; ratingAvg: number; ratingCount: number; models: { id: string; provider?: string }[] }[];
@@ -64,6 +67,25 @@ function parts(chunk: AIMessageChunk): { text: string; reasoning: string; partIn
   return { text, reasoning, partIndex };
 }
 
+/** The text of the "plan" argument so far, from a tool call that is still streaming (it is the first field, so it arrives first). */
+function partialPlan(argsJson: string): string {
+  const m = /"plan"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(argsJson);
+  if (!m) return "";
+  return m[1]
+    .replace(/\\n/g, " ")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\")
+    .replace(/\\$/, ""); // a half-arrived escape at the end
+}
+
+/** The same-ask test: the model only trimmed or reworded the user's own words. */
+const words = (x: string) => x.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+function sameAsk(modelQuery: string, userText: string): boolean {
+  const user = new Set(words(userText));
+  const q = words(modelQuery);
+  return q.length > 0 && q.every((w) => user.has(w));
+}
+
 /** History for the model: recent, and never starting on a tool result whose call was cut off. */
 function window(messages: BaseMessage[]): BaseMessage[] {
   const recent = messages.slice(-HISTORY);
@@ -89,6 +111,11 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
   const produced: BaseMessage[] = [];
   let useReasoning = true;
 
+  // While the model is still thinking, run the search on the user's own words. If the model then asks for the same
+  // thing, its answer is already here; if not, it is thrown away and the real call runs.
+  const userText = chefRequest.getStore()?.lastUserText ?? "";
+  const speculative = userText ? findAgents({ query: userText, mode: "task" }).catch(() => null) : null;
+
   for (let step = 0; step < MAX_STEPS; step++) {
     const rid = `r${step}`;
     let reasoningStarted = 0;
@@ -102,6 +129,8 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
     };
 
     let full: AIMessageChunk | undefined;
+    let callArgs = ""; // arguments of the first tool call as they stream
+    let planSent = 0;
     try {
       const stream = await getModel(useReasoning).stream([new SystemMessage(HEAVY_SYSTEM_PROMPT), ...convo, ...produced]);
       for await (const chunk of stream) {
@@ -113,6 +142,17 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
           const gap = lastPart !== undefined && p.partIndex !== undefined && p.partIndex !== lastPart ? "\n\n" : "";
           if (p.partIndex !== undefined) lastPart = p.partIndex;
           emit({ t: "reasoning", id: rid, text: gap + p.reasoning });
+        }
+        // no reasoning summary: the tool call's "plan" line is the thinking, shown as soon as it starts streaming
+        const argChunk = chunk.tool_call_chunks?.find((c) => (c.index ?? 0) === 0)?.args;
+        if (argChunk && !reasoningClosed && (!reasoningStarted || planSent > 0)) {
+          callArgs += argChunk;
+          const plan = partialPlan(callArgs);
+          if (plan.length > planSent) {
+            if (!reasoningStarted) reasoningStarted = Date.now();
+            emit({ t: "reasoning", id: rid, text: plan.slice(planSent) });
+            planSent = plan.length;
+          }
         }
         if (p.text) {
           closeReasoning();
@@ -150,13 +190,26 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
 
     for (const call of calls) {
       const id = call.id ?? `${rid}-${call.name}`;
-      emit({ t: "tool", id, name: call.name, status: "running", args: call.args });
-      const res = await runTool(call.name, call.args);
-      emit({ t: "tool", id, name: call.name, status: res.ok ? "done" : "error", args: call.args, output: res.text.slice(0, 2000) });
+      // the plan is shown as the thinking line; the tool card shows only what was actually searched
+      const { plan: _plan, ...shown } = (call.args ?? {}) as Record<string, unknown>;
+      emit({ t: "tool", id, step, name: call.name, status: "running", args: shown });
+
+      let res: ToolRun;
+      const spec = step === 0 && call.name === "find_agents" && speculative ? await speculative : null;
+      const a = shown as { query?: string; mode?: string };
+      if (spec && a.mode !== "name" && sameAsk(String(a.query ?? ""), userText)) {
+        res = { ok: spec.ok, text: spec.text, agents: spec }; // already done while the model was thinking
+        console.log(`[chef:heavy] chat=${state.chatId} reused speculative search`);
+      } else {
+        res = await runTool(call.name, call.args);
+      }
+
+      emit({ t: "tool", id, step, name: call.name, status: res.ok ? "done" : "error", args: shown, output: res.text.slice(0, 2000) });
       if (res.agents?.ok && res.agents.agents.length > 0) {
         emit({
           t: "agents",
           id,
+          step,
           needsChoice: res.agents.needsChoice,
           preselect: res.agents.preselect,
           agents: res.agents.agents,

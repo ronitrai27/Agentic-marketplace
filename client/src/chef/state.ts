@@ -44,7 +44,7 @@ export type Guard = z.infer<typeof Guard>;
 
 export const InputField = z.object({ name: z.string(), type: z.string(), required: z.boolean() });
 
-/** An agent that matched, built from tools only (Typesense and Convex facts), never by the LLM. */
+/** An agent that matched, built from tools only (search index and Convex facts), never by the LLM. */
 export const Candidate = z.object({
   slug: z.string(),
   name: z.string(),

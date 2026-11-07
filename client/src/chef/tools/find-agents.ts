@@ -1,12 +1,18 @@
 import { z } from "zod";
 import { api } from "../../../convex/_generated/api";
-import { searchClient } from "@/lib/typesense";
-import { searchAgents, type SearchHit } from "@/lib/agent-search";
+import { searchRanked } from "@/search/query";
+import { ensureIndexed } from "@/search/sync";
 import { chefRequest, type ChefRequest } from "./context";
 import { parseSelection } from "./selection";
 
 /** What the model may pass. Anything else is rejected with a readable message, never thrown. */
 export const FindAgentsArgs = z.object({
+  // First on purpose: the model writes it first, so the UI can stream it as the "thinking" line right away.
+  plan: z
+    .string()
+    .max(240)
+    .default("")
+    .describe("Write this FIRST. One short sentence: what the user wants and how you will search (the user reads it)."),
   query: z
     .string()
     .trim()
@@ -19,7 +25,8 @@ export const FindAgentsArgs = z.object({
     .enum(["task", "name"])
     .default("task")
     .describe(
-      'Use "name" when the user named a specific agent (exact or approximate); use "task" when they described work to be done.',
+      'Use "name" ONLY when the user gave a specific agent name, even misspelled (e.g. "Nova research", "job fit agent"). ' +
+        'Descriptions such as "best research agent" or "an agent for reports" are tasks: use "task". When unsure, use "task".',
     ),
   limit: z.number().int().min(1).max(6).default(6).describe("How many agents to return (max 6)."),
 });
@@ -51,6 +58,7 @@ type Enriched = {
   slug: string;
   name: string;
   description: string;
+  capabilities: string[];
   logoUrl?: string;
   tags: string[];
   models: { id: string; provider?: string }[];
@@ -139,6 +147,7 @@ const usd = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
 
 function line(i: number, a: Enriched, reasons: string[]): string {
   const parts = [
+    a.capabilities.length ? `does: ${a.capabilities.slice(0, 4).join("; ")}` : null,
     a.ratingCount > 0 ? `${a.ratingAvg.toFixed(1)} stars from ${a.ratingCount} review${a.ratingCount === 1 ? "" : "s"}` : "no reviews yet",
     a.successRate !== null ? `${Math.round(a.successRate * 100)}% success over ${a.totalRuns} runs` : "no runs yet",
     a.avgLatencyMs !== null ? `avg ${(a.avgLatencyMs / 1000).toFixed(1)}s` : null,
@@ -162,19 +171,20 @@ const fail = (text: string): FindAgentsResult => ({ ok: false, text, agents: [],
 
 // ─── search + enrich ───
 
-/** Typesense candidates in relevance order, then Convex facts. Only active agents survive the Convex step. */
+/** Typesense candidates in relevance order, then Convex facts. Archived and suspended agents do not survive the Convex step. */
 async function candidates(req: ChefRequest, q: string, want: "task" | "name") {
-  const client = searchClient();
-  if (!client) throw new Error("SEARCH_NOT_CONFIGURED");
+  await ensureIndexed(req.convex); // waits only when the index is empty; otherwise refreshes in the background
   const found =
     want === "name"
-      ? await searchAgents(client, q, { exact: 6, related: 8, similar: 0 })
-      : await searchAgents(client, q, { exact: 4, related: 10, similar: 3 });
+      ? await searchRanked(q, { exact: 6, related: 8, similar: 0 })
+      : await searchRanked(q, { exact: 4, related: 10, similar: 3, names: "light" });
 
-  const ordered: SearchHit[] = [];
+  const ordered: { id: string }[] = [];
   const seen = new Set<string>();
-  for (const h of [...found.exact, ...found.related, ...found.similar]) {
-    if (seen.has(h.id)) continue;
+  // a task search ranks by what the agent does, so exact and related are one list ordered by score
+  const head = want === "task" ? [...found.exact, ...found.related].sort((a, b) => b.score - a.score) : [...found.exact, ...found.related];
+  for (const h of [...head, ...found.similar]) {
+    if (!h.id || seen.has(h.id)) continue;
     seen.add(h.id);
     ordered.push(h);
   }
@@ -184,10 +194,9 @@ async function candidates(req: ChefRequest, q: string, want: "task" | "name") {
   const rows = (await req.convex.query(api.chefAgents.enrich, { ids: ordered.map((h) => h.id) })) as Enriched[];
   const byId = new Map(rows.map((r) => [r.id, r]));
   ordered.forEach((h, i) => {
-    const a = byId.get(h.id); // archived, paused and suspended agents have no row here
+    const a = byId.get(h.id); // archived and suspended agents have no row here
     if (!a) return;
-    const isExact = i < found.exact.length;
-    out.push({ a, fit: Math.max(0.2, (isExact ? 1 : 0.85) - i * 0.05) });
+    out.push({ a, fit: Math.max(0.2, 1 - i * 0.07) });
   });
   return out;
 }
@@ -223,7 +232,7 @@ async function byName(req: ChefRequest, modelQuery: string, limit: number, stric
           preselect: exact.slug,
         }
       : fail(
-          `The user selected "${usedRef}" but no active agent has exactly that name any more. Tell them it is no longer available and offer to search again.`,
+          `The user selected "${usedRef}" but no agent found currently has exactly that name. Tell them it is no longer available and offer to search again.`,
         );
   }
 
@@ -235,8 +244,15 @@ async function byName(req: ChefRequest, modelQuery: string, limit: number, stric
 
   const list = [...(exact ? [exact] : []), ...similar].slice(0, limit);
   if (list.length === 0) {
+    // Nothing is called that. The model may have used "name" for what is really a task ("bestresearch agent"),
+    // so search by meaning before giving up; only when that finds nothing too is it "No agent found currently".
+    const byMeaning = await byTask(req, usedRef, limit);
+    if (byMeaning.ok) {
+      return { ...byMeaning, text: `No agent is named "${usedRef}", so this is a search by meaning instead.
+${byMeaning.text}` };
+    }
     return fail(
-      `No active agent is named or spelled like "${usedRef}". Do not guess a name. Tell the user nothing matched and ask for the task they need done, then search by task.`,
+      `No agent found currently with a name like "${usedRef}". Tell the user: "No agent found currently." Do not guess a name; offer to search by the task they need done instead.`,
     );
   }
 
@@ -259,7 +275,7 @@ async function byTask(req: ChefRequest, query: string, limit: number): Promise<F
   const found = await candidates(req, query, "task");
   if (found.length === 0) {
     return fail(
-      `No active agent matched "${query}". Tell the user nothing fits yet, and suggest describing the task differently (what to do, for whom, the output they want).`,
+      `No agent found currently for "${query}". Tell the user: "No agent found currently." and suggest describing the task differently (what to do, for whom, the output they want).`,
     );
   }
   const ranked = found
@@ -269,7 +285,7 @@ async function byTask(req: ChefRequest, query: string, limit: number): Promise<F
   return {
     ok: true,
     text:
-      `Top ${ranked.length} active agents for "${query}", best first. The user sees them as selectable cards and picks one, so do not list them again; ` +
+      `Top ${ranked.length} agents for "${query}", best first. The user sees them as selectable cards and picks one, so do not list them again; ` +
       `say in a sentence or two which looks best and why.\n` +
       ranked.map((r, i) => line(i + 1, r.a, r.reasons)).join("\n"),
     agents: ranked.map((r) => toCard(r.a)),

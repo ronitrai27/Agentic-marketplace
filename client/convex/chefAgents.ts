@@ -2,9 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { query } from "./_generated/server";
 
 /**
- * Facts the chef ranks agents on, for the ids Typesense returned. Typesense can lag behind Convex, so every
- * agent is re-checked here and only `active` ones come back: archived, paused and suspended agents are dropped
- * before the model ever sees them. The creator's private price floor is never read.
+ * Facts the chef ranks agents on, for the ids the search index returned. The index can lag behind Convex, so every
+ * agent is re-checked here: archived and suspended agents are dropped before the model ever sees them
+ * (active and paused ones are shown). The creator's private price floor is never read.
  */
 export const enrich = query({
   args: { ids: v.array(v.string()) },
@@ -17,7 +17,7 @@ export const enrich = query({
       const id = ctx.db.normalizeId("agents", raw);
       if (!id) continue;
       const a = await ctx.db.get(id);
-      if (!a || a.status !== "active") continue;
+      if (!a || a.status === "archived" || a.status === "suspended") continue;
 
       const stats = await ctx.db
         .query("agent_stats")
@@ -43,6 +43,7 @@ export const enrich = query({
         slug: a.slug,
         name: a.name,
         description: a.description,
+        capabilities: a.keyCapabilities ?? [],
         logoUrl: a.logoUrl,
         tags: a.tags,
         models: a.models,
@@ -56,5 +57,50 @@ export const enrich = query({
       });
     }
     return out;
+  },
+});
+
+/**
+ * What the search index is built from: the searchable text of every agent that can appear in search (archived and
+ * suspended ones are left out, which is how they leave the index). Public marketplace fields only, like listFeatured.
+ */
+export const listForIndex = query({
+  args: {},
+  handler: async (ctx) => {
+    const agents = await ctx.db.query("agents").collect();
+    return agents
+      .filter((a) => a.status !== "archived" && a.status !== "suspended")
+      .map((a) => ({
+        id: a._id as string,
+        slug: a.slug,
+        name: a.name,
+        description: a.description,
+        tags: a.tags,
+        capabilities: a.keyCapabilities ?? [],
+      }));
+  },
+});
+
+/**
+ * The whole catalog in slim form, for the search bar to search in the browser. Live (the bar updates when an agent
+ * is added, edited or archived) and public marketplace fields only; archived and suspended agents are left out.
+ */
+export const listForSearch = query({
+  args: {},
+  handler: async (ctx) => {
+    const agents = await ctx.db.query("agents").collect();
+    return agents
+      .filter((a) => a.status !== "archived" && a.status !== "suspended")
+      .map((a) => ({
+        id: a._id as string,
+        slug: a.slug,
+        name: a.name,
+        logoUrl: a.logoUrl,
+        tags: a.tags,
+        models: a.models.map((m) => m.id),
+        ratingAvg: a.ratingAvg ?? 0,
+        ratingCount: a.ratingCount ?? 0,
+        blurb: `${a.description} ${(a.keyCapabilities ?? []).join(" ")}`.slice(0, 320),
+      }));
   },
 });

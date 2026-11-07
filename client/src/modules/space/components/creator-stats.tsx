@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Brain, Star, Trophy, Workflow } from "lucide-react";
-import { demoRatingFor, normaliseRating } from "./agent-rating";
+import { normaliseRating } from "./agent-rating";
 import type { AgentWithPricing } from "./agent-card";
 
 // DEMO DATA: replace with real run aggregates once those tables exist.
@@ -53,7 +53,7 @@ export function CreatorStats({ agents }: { agents: AgentWithPricing[] }) {
 
   const top = agents
     .filter((a) => a.status !== "archived")
-    .map((a) => ({ agent: a, rating: normaliseRating(demoRatingFor(a._id)) }))
+    .map((a) => ({ agent: a, rating: (a.ratingAvg ?? 0) > 0 ? normaliseRating(a.ratingAvg ?? 0) : 0 }))
     .sort((a, b) => b.rating - a.rating || a.agent.name.localeCompare(b.agent.name))
     .slice(0, 3);
 

@@ -164,8 +164,8 @@ export function useChefChat(chatId: string | null) {
             );
           }
           if (event === "tool") {
-            const p = payload as { id: string; name: string; status: "running" | "done" | "error"; args: unknown; output?: string };
-            putBlock({ kind: "tool", id: p.id, name: p.name, args: p.args, status: p.status, output: p.output });
+            const p = payload as { id: string; step: number; name: string; status: "running" | "done" | "error"; args: unknown; output?: string };
+            putBlock({ kind: "tool", id: p.id, step: p.step, name: p.name, args: p.args, status: p.status, output: p.output });
           }
           if (event === "agents") {
             const p = payload as Omit<Extract<Block, { kind: "agents" }>, "kind">;

@@ -32,7 +32,7 @@ import {
 } from "@/lib/agent-display";
 import { StatusText, type AgentWithPricing } from "./agent-card";
 import { LogoUpload } from "./logo-upload";
-import { AgentRating, demoRatingFor } from "./agent-rating";
+import { AgentRating } from "./agent-rating";
 import { EditAgentDialog } from "./edit-agent-dialog";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -219,7 +219,7 @@ export function AgentDetailSheet({
                   </div>
                 </div>
               </div>
-              <AgentRating value={demoRatingFor(agent._id)} align="left" className="mt-3" />
+              <AgentRating value={agent.ratingAvg ?? 0} reviewCount={agent.ratingCount ?? 0} align="left" className="mt-3" />
               <SheetDescription className="text-xs leading-relaxed mt-3">
                 {agent.description || "No description provided."}
               </SheetDescription>
@@ -266,8 +266,8 @@ export function AgentDetailSheet({
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {agent.keyCapabilities && agent.keyCapabilities.length > 0 && (
-                <Section title="Key Capabilities">
+              <Section title="Key Capabilities">
+                {agent.keyCapabilities && agent.keyCapabilities.length > 0 ? (
                   <ul className="space-y-2">
                     {agent.keyCapabilities.map((c) => (
                       <li key={c} className="flex items-start gap-2.5 text-xs text-foreground">
@@ -276,8 +276,27 @@ export function AgentDetailSheet({
                       </li>
                     ))}
                   </ul>
-                </Section>
-              )}
+                ) : (
+                  <div className="rounded-lg border border-dashed border-border px-3.5 py-3">
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      <span className="font-medium text-foreground">Select capabilities</span> to show users what your
+                      agent can do. Better capabilities = more chance of earning revenue.
+                    </p>
+                    {agent.status !== "archived" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(true);
+                          onOpenChange(false);
+                        }}
+                        className="mt-2 cursor-pointer text-xs font-medium text-foreground underline underline-offset-2 hover:opacity-80"
+                      >
+                        Add capabilities
+                      </button>
+                    )}
+                  </div>
+                )}
+              </Section>
 
               <Section title="Pricing">
                 <PricingBlock plan={agent.pricing?.plan as PlanMicros | undefined} />

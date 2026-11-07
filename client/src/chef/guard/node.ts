@@ -4,6 +4,7 @@ import { ChefGraphState } from "../state";
 import { askJev, JevError } from "./jev";
 import { GUARD_QUESTIONS } from "./questions";
 import { decide } from "./router";
+import { chefRequest } from "../tools/context";
 
 /** Hard-coded reply for a refused turn. Never produced by a model. */
 export const REFUSAL_TEXT =
@@ -37,6 +38,8 @@ export const guardNode: GraphNode<typeof ChefGraphState> = async (state) => {
   }
 
   const d = decide(res, state.phase);
+  // tell the speculative instant model at once, so it can stop if this turn is not chit-chat
+  chefRequest.getStore()?.gate?.settle(d.action === "block" ? "drop" : d.model);
   // Console only. The verdict is never sent to the browser.
   console.log(
     `[chef:guard] chat=${state.chatId} action=${d.action} reason=${d.reason} model=${d.model} hardened=${d.hardened} ` +

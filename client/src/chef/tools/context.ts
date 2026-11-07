@@ -6,7 +6,17 @@ import type { ConvexHttpClient } from "convex/browser";
  * signed-in user's token, so the route sets this at the start of each request and tools read it from here.
  * It never goes into the checkpoint.
  */
+/** Settles when the guard has decided: "instant" (chit-chat answer allowed), "heavy" (a task), or "drop" (refused). */
+export type GuardGate = { promise: Promise<"instant" | "heavy" | "drop">; settle: (v: "instant" | "heavy" | "drop") => void };
+export function createGuardGate(): GuardGate {
+  let settle!: GuardGate["settle"];
+  const promise = new Promise<"instant" | "heavy" | "drop">((r) => (settle = r));
+  return { promise, settle };
+}
+
 export type ChefRequest = {
+  /** Lets the speculative instant model stop the moment the guard says the turn is a task, so the heavy model starts right away. */
+  gate?: GuardGate;
   convex: ConvexHttpClient;
   /** What the human actually typed this turn. Tools trust this over anything the model passes in. */
   lastUserText: string;

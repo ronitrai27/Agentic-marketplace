@@ -1,65 +1,69 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { ACTIVE_STATUSES } from "./runs/active-runs-pill";
 import { openRun } from "./runs/run-store";
-import {
-  LandPlot,
-  Layers,
-  Search,
-  Sparkles,
-  Star,
-  Target,
-  X,
-} from "lucide-react";
+import { motion } from "framer-motion";
+import { Search, Star, X } from "lucide-react";
 import { tagById } from "@/lib/agent-tags";
-import type { SearchHit, SearchResponse } from "@/app/api/search/route";
+import { tokensOf } from "@/lib/search-text";
+import {
+  highlightParts,
+  localSearch,
+  type CatalogAgent,
+  type SemanticResponse,
+} from "@/lib/agent-search";
 import { AgentLogo } from "./agent-logo";
 
-type Group = {
-  key: keyof SearchResponse;
-  label: string;
-  hint: string;
-  icon: React.ElementType;
-};
-
-const GROUPS: Group[] = [
-  { key: "exact", label: "Exact matches", hint: "Name or tag", icon: LandPlot },
-  {
-    key: "related",
-    label: "Related",
-    hint: "Typos and meaning",
-    icon: Sparkles,
-  },
-  {
-    key: "similar",
-    label: "Similar agents",
-    hint: "More like the top result",
-    icon: Layers,
-  },
+const FALLBACK_CHIPS = [
+  "cold email",
+  "Reports",
+  "plagiarism",
+  "lead generation",
 ];
+const RECENT_KEY = "catelog:recent-agents";
+const MAX_RECENT = 6;
 
-const EXAMPLES = ["cold email", "Reports", "plagiarism", "lead generation"];
+function readRecent(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function saveRecent(id: string) {
+  try {
+    const next = [id, ...readRecent().filter((x) => x !== id)].slice(
+      0,
+      MAX_RECENT,
+    );
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // private mode: recents just do not persist
+  }
+}
 
-/** Typesense wraps matches in <mark>. Escape everything, then restore only <mark>. */
-function markHtml(s: string) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/&lt;mark&gt;/g, "<mark>")
-    .replace(/&lt;\/mark&gt;/g, "</mark>");
+function Keycap({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded! border border-border bg-background px-1.5 text-[11px] font-medium  shadow-[0_1px_0_0_var(--border)]">
+      {children}
+    </kbd>
+  );
 }
 
 function Row({
-  hit,
+  agent,
+  query,
   active,
   onPick,
   onHover,
 }: {
-  hit: SearchHit;
+  agent: CatalogAgent;
+  query: string;
   active: boolean;
   onPick: () => void;
   onHover: () => void;
@@ -71,60 +75,92 @@ function Row({
       aria-selected={active}
       onMouseEnter={onHover}
       onClick={onPick}
-      className={`w-full flex items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors cursor-pointer ${
+      className={`flex w-full cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors ${
         active ? "bg-muted" : "hover:bg-muted/60"
       }`}
     >
       <AgentLogo
-        name={hit.name}
-        logoUrl={hit.logoUrl}
-        className="size-7 text-sm rounded-md"
+        name={agent.name}
+        logoUrl={agent.logoUrl}
+        className="size-9 rounded-xl text-sm"
       />
-      <div className="min-w-0 flex-1">
-        <span
-          className="block truncate text-sm font-medium text-foreground [&_mark]:bg-amber-200/70 [&_mark]:text-foreground [&_mark]:rounded-sm [&_mark]:px-0.5 dark:[&_mark]:bg-amber-400/30"
-          dangerouslySetInnerHTML={{
-            __html: markHtml(hit.nameHtml ?? hit.name),
-          }}
-        />
-        <p className="truncate text-xs text-muted-foreground">
-          {hit.description}
-        </p>
-      </div>
-      <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-        {hit.tags.slice(0, 2).map((id) => (
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {highlightParts(agent.name, query).map((p, i) =>
+          p.mark ? (
+            <mark
+              key={i}
+              className="rounded-sm bg-amber-200/70 px-0.5 text-foreground dark:bg-amber-400/30"
+            >
+              {p.text}
+            </mark>
+          ) : (
+            <React.Fragment key={i}>{p.text}</React.Fragment>
+          ),
+        )}
+      </span>
+      <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+        {agent.tags.slice(0, 2).map((id) => (
           <span
             key={id}
-            className="rounded-full bg-background border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+            className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground"
           >
             {tagById(id)?.label ?? id}
           </span>
         ))}
-      </div>
-      <span className="flex items-center gap-1 text-xs tabular-nums text-foreground shrink-0">
+      </span>
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs tabular-nums text-foreground">
         <Star
           className="size-3.5 fill-amber-400 text-amber-400"
           strokeWidth={1.5}
         />
-        {hit.ratingAvg.toFixed(1)}
+        {agent.ratingAvg.toFixed(1)}
       </span>
     </button>
   );
 }
 
-function Skeleton() {
+function Heading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="space-y-1 p-1.5">
-      {[0, 1, 2, 3].map((i) => (
+    <p className="px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
+/** A magnifying glass drawing a figure 8 on a loop: the "still searching" state. */
+const EIGHT = Array.from({ length: 33 }, (_, i) => {
+  const t = (i / 32) * Math.PI * 2;
+  const d = 1 + Math.sin(t) ** 2;
+  return { x: (22 * Math.cos(t)) / d, y: (22 * Math.sin(t) * Math.cos(t)) / d };
+});
+
+function SearchingLoop() {
+  return (
+    <div className="flex flex-col items-center gap-2 px-3 py-7" role="status" aria-label="Searching">
+      <div className="relative h-14 w-24">
+        <motion.span
+          className="absolute left-1/2 top-1/2 -ml-3 -mt-3 text-foreground"
+          animate={{ x: EIGHT.map((p) => p.x), y: EIGHT.map((p) => p.y) }}
+          transition={{ duration: 2.6, ease: "linear", repeat: Infinity }}
+        >
+          <Search className="size-6" strokeWidth={2} />
+        </motion.span>
+      </div>
+      <p className="text-xs text-muted-foreground">Looking for matches…</p>
+    </div>
+  );
+}
+
+function SkeletonRows() {
+  return (
+    <div className="space-y-1 p-2">
+      {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="flex items-center gap-3 px-2.5 py-2 animate-pulse"
+          className="flex animate-pulse items-center gap-3 px-3 py-2"
         >
           <div className="size-9 rounded-xl bg-muted" />
-          <div className="flex-1 space-y-1.5">
-            <div className="h-3 w-1/3 rounded bg-muted" />
-            <div className="h-2.5 w-2/3 rounded bg-muted/70" />
-          </div>
+          <div className="h-3 w-1/3 rounded bg-muted" />
         </div>
       ))}
     </div>
@@ -132,57 +168,125 @@ function Skeleton() {
 }
 
 export function AgentSearch() {
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [data, setData] = useState<SearchResponse | null>(null);
-  const [cursor, setCursor] = useState(0);
-  const wrap = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const recent = useQuery(api.runs.myRecent);
-  const activeRuns = (recent ?? []).filter((r) => ACTIVE_STATUSES.includes(r.status));
-
-  // Flat list in display order, for keyboard navigation
-  const flat = useMemo(
-    () => (data ? GROUPS.flatMap((g) => data[g.key]) : []),
-    [data],
+  const router = useRouter();
+  const catalog = useQuery(api.chefAgents.listForSearch) as
+    | CatalogAgent[]
+    | undefined;
+  const recentRuns = useQuery(api.runs.myRecent);
+  const activeRuns = (recentRuns ?? []).filter((r) =>
+    ACTIVE_STATUSES.includes(r.status),
   );
 
-  // Debounced fetch; stale requests are aborted
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  const [semantic, setSemantic] = useState<{
+    q: string;
+    data: SemanticResponse;
+  } | null>(null);
+  const [pending, setPending] = useState(false);
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [isMac, setIsMac] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const cache = useRef(new Map<string, SemanticResponse>());
+
+  const term = q.trim();
+  const byId = useMemo(
+    () => new Map((catalog ?? []).map((a) => [a.id, a])),
+    [catalog],
+  );
+
+  // 1) instant: runs in the browser on every keystroke, no network
+  const local = useMemo(
+    () => (catalog && term ? localSearch(catalog, term, 6) : []),
+    [catalog, term],
+  );
+
+  // 2) by meaning: asked for in the background; results are added below when they arrive
   useEffect(() => {
-    const term = q.trim();
-    if (term.length < 2) {
-      setData(null);
-      setLoading(false);
-      setError("");
+    const hasWords = tokensOf(term).length > 0;
+    if (term.length < 3 || !hasWords) {
+      setSemantic(null);
+      setPending(false);
       return;
     }
-    setLoading(true);
+    const cached = cache.current.get(term.toLowerCase());
+    if (cached) {
+      setSemantic({ q: term, data: cached });
+      setPending(false);
+      return;
+    }
+    setPending(true);
     const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`, {
           signal: ctrl.signal,
         });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Search failed.");
-        setData(json as SearchResponse);
-        setError("");
-        setCursor(0);
+        if (!res.ok) throw new Error("search failed");
+        const data = (await res.json()) as SemanticResponse;
+        cache.current.set(term.toLowerCase(), data);
+        setSemantic({ q: term, data });
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
-        setError(e instanceof Error ? e.message : "Search failed.");
-        setData(null);
+        setSemantic(null); // the instant results are still on screen
       } finally {
-        if (!ctrl.signal.aborted) setLoading(false);
+        if (!ctrl.signal.aborted) setPending(false);
       }
-    }, 180);
+    }, 200);
     return () => {
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [q]);
+  }, [term]);
+
+  const extras = useMemo(() => {
+    if (!semantic || semantic.q !== term) return [];
+    const shown = new Set(local.map((a) => a.id));
+    return [
+      ...semantic.data.exact,
+      ...semantic.data.related,
+      ...semantic.data.similar,
+    ]
+      .map((id) => byId.get(id))
+      .filter((a): a is CatalogAgent => !!a && !shown.has(a.id))
+      .slice(0, 4);
+  }, [semantic, term, local, byId]);
+
+  // idle list: what you opened lately, else the best rated
+  const idle = useMemo(() => {
+    if (!catalog) return { title: "", list: [] as CatalogAgent[] };
+    const recents = recentIds
+      .map((id) => byId.get(id))
+      .filter((a): a is CatalogAgent => !!a);
+    if (recents.length) return { title: "Recent", list: recents.slice(0, 4) };
+    return {
+      title: "Top rated",
+      list: [...catalog].sort((a, b) => b.ratingAvg - a.ratingAvg).slice(0, 4),
+    };
+  }, [catalog, recentIds, byId]);
+
+  // "Try searching for": the most used tags of the real catalog
+  const chips = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const a of catalog ?? [])
+      for (const t of a.tags) count.set(t, (count.get(t) ?? 0) + 1);
+    const top = [...count.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([id]) => tagById(id)?.label)
+      .filter((x): x is string => !!x);
+    return top.length >= 3 ? top : FALLBACK_CHIPS;
+  }, [catalog]);
+
+  const flat = term ? [...local, ...extras] : idle.list;
+
+  useEffect(() => setCursor(0), [term]);
+  useEffect(() => {
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+    setRecentIds(readRecent());
+  }, [open]);
 
   // Ctrl/Cmd+K focuses; click outside closes
   useEffect(() => {
@@ -205,9 +309,12 @@ export function AgentSearch() {
     };
   }, []);
 
-  const pick = (hit: SearchHit) => {
-    setQ(hit.name);
+  const pick = (a: CatalogAgent) => {
+    saveRecent(a.id);
     setOpen(false);
+    setQ("");
+    input.current?.blur();
+    router.push(`/space/marketplace/${a.slug}`);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -226,20 +333,23 @@ export function AgentSearch() {
     }
   };
 
-  const term = q.trim();
-  const empty = !loading && !error && data && flat.length === 0;
-  let index = -1;
+  const noResults =
+    !!term &&
+    !!catalog &&
+    local.length === 0 &&
+    extras.length === 0 &&
+    !pending;
 
   return (
-    <div ref={wrap} className="relative w-full max-w-md">
+    <div ref={wrap} className="relative w-full max-w-lg">
       <div
-        className={`flex items-center gap-2.5 h-10 rounded-2xl border bg-background px-3.5 transition-all ${
+        className={`flex h-11 items-center gap-3 rounded-lg! border bg-white! dark:bg-background! px-4 transition-all ${
           open
-            ? "border-foreground/30 shadow-lg shadow-black/5"
-            : "border-border hover:border-foreground/20 shadow-xs"
+            ? "border-foreground/10 shadow"
+            : "border-border shadow hover:border-foreground/20"
         }`}
       >
-        <Search className="size-4 text-muted-foreground shrink-0" />
+        <Search className="size-[18px] shrink-0 text-muted-foreground" />
         <input
           ref={input}
           value={q}
@@ -253,7 +363,7 @@ export function AgentSearch() {
           role="combobox"
           aria-expanded={open}
           aria-controls="agent-search-list"
-          className="flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
         {q ? (
           <button
@@ -263,14 +373,15 @@ export function AgentSearch() {
               setQ("");
               input.current?.focus();
             }}
-            className="size-5 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+            className="flex size-6 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="size-3.5" />
+            <X className="size-4" />
           </button>
         ) : (
-          <kbd className="hidden sm:inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            Ctrl K
-          </kbd>
+          <span className="hidden items-center gap-1 sm:flex rounded-none!">
+            <Keycap>{isMac ? "⌘" : "Ctrl"}</Keycap>
+            <Keycap>K</Keycap>
+          </span>
         )}
       </div>
 
@@ -278,68 +389,124 @@ export function AgentSearch() {
         <div
           id="agent-search-list"
           role="listbox"
-          className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-lg! border border-border bg-popover shadow-lg shadow-black/10 animate-in fade-in-0 slide-in-from-top-1 duration-150"
+          className="absolute left-0 right-0 top-[calc(100%+10px)] z-50 overflow-hidden rounded-lg! border border-border bg-popover shadow-md! animate-in fade-in-0 slide-in-from-top-1 duration-150"
         >
-          <div className="max-h-[70vh] overflow-y-auto p-1.5">
-            {term.length < 2 && activeRuns.length > 0 && (
-              <div className="px-1.5 pt-1.5 pb-2">
-                <p className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Your runs
-                </p>
-                {activeRuns.map((run) => (
-                  <button
-                    key={run.id}
-                    type="button"
-                    onClick={() => {
-                      setOpen(false);
-                      openRun(run.id);
-                    }}
-                    className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted"
-                  >
-                    <span className="min-w-0 truncate font-medium">Open {run.agentName}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {run.status === "awaiting_input" ? "needs your input" : "running"}
-                    </span>
-                  </button>
+          {/* thin progress line while the by-meaning results are on their way */}
+          <div
+            className={`h-0.5 w-full bg-foreground/15 ${pending ? "animate-pulse" : "opacity-0"}`}
+          />
+
+          <div className="max-h-[70vh] overflow-y-auto px-2 pb-2">
+            {!term && (
+              <>
+                {activeRuns.length > 0 && (
+                  <div>
+                    <Heading>Your runs</Heading>
+                    {activeRuns.map((run) => (
+                      <button
+                        key={run.id}
+                        type="button"
+                        onClick={() => {
+                          setOpen(false);
+                          openRun(run.id);
+                        }}
+                        className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg! px-3 py-2 text-left text-sm hover:bg-muted"
+                      >
+                        <span className="min-w-0 truncate font-medium">
+                          Open {run.agentName}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {run.status === "awaiting_input"
+                            ? "needs your input"
+                            : "running"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <Heading>Try searching for</Heading>
+                <div className="flex flex-wrap gap-2 px-3 pb-2">
+                  {chips.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        setQ(c);
+                        input.current?.focus();
+                      }}
+                      className="cursor-pointer rounded-full border border-border bg-white dark:bg-card px-3.5 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+
+                {catalog === undefined && <SkeletonRows />}
+                {idle.list.length > 0 && (
+                  <div className="mt-1 border-t border-border pt-0.5">
+                    <Heading>{idle.title}</Heading>
+                    {idle.list.map((a, i) => (
+                      <Row
+                        key={a.id}
+                        agent={a}
+                        query=""
+                        active={cursor === i}
+                        onHover={() => setCursor(i)}
+                        onPick={() => pick(a)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {term && catalog === undefined && <SkeletonRows />}
+
+            {term && local.length > 0 && (
+              <div>
+                <Heading>Agents</Heading>
+                {local.map((a, i) => (
+                  <Row
+                    key={a.id}
+                    agent={a}
+                    query={term}
+                    active={cursor === i}
+                    onHover={() => setCursor(i)}
+                    onPick={() => pick(a)}
+                  />
                 ))}
               </div>
             )}
 
-            {term.length < 2 && (
-              <div className="px-3 py-4">
-                <p className="text-xs font-medium text-muted-foreground mb-2.5">
-                  Try searching for
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {EXAMPLES.map((ex) => (
-                    <button
-                      key={ex}
-                      type="button"
-                      onClick={() => {
-                        setQ(ex);
-                        input.current?.focus();
-                      }}
-                      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground hover:bg-muted transition-colors cursor-pointer"
-                    >
-                      {ex}
-                    </button>
-                  ))}
-                </div>
+            {term && extras.length > 0 && (
+              <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
+                <Heading>Related</Heading>
+                {extras.map((a, i) => (
+                  <Row
+                    key={a.id}
+                    agent={a}
+                    query={term}
+                    active={cursor === local.length + i}
+                    onHover={() => setCursor(local.length + i)}
+                    onPick={() => pick(a)}
+                  />
+                ))}
               </div>
             )}
 
-            {term.length >= 2 && loading && !data && <Skeleton />}
+            {term &&
+              catalog &&
+              local.length === 0 &&
+              extras.length === 0 &&
+              pending && (
+                <SearchingLoop />
+              )}
 
-            {error && (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                {error}
-              </p>
-            )}
-
-            {empty && (
+            {noResults && (
               <div className="px-3 py-8 text-center">
                 <p className="text-sm font-medium text-foreground">
-                  No agents found for &ldquo;{term}&rdquo;
+                  No agent found currently
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Try a task like &ldquo;write cold emails&rdquo; or a single
@@ -347,49 +514,20 @@ export function AgentSearch() {
                 </p>
               </div>
             )}
-
-            {data &&
-              GROUPS.map((g) => {
-                const hits = data[g.key];
-                if (hits.length === 0) return null;
-                const Icon = g.icon;
-                return (
-                  <div
-                    key={g.key}
-                    className={`pb-1 transition-opacity ${loading ? "opacity-60" : ""}`}
-                  >
-                    <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
-                      <Icon className="size-3 text-muted-foreground" />
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {g.label}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground/70">
-                        · {g.hint}
-                      </span>
-                    </div>
-                    {hits.map((hit) => {
-                      index += 1;
-                      const i = index;
-                      return (
-                        <Row
-                          key={`${g.key}-${hit.id}`}
-                          hit={hit}
-                          active={cursor === i}
-                          onHover={() => setCursor(i)}
-                          onPick={() => pick(hit)}
-                        />
-                      );
-                    })}
-                  </div>
-                );
-              })}
           </div>
 
           {flat.length > 0 && (
-            <div className="flex items-center gap-3 border-t border-border bg-muted/40 px-3.5 py-2 text-[10px] text-muted-foreground">
-              <span>↑↓ navigate</span>
-              <span>↵ select</span>
-              <span>esc close</span>
+            <div className="flex items-center gap-5 border-t border-border bg-muted px-4 py-2.5 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Keycap>↓</Keycap>
+                <Keycap>↑</Keycap> Move
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Keycap>↵</Keycap> Select
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Keycap>Esc</Keycap> Quit
+              </span>
             </div>
           )}
         </div>

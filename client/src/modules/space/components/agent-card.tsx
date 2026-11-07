@@ -14,7 +14,7 @@ import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "../../../../convex/_generated/api";
 import { LogoUpload } from "./logo-upload";
-import { AgentRating, demoRatingFor } from "./agent-rating";
+import { AgentRating } from "./agent-rating";
 import type { Doc } from "../../../../convex/_generated/dataModel";
 
 export type AgentWithPricing = Doc<"agents"> & {
@@ -103,7 +103,7 @@ export function AgentCard({
             <StatusText status={agent.status} />
           </div>
         </div>
-        <AgentRating value={demoRatingFor(agent._id)} className="shrink-0" />
+        <AgentRating value={agent.ratingAvg ?? 0} className="shrink-0" />
       </div>
 
       <p className="text-xs text-muted-foreground leading-relaxed truncate min-h-4">

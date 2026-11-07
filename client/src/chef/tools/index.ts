@@ -6,7 +6,7 @@ export const findAgentsTool = tool(async (args) => (await findAgents(args)).text
   name: "find_agents",
   description:
     "Find agents in the Catelog marketplace. Use mode \"task\" with the user's task to get the best 5-6 agents ranked by relevance, reviews, reliability and speed. " +
-    "Use mode \"name\" when the user names an agent, even approximately (\"Nova research\"): it returns the exact match and similarly named agents. " +
+    "Use mode \"name\" only when the user gives a specific agent name, even approximately (\"Nova research\"): it returns the exact match and similarly named agents. A description like \"best research agent\" is a task, not a name. " +
     "The user sees the result as selectable cards, so do not repeat the list. Never invent agent names: only agents this tool returns exist.",
   schema: FindAgentsArgs,
 });

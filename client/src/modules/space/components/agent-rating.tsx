@@ -26,14 +26,6 @@ export function ratingLabel(value: number): string {
   return [...RATING_LABELS].reverse().find(([min]) => r >= min)?.[1] ?? "Poor";
 }
 
-/** DEMO: a stable fake rating per agent until real reviews exist. */
-export function demoRatingFor(id: string): number {
-  const steps = RATING_LABELS.map(([n]) => n).filter((n) => n >= 3.5);
-  let h = 0;
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return steps[h % steps.length];
-}
-
 /** A single star, filled in proportion to the rating, with the score and a one-word verdict. */
 export function AgentRating({
   value,
