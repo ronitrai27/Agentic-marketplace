@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { validateTags } from "../src/lib/agent-tags";
 import { cleanCapabilities } from "../src/lib/agent-capabilities";
+import { validateDescription } from "../src/lib/agent-description";
 import {
   resolvePricing,
   validatePlan,
@@ -158,6 +159,8 @@ export const register = mutation({
     if (!name) throw new Error("Agent name is required.");
 
     // Same rules the dialog uses, re-run here so the browser can't skip them
+    const descCheck = validateDescription(args.description);
+    if (!descCheck.ok) throw new Error(descCheck.message ?? "Invalid description.");
     const tagCheck = validateTags(args.tags);
     if (!tagCheck.ok) throw new Error(tagCheck.message ?? "Invalid tags.");
 
@@ -281,6 +284,12 @@ export const updateDetails = mutation({
     const locked = agent.status === "suspended" || agent.status === "archived";
     if (locked && status) {
       throw new Error(`This agent is ${agent.status}; its status cannot be changed.`);
+    }
+
+    // Only a changed description is checked, so an older, shorter one never blocks an unrelated edit
+    if (description.trim() !== agent.description) {
+      const descCheck = validateDescription(description);
+      if (!descCheck.ok) throw new Error(descCheck.message ?? "Invalid description.");
     }
 
     let rename: { name: string; slug: string } | undefined;

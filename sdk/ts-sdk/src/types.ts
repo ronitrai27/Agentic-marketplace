@@ -127,7 +127,6 @@ export interface AgentManifest {
   id: string;
   name: string;
   version: string;
-  description: string;
   protocol_version: string;
   capabilities: AgentCapabilities;
   input_schema: Record<string, unknown>;

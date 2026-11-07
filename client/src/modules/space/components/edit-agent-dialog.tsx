@@ -22,6 +22,7 @@ import {
   cleanCapabilities,
   suggestCapabilities,
 } from "@/lib/agent-capabilities";
+import { MAX_DESCRIPTION_WORDS, MIN_DESCRIPTION_WORDS, validateDescription, wordCount } from "@/lib/agent-description";
 import type { AgentWithPricing } from "./agent-card";
 
 export function EditAgentDialog({
@@ -51,6 +52,8 @@ export function EditAgentDialog({
     setDraft("");
   }, [open, agent]);
 
+  // a description you did not touch is never blocked (older agents may have a short one)
+  const descError = description.trim() !== agent.description && !validateDescription(description).ok;
   const statusLocked = agent.status === "suspended" || agent.status === "archived";
   const suggestions = useMemo(() => suggestCapabilities(agent.tags, caps), [agent.tags, caps]);
   const full = caps.length >= MAX_CAPABILITIES;
@@ -102,6 +105,10 @@ export function EditAgentDialog({
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Description</label>
             <Textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
+            <p className={`text-[11px] tabular-nums ${descError ? "text-destructive" : "text-muted-foreground"}`}>
+              {wordCount(description)} / {MAX_DESCRIPTION_WORDS} words
+              {descError ? ` · ${MIN_DESCRIPTION_WORDS} to ${MAX_DESCRIPTION_WORDS} needed` : ""}
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -205,7 +212,7 @@ export function EditAgentDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="cursor-pointer">
             Cancel
           </Button>
-          <Button type="button" onClick={save} disabled={saving || name.trim().length < 2} className="cursor-pointer">
+          <Button type="button" onClick={save} disabled={saving || name.trim().length < 2 || descError} className="cursor-pointer">
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </DialogFooter>

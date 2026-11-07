@@ -29,6 +29,8 @@ import { PricingStep, type PricingDraft } from "./pricing-step";
 import { ContractStep } from "./contract-step";
 import type { PricingPlan } from "@/lib/pricing-plan";
 import { validateTags } from "@/lib/agent-tags";
+import { validateDescription } from "@/lib/agent-description";
+import { DescriptionField } from "./description-field";
 import { modelIcon } from "@/lib/agent-display";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
@@ -41,6 +43,7 @@ interface Draft {
   url: string;
   result: InspectResult | null;
   tags: string[];
+  description?: string;
   logoUrl?: string;
   usageOk: boolean;
   dryRunCost?: number;
@@ -298,6 +301,7 @@ export function RegisterAgentDialog({
   const [currentStep, setCurrentStep] = useState(0);
   const [usageOk, setUsageOk] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [description, setDescription] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | undefined>();
   const [plan, setPlan] = useState<PricingPlan | null>(null);
   const [planValid, setPlanValid] = useState(false);
@@ -313,6 +317,14 @@ export function RegisterAgentDialog({
   const [hydrated, setHydrated] = useState(false);
   const registerAgent = useMutation(api.agents.register);
   const m = result?.manifest ?? (DEV_MODE ? devFallbackManifest : undefined);
+
+  // An agent built with an older SDK still sends a description: start from it (the creator can edit it).
+  // SDK 1.2.1 and later send none, and the default "Agent: Name" placeholder is not worth keeping.
+  const sentDescription = m?.description;
+  useEffect(() => {
+    if (!hydrated || !sentDescription || /^Agent: /.test(sentDescription)) return;
+    setDescription((d) => (d ? d : sentDescription));
+  }, [hydrated, sentDescription]);
   const ready = result?.health.status === "ready" || DEV_MODE;
 
   // Restore the draft once after mount (localStorage doesn't exist during SSR)
@@ -324,6 +336,7 @@ export function RegisterAgentDialog({
       setPhase(d.result ? "done" : "idle");
       setStage(CHECK_STAGES.length);
       setTags(d.tags ?? []);
+      setDescription(d.description ?? "");
       setLogoUrl(d.logoUrl);
       setUsageOk(!!d.usageOk);
       setDryRunCost(d.dryRunCost);
@@ -342,6 +355,7 @@ export function RegisterAgentDialog({
       url,
       result,
       tags,
+      description,
       logoUrl,
       usageOk,
       dryRunCost,
@@ -355,6 +369,7 @@ export function RegisterAgentDialog({
     url,
     result,
     tags,
+    description,
     logoUrl,
     usageOk,
     dryRunCost,
@@ -373,6 +388,7 @@ export function RegisterAgentDialog({
     setCurrentStep(0);
     setUsageOk(false);
     setTags([]);
+    setDescription("");
     setLogoUrl(undefined);
     setPlan(null);
     setPlanValid(false);
@@ -389,10 +405,15 @@ export function RegisterAgentDialog({
       toast.error("Add 2 to 4 tags and a valid price before completing.");
       return;
     }
+    const descCheck = validateDescription(description);
+    if (!descCheck.ok) {
+      toast.error(descCheck.message ?? "Write a description of 20 to 100 words.");
+      return;
+    }
     const caps = m.capabilities;
     const payload = {
       name: m.name ?? "",
-      description: m.description ?? "",
+      description: description.trim(),
       logoUrl,
       baseUrl: url.trim() || (DEV_MODE ? "http://localhost:4000" : ""),
       version: m.version ?? "0.0.0",
@@ -490,6 +511,7 @@ export function RegisterAgentDialog({
                 onChange={setTags}
                 onRegisterAi={() => setAiPromptOpen(true)}
               />
+              <DescriptionField value={description} onChange={setDescription} />
               {models.length > 0 && (
                 <section className="space-y-3">
                   <div>
@@ -738,7 +760,9 @@ export function RegisterAgentDialog({
                 : currentStep === 1
                   ? !usageOk
                   : currentStep === 2
-                    ? !validateTags(tags).ok || !planValid
+                    ? !validateTags(tags).ok ||
+                      !validateDescription(description).ok ||
+                      !planValid
                     : !contractOk)
             }
             onClick={() => {

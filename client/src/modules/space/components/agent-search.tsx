@@ -136,7 +136,11 @@ const EIGHT = Array.from({ length: 33 }, (_, i) => {
 
 function SearchingLoop() {
   return (
-    <div className="flex flex-col items-center gap-2 px-3 py-7" role="status" aria-label="Searching">
+    <div
+      className="flex flex-col items-center gap-2 px-3 py-7"
+      role="status"
+      aria-label="Searching"
+    >
       <div className="relative h-14 w-24">
         <motion.span
           className="absolute left-1/2 top-1/2 -ml-3 -mt-3 text-foreground"
@@ -341,7 +345,7 @@ export function AgentSearch() {
     !pending;
 
   return (
-    <div ref={wrap} className="relative w-full max-w-lg">
+    <div ref={wrap} className="relative w-full max-w-[500px]">
       <div
         className={`flex h-11 items-center gap-3 rounded-lg! border bg-white! dark:bg-background! px-4 transition-all ${
           open
@@ -499,9 +503,7 @@ export function AgentSearch() {
               catalog &&
               local.length === 0 &&
               extras.length === 0 &&
-              pending && (
-                <SearchingLoop />
-              )}
+              pending && <SearchingLoop />}
 
             {noResults && (
               <div className="px-3 py-8 text-center">

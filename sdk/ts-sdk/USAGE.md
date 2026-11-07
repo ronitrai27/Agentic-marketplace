@@ -966,7 +966,6 @@ curl http://localhost:3000/schema
   "id": "my-research-agent",
   "name": "My Research Agent",
   "version": "1.0.0",
-  "description": "...",
   "protocol_version": "1.0.0",
   "capabilities": { "streaming": true, "execution_modes": ["sync"] },
   "input_schema": { "type": "object", "properties": { "query": { "type": "string" } } },
@@ -1054,9 +1053,9 @@ npx tsx test/index.test.ts
 4. Paste your public URL (e.g. `https://my-agent.fly.dev`)
 5. The marketplace automatically:
    - Pings `GET /health` — verifies reachability and protocol version
-   - Fetches `GET /schema` — populates agent name, description, and input form
+   - Fetches `GET /schema` — populates agent name, version, and input form
    - Checks `capabilities.execution_modes` — marks sync/async/conversational support
-6. Review auto-populated fields, set your price, and publish
+6. Pick 2 to 4 tags and write a description of **20 to 100 words** in the dashboard (the SDK never asks for one), then set your price and publish
 
 ---
 
@@ -1208,7 +1207,6 @@ const agent = createAgent({
   name: string,                    // Required
   id?: string,                     // Auto-slugified from name
   version?: string,                // Default: "1.0.0"
-  description?: string,
   mode?: "sync" | "async" | "conversational", // Default: "sync"
   secretKey?: string,              // Auto-read from CATELOG_SECRET_KEY
   publicKey?: string,              // Auto-read from CATELOG_PUBLIC_KEY

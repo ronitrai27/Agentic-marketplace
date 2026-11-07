@@ -56,7 +56,6 @@ import { z } from "zod";
 const agent = createAgent({
   maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Summarizer",
-  description: "Summarizes text",
   inputSchema: z.object({ text: z.string().min(1) }),
   async execute({ input, stream }) {
     stream.progress(20, "Reading...");
@@ -691,7 +690,7 @@ curl -X POST http://localhost:3000/execute \
 
 1. Deploy the agent to a public URL.
 2. Dashboard → Creator Space → My Agents → Register New Agent.
-3. Paste the URL. The marketplace calls `/health` and `/schema`, then you set a price and publish.
+3. Paste the URL. The marketplace calls `/health` and `/schema`, then you pick tags, write a description (20 to 100 words) and set a price.
 
 ## 13. Quick reference
 
@@ -699,7 +698,7 @@ curl -X POST http://localhost:3000/execute \
 createAgent({
   maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: string,                         // required
-  id?, version?, description?,
+  id?, version?,
   mode?: "sync" | "async" | "conversational",
   secretKey?, publicKey?,               // default: CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY
   inputSchema?, outputSchema?,          // Zod or JSON Schema

@@ -33,7 +33,24 @@ export interface WorkflowSnapshot {
   workflowTaskAttempt: number;
 }
 
+/** One step of the audit as Temporal recorded it: an activity starting, finishing or failing. */
+export interface ActivityEvent {
+  kind: "started" | "completed" | "failed";
+  /** Activity function name, e.g. "staticCrawlActivity". */
+  name: string;
+  /** Wall time from scheduling to completion (completed / failed only). */
+  durationMs?: number;
+  /** Final failure message (failed only). */
+  error?: string;
+}
+
 export interface AwaitWorkflowOptions {
+  /**
+   * Called once for every activity that starts, completes or fails, in order, read from the workflow history.
+   * Unlike `onSnapshot` (which only sees what is running at the moment of a poll), nothing is missed here, even
+   * for activities that take less than a second.
+   */
+  onActivity?: (event: ActivityEvent) => void;
   /** Called on every poll with what the workflow is really doing. */
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
   /** Aborting cancels the workflow (best effort) and rejects. */
@@ -45,6 +62,48 @@ export interface AwaitWorkflowOptions {
    * (default 3). The workflow is terminated so it can't run twice.
    */
   maxWorkflowTaskAttempts?: number;
+}
+
+/** Temporal timestamps are { seconds, nanos }, with seconds possibly a Long. */
+function millis(ts: any): number {
+  return ts ? num(ts.seconds) * 1000 + Math.floor(num(ts.nanos) / 1e6) : 0;
+}
+
+/**
+ * Reads the workflow history and reports activity starts, completions and failures not reported before.
+ * `state` remembers where it stopped, so each event is delivered exactly once.
+ */
+async function reportActivities(
+  handle: WorkflowHandle<any>,
+  state: { lastEventId: number; scheduled: Map<number, { name: string; at: number }> },
+  onActivity: (event: ActivityEvent) => void,
+): Promise<void> {
+  const history: any = await handle.fetchHistory();
+  const events: any[] = (history?.events ?? []).filter((e: any) => num(e.eventId) > state.lastEventId);
+  for (const e of events) {
+    const id = num(e.eventId);
+    state.lastEventId = Math.max(state.lastEventId, id);
+
+    const sched = e.activityTaskScheduledEventAttributes;
+    if (sched) {
+      const name = String(sched.activityType?.name ?? "unknown");
+      state.scheduled.set(id, { name, at: millis(e.eventTime) });
+      onActivity({ kind: "started", name });
+      continue;
+    }
+    const done = e.activityTaskCompletedEventAttributes;
+    const failed = e.activityTaskFailedEventAttributes ?? e.activityTaskTimedOutEventAttributes;
+    const attrs = done ?? failed;
+    if (attrs) {
+      const origin = state.scheduled.get(num(attrs.scheduledEventId));
+      onActivity({
+        kind: done ? "completed" : "failed",
+        name: origin?.name ?? "unknown",
+        durationMs: origin ? Math.max(0, millis(e.eventTime) - origin.at) : undefined,
+        error: failed ? (describeFailure(failed.failure) ?? "Activity failed") : undefined,
+      });
+    }
+  }
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -127,7 +186,7 @@ async function snapshot(handle: WorkflowHandle<any>, startedAt: number): Promise
  * workflow ends badly (terminated / cancelled / timed out / failed) or its worker is unresponsive.
  */
 export async function awaitWorkflow<T>(handle: WorkflowHandle<any>, options: AwaitWorkflowOptions = {}): Promise<T> {
-  const pollMs = options.pollMs ?? 5_000;
+  const pollMs = options.pollMs ?? 3_000;
   const maxTaskAttempts = options.maxWorkflowTaskAttempts ?? 3;
   const startedAt = Date.now();
 
@@ -144,6 +203,17 @@ export async function awaitWorkflow<T>(handle: WorkflowHandle<any>, options: Awa
 
   let consecutiveDescribeErrors = 0;
 
+  // Activity events come from the history. A failure to read it must never break the audit.
+  const activityState = { lastEventId: 0, scheduled: new Map<number, { name: string; at: number }>() };
+  const flushActivities = async () => {
+    if (!options.onActivity) return;
+    try {
+      await reportActivities(handle, activityState, options.onActivity);
+    } catch {
+      // history unavailable this time: the next poll catches up
+    }
+  };
+
   for (;;) {
     const winner = await Promise.race([resultPromise, abortPromise, sleep(pollMs).then(() => "tick" as const)]);
 
@@ -153,6 +223,7 @@ export async function awaitWorkflow<T>(handle: WorkflowHandle<any>, options: Awa
     }
 
     if (winner !== "tick") {
+      await flushActivities(); // deliver the last completions before the result
       if (winner.ok) return winner.value;
       // result() rejected: ask Temporal for the authoritative final status
       const final = await snapshot(handle, startedAt).catch(() => undefined);
@@ -175,6 +246,7 @@ export async function awaitWorkflow<T>(handle: WorkflowHandle<any>, options: Awa
       continue;
     }
 
+    await flushActivities();
     options.onSnapshot?.(snap);
 
     if (snap.status !== "RUNNING") {

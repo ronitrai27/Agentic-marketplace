@@ -43,8 +43,6 @@ export interface CatelogAgentConfig<TInput = any, TOutput = any> {
   name: string;
   /** Semantic version (default: "1.0.0") */
   version?: string;
-  /** Short description for marketplace listing */
-  description?: string;
   /**
    * Secret key for HMAC / Bearer auth.
    * Auto-reads CATELOG_SECRET_KEY from env if omitted.
@@ -131,7 +129,6 @@ export class CatelogAgent<TInput = any, TOutput = any> {
   public readonly id: string;
   public readonly name: string;
   public readonly version: string;
-  public readonly description: string;
   public readonly mode: ExecutionMode;
   public readonly capabilities: AgentCapabilities;
   public readonly security: SecurityManager;
@@ -162,7 +159,6 @@ export class CatelogAgent<TInput = any, TOutput = any> {
     this.name = config.name;
     this.id = config.id || slugify(config.name);
     this.version = config.version || "1.0.0";
-    this.description = config.description || `Agent: ${this.name}`;
     this.mode = config.mode || "sync";
     this.capabilities = {
       streaming: true,
@@ -215,7 +211,6 @@ export class CatelogAgent<TInput = any, TOutput = any> {
       id: this.id,
       name: this.name,
       version: this.version,
-      description: this.description,
       protocol_version: PROTOCOL_VERSION,
       capabilities: this.capabilities,
       input_schema: this.config.inputSchema
@@ -990,7 +985,6 @@ export class CatelogAgent<TInput = any, TOutput = any> {
  *
  * const agent = createAgent({
  *   name: "Summarizer Agent",
- *   description: "Summarizes text documents",
  *   inputSchema: z.object({ text: z.string().min(1) }),
  *   outputSchema: z.object({ summary: z.string() }),
  *   async execute({ input, stream, log }) {

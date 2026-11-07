@@ -6,6 +6,7 @@ import {
   awaitWorkflow,
   rootCauseMessage,
   WorkflowRunError,
+  type ActivityEvent,
   type WorkflowSnapshot,
 } from "./temporal/await-workflow.js";
 import {
@@ -65,8 +66,13 @@ export type SeoAgentOutput = z.infer<typeof SeoAgentOutputSchema>;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Whole-audit ceiling enforced by Temporal itself (shows up as TIMED_OUT, never a silent hang). */
-const WORKFLOW_EXECUTION_TIMEOUT = "10 minutes";
+/** The agent's hard limit for one run (see `maxTimeoutMinute`). */
+const MAX_RUN_MINUTES = 5;
+/**
+ * Whole-audit ceiling enforced by Temporal itself (shows up as TIMED_OUT, never a silent hang). It is 30 seconds
+ * under the run limit, so there is still time to write the report once the evidence is in.
+ */
+const WORKFLOW_EXECUTION_TIMEOUT = `${MAX_RUN_MINUTES * 60 - 30} seconds`;
 /** A cold worker (big bundle, small CPU) can need more than Temporal's 10s default for a workflow task. */
 const WORKFLOW_TASK_TIMEOUT = "30 seconds";
 
@@ -86,27 +92,53 @@ function getTemporalClient(): Promise<Client> {
   return temporalClient;
 }
 
-/** Which audit phase a running activity belongs to (drives an honest progress bar). */
-const ACTIVITY_PHASES: Record<string, { pct: number; label: string }> = {
+/**
+ * The audit, one row per Temporal activity. `start` is the progress shown when it begins and `done` when it ends,
+ * so the bar moves at each real milestone and never goes backwards (parallel activities finish in any order).
+ */
+const PHASES: Record<string, { label: string; start: number; done: number; doneLabel: string }> = {
   staticCrawlActivity: {
-    pct: 30,
-    label: "Crawling page (static ingestion)...",
+    label: "Crawling the page (static ingestion)",
+    start: 25,
+    done: 35,
+    doneLabel: "Static crawl finished",
   },
   firecrawlScrapeActivity: {
-    pct: 35,
-    label: "Deep-scraping page with Firecrawl...",
+    label: "Deep-scraping the page with Firecrawl",
+    start: 25,
+    done: 42,
+    doneLabel: "Firecrawl scrape finished",
   },
-  escalationGateActivity: { pct: 45, label: "Running JEV hydration gate..." },
+  escalationGateActivity: {
+    label: "Checking whether a real browser is needed (JEV)",
+    start: 44,
+    done: 50,
+    doneLabel: "Browser check decided",
+  },
   collectBrowserEvidenceActivity: {
-    pct: 55,
-    label: "Collecting cloud-browser evidence...",
+    label: "Collecting cloud-browser evidence",
+    start: 52,
+    done: 62,
+    doneLabel: "Browser evidence collected",
   },
   groundTruthActivity: {
-    pct: 65,
-    label: "Fetching PageSpeed CWV & SERP rank...",
+    label: "Fetching PageSpeed Core Web Vitals and SERP rank",
+    start: 64,
+    done: 74,
+    doneLabel: "PageSpeed and SERP rank ready",
   },
-  geoSemanticActivity: { pct: 68, label: "Checking AI-engine citations..." },
-  linkGraphActivity: { pct: 70, label: "Analysing internal link graph..." },
+  geoSemanticActivity: {
+    label: "Checking AI-engine citations",
+    start: 64,
+    done: 80,
+    doneLabel: "AI-engine citation check finished",
+  },
+  linkGraphActivity: {
+    label: "Analysing the internal link graph",
+    start: 64,
+    done: 84,
+    doneLabel: "Link graph analysed",
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,14 +150,12 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
   name: "Technical SEO & GEO Intelligence Agent",
   version: "1.0.0",
   mode: "async", // Returns 202 Accepted, executes via Temporal Cloud, exposes live events on /tasks/:id
-  description:
-    "Enterprise Technical SEO & GEO Intelligence agent. Browserbase cloud browser proof, Google PageSpeed CWV, and AI Search Engine citation analysis.",
 
   // Authentication keys auto-read from CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY env vars
   secretKey: env.CATELOG_SECRET_KEY,
   publicKey: env.CATELOG_PUBLIC_KEY,
 
-  maxTimeoutMinute: 10, // matches WORKFLOW_EXECUTION_TIMEOUT
+  maxTimeoutMinute: MAX_RUN_MINUTES, // the audit workflow stops 30 seconds earlier (WORKFLOW_EXECUTION_TIMEOUT)
 
   capabilities: {
     streaming: true,
@@ -148,9 +178,15 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     const startTime = Date.now();
     log.info("Catelog task execution initiated", { runId, input });
 
+    // Progress only ever moves forward. (`stream.step` is not used: on a live SSE connection it sends 0%.)
+    let pct = 0;
+    const bump = (to: number, label: string) => {
+      pct = Math.max(pct, to);
+      stream.progress(pct, label);
+    };
+
     // Step 1: Resolve target URL
-    stream.step("Inspecting target URL and resolving domain...");
-    stream.progress(10, "Resolving target domain...");
+    bump(5, "Resolving the target website...");
 
     const rawQuery = input.url || input.prompt || "";
     if (!rawQuery.trim()) {
@@ -174,7 +210,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     // JEV said this is not an audit request (e.g. "hello") → chat back, no audit, no report prefix.
     // An explicit `url` input is always treated as an audit request.
     if (!input.url && !resolved.isAuditIntent) {
-      stream.step("Not an audit request — replying conversationally...");
+      bump(40, "Not an audit request, replying conversationally...");
       let reply: string;
       try {
         reply = await generateChatReply(rawQuery, usage);
@@ -216,6 +252,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
       companyName,
       isAuditIntent: resolved.isAuditIntent,
     });
+    bump(12, `Target resolved: ${new URL(targetUrl).hostname}`);
     metric.count("audit_targets_resolved", 1);
 
     if (signal.aborted) {
@@ -226,10 +263,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     }
 
     // Step 2: Dispatch Temporal Cloud Workflow
-    stream.step(
-      `Dispatching durable full-audit workflow to Temporal Cloud queue: ${env.TEMPORAL_TASK_QUEUE}...`,
-    );
-    stream.progress(25, "Dispatching to Temporal Cloud...");
+    bump(18, "Dispatching the audit to Temporal Cloud...");
 
     let client: Client;
     try {
@@ -272,16 +306,37 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     }
 
     log.info("Temporal Cloud workflow active", { workflowId, targetUrl });
+    bump(22, "Audit workflow started");
 
-    // Step 3: Watch the workflow for real. Every few seconds we ask Temporal what it is doing,
-    // stream that to the buyer, and fail immediately if it is terminated / cancelled / timed out / stuck.
-    stream.step(
-      "Executing parallel activities: Static Ingestion, Firecrawl Deep Scrape & JEV Hydration Gate...",
-    );
-    stream.progress(30, "Audit workflow running on Temporal...");
+    // Step 3: Watch the workflow for real. Temporal's history tells us when every activity starts, finishes or
+    // fails (one event each, in order), and a periodic check reports retries and a stuck worker. We fail at once
+    // if the workflow is terminated / cancelled / timed out / stuck.
+    const onActivity = (e: ActivityEvent) => {
+      const phase = PHASES[e.name];
+      const label = phase?.label ?? e.name;
+      if (e.kind === "started") {
+        if (phase) bump(phase.start, `${label}...`);
+        stream.activity("activity_started", { activity: e.name, label });
+      } else if (e.kind === "completed") {
+        const secs = e.durationMs !== undefined ? ` (${(e.durationMs / 1000).toFixed(1)}s)` : "";
+        if (phase) bump(phase.done, `${phase.doneLabel}${secs}`);
+        stream.activity("activity_completed", {
+          activity: e.name,
+          label,
+          durationMs: e.durationMs ?? null,
+        });
+        if (e.durationMs !== undefined) metric.timing(`activity_${e.name}_ms`, e.durationMs);
+      } else {
+        log.error("Temporal activity failed", { activity: e.name, error: e.error });
+        stream.activity("activity_failed", {
+          activity: e.name,
+          label,
+          durationMs: e.durationMs ?? null,
+          error: e.error ?? "Activity failed",
+        });
+      }
+    };
 
-    let highestPct = 30;
-    let lastLabel = "";
     const retryAlerted = new Set<string>();
     let workerSlowAlerted = false;
 
@@ -295,13 +350,6 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
       });
 
       for (const act of snap.pendingActivities) {
-        const phase = ACTIVITY_PHASES[act.name];
-        if (phase && phase.pct >= highestPct && phase.label !== lastLabel) {
-          highestPct = phase.pct;
-          lastLabel = phase.label;
-          stream.progress(phase.pct, phase.label);
-        }
-
         // Surface activity retries together with their error so failures are never invisible
         const retryKey = `${act.name}#${act.attempt}`;
         if (act.attempt > 1 && act.lastError && !retryAlerted.has(retryKey)) {
@@ -337,6 +385,7 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
       verifiedResult = await awaitWorkflow<FullAuditWorkflowResult>(handle, {
         signal,
         onSnapshot,
+        onActivity,
       });
     } catch (err) {
       const code = err instanceof WorkflowRunError ? err.code : "TOOL_FAILURE";
@@ -358,10 +407,48 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
       );
     }
 
-    stream.step(
-      "Evaluating Google PageSpeed CWV, SerpApi rank & GEO AI citations...",
-    );
-    stream.progress(75, "Assembling ground truth evidence...");
+    bump(86, "All evidence collected, checking it...");
+
+    // What each pillar found, as separate events a buyer's screen can show as it goes
+    const ev = verifiedResult;
+    stream.activity("pillar_result", {
+      pillar: "static_crawl",
+      statusCode: ev.staticResult.statusCode,
+      title: ev.staticResult.metadata.title ?? null,
+      fetchMs: ev.staticResult.timing.totalDurationMs,
+    });
+    stream.activity("pillar_result", {
+      pillar: "firecrawl",
+      success: ev.firecrawlResult.success,
+      title: ev.firecrawlResult.title ?? null,
+    });
+    stream.activity("pillar_result", {
+      pillar: "browser_check",
+      browserRequired: ev.escalationDecision.requiresBrowser,
+      reasons: ev.escalationDecision.reasons,
+      domDiscrepancies: ev.browserEvidence?.domDiff.discrepancies.length ?? 0,
+    });
+    stream.activity("pillar_result", {
+      pillar: "pagespeed",
+      performanceScore: ev.groundTruth.pageSpeed?.performanceScore ?? null,
+      lcpMs: ev.groundTruth.pageSpeed?.coreWebVitals?.lcpMs ?? null,
+      cls: ev.groundTruth.pageSpeed?.coreWebVitals?.cls ?? null,
+    });
+    stream.activity("pillar_result", {
+      pillar: "serp",
+      position: ev.groundTruth.serp?.position ?? null,
+    });
+    stream.activity("pillar_result", {
+      pillar: "ai_citations",
+      isDomainCited: ev.geoSemantic.geoCitation?.isDomainCited ?? false,
+      engine: ev.geoSemantic.geoCitation?.aiEngine ?? null,
+      cannibalizationIssues: ev.geoSemantic.cannibalizationIssues.length,
+    });
+    stream.activity("pillar_result", {
+      pillar: "link_graph",
+      orphanPages: ev.linkGraph.orphanPages.length,
+      deepPages: ev.linkGraph.deepPages.length,
+    });
 
     stream.activity("audit_evidence_verified", {
       statusCode: verifiedResult.staticResult.statusCode,
@@ -375,8 +462,9 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
     });
 
     // Step 4: Synthesize Senior Director Executive Report
-    stream.step("Synthesizing Executive Technical SEO & GEO Report...");
-    stream.progress(90, "Synthesizing executive markdown report...");
+    bump(88, "Writing the executive SEO & GEO report...");
+    stream.activity("report_started", { model: "gpt-4.1-mini" });
+    const reportStarted = Date.now();
 
     let report: string;
     try {
@@ -388,6 +476,12 @@ export const seoCatelogAgent = createAgent<SeoAgentInput, SeoAgentOutput>({
         true,
       );
     }
+
+    bump(97, "Report written");
+    stream.activity("report_completed", {
+      durationMs: Date.now() - reportStarted,
+      characters: report.length,
+    });
 
     // Stream the final report in chunks via SSE deltas
     const CHUNK_SIZE = 500;
