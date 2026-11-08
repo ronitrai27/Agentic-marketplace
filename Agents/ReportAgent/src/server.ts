@@ -16,8 +16,8 @@ export const agent = createAgent<ReportInput, ReportOutput>({
   mode: "async",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
-  // Local CPU models are slow; detailed mode makes several cloud calls.
-  maxTimeoutMinute: 6,
+  // Depth tier: ~2 min of preparation, then several cloud calls.
+  maxTimeoutMinute: 8,
   limits: {
     maxConcurrent: Number(process.env.REPORT_MAX_CONCURRENT ?? 2),
     // base64 of an 8MB document is ~10.7MB
@@ -32,12 +32,12 @@ export const agent = createAgent<ReportInput, ReportOutput>({
   async execute({ input, runId, stream, signal, log, metric, usage }) {
     const t0 = Date.now();
     log.info("Report started", {
-      mode: input.mode,
+      tier: input.tier,
       format: input.output_format,
       has_file: !!input.file_base64,
     });
     metric.count("runs");
-    metric.count(`mode_${input.mode}`);
+    metric.count(`tier_${input.tier}`);
     stream.step("Starting");
 
     try {

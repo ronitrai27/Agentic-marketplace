@@ -71,6 +71,28 @@ export async function groqText(o: CallOptions): Promise<string> {
   return res.text;
 }
 
+/** Groq (gpt-oss-120b): the fast tier's report, streamed to the buyer as it is produced. */
+export async function groqStream(o: CallOptions & { onToken?: (t: string) => void }): Promise<string> {
+  const t0 = Date.now();
+  const res = streamText({
+    model: groq(GROQ_MODEL),
+    system: o.system,
+    messages: messages(o),
+    maxOutputTokens: o.maxTokens ?? 4096,
+    providerOptions: { groq: { reasoningEffort: "low" } },
+    abortSignal: o.signal,
+    maxRetries: 4,
+  });
+  let text = "";
+  for await (const piece of res.textStream) {
+    text += piece;
+    o.onToken?.(piece);
+  }
+  record(o.usage, GROQ_MODEL, "groq", await res.usage, t0);
+  if (!text.trim()) throw new Error("Groq returned no text");
+  return text;
+}
+
 /** Claude Haiku: final writing, streamed to the buyer as it is produced. */
 export async function haikuText(o: CallOptions & { onToken?: (t: string) => void }): Promise<string> {
   const t0 = Date.now();

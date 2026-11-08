@@ -1,7 +1,6 @@
 import type { AgentStream, AgentUsage } from "catelog";
-import { chunkText, type SourceDoc } from "./source.js";
-import { ollamaChat } from "./llm/ollama.js";
-import { groqText, haikuResearch, haikuText } from "./llm/cloud.js";
+import type { SourceDoc } from "./source.js";
+import { groqStream, groqText, haikuResearch, haikuText } from "./llm/cloud.js";
 
 export interface RunCtx {
   topic: string;
@@ -36,59 +35,34 @@ const writerSystem = (): string =>
 const subject = (c: RunCtx): string => `Topic: ${c.topic}`;
 
 // ─────────────────────────────────────────────────
-//  instant: one small local model (Ollama)
+//  fast: one Groq call (gpt-oss-120b), streamed
 // ─────────────────────────────────────────────────
 
-const MAX_DIRECT_CHARS = 10_000;
-const CHUNK_CHARS = 6_000;
-const MAX_CHUNKS = 8;
+/** Keeps the document inside Groq's per-minute token limit. */
+const MAX_GROQ_DOC_CHARS = Number(process.env.REPORT_GROQ_DOC_CHARS ?? 16_000);
 
-export async function runInstant(c: RunCtx): Promise<ModeResult> {
-  let material = "";
-
-  if (c.source) {
-    if (c.source.text.length <= MAX_DIRECT_CHARS) {
-      material = c.source.text;
-    } else {
-      // Small local models have short context: condense each part first, then write from the notes.
-      const chunks = chunkText(c.source.text, CHUNK_CHARS).slice(0, MAX_CHUNKS);
-      const notes: string[] = [];
-      for (const [i, chunk] of chunks.entries()) {
-        c.stream.progress(10 + Math.round((i / chunks.length) * 40), `Reading part ${i + 1} of ${chunks.length}`);
-        notes.push(
-          await ollamaChat({
-            system: "Extract the key facts, figures and arguments from this text as concise bullet points. No commentary.",
-            prompt: chunk,
-            usage: c.usage,
-            signal: c.signal,
-            maxTokens: 300,
-          }),
-        );
-      }
-      material = notes.join("\n\n");
-    }
-  }
-
-  c.stream.progress(55, "Writing the report");
-  const markdown = await ollamaChat({
+export async function runFast(c: RunCtx): Promise<ModeResult> {
+  c.stream.progress(20, "Writing the report");
+  const markdown = await groqStream({
     system: writerSystem(),
-    prompt: [subject(c), material ? `\nSource material:\n"""\n${material}\n"""` : "", `\nWrite the report now. ${LENGTH_RULE}`].join("\n"),
+    prompt: [
+      subject(c),
+      c.source ? `\nSource material:\n"""\n${c.source.text.slice(0, MAX_GROQ_DOC_CHARS)}\n"""` : "",
+      `\nWrite the report now. ${LENGTH_RULE}`,
+    ].join("\n"),
     usage: c.usage,
     signal: c.signal,
-    maxTokens: 1000,
+    maxTokens: 4000, // gpt-oss reasons first; that counts against this budget
     onToken: (t) => c.stream.delta(t),
   });
   return { markdown, sources: [] };
 }
 
 // ─────────────────────────────────────────────────
-//  detailed: Groq (gpt-oss-120b) + Claude Haiku (web search)
+//  depth: Groq (gpt-oss-120b) notes + Claude Haiku (web search, then writing)
 // ─────────────────────────────────────────────────
 
-/** Keeps the document inside Groq's per-minute token limit. */
-const MAX_GROQ_DOC_CHARS = Number(process.env.REPORT_GROQ_DOC_CHARS ?? 16_000);
-
-export async function runDetailed(c: RunCtx): Promise<ModeResult> {
+export async function runDepth(c: RunCtx): Promise<ModeResult> {
   c.stream.progress(10, "Groq is reading the material while Claude searches the web");
 
   // Stage 1, in parallel: Groq digests the document / topic, Claude researches current facts online.

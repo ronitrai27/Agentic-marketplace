@@ -2,10 +2,10 @@ import { z } from "zod";
 
 export const InputSchema = z
   .object({
-    mode: z
-      .enum(["instant", "detailed"])
-      .default("instant")
-      .describe("instant = fast, short report. detailed = deeper multi-model report"),
+    tier: z
+      .enum(["fast", "depth"])
+      .default("fast")
+      .describe("fast = quick report (Groq). depth = long-running run: about 2 minutes of preparation with live progress, then web research and writing by Claude"),
     topic: z
       .string()
       .trim()
@@ -32,12 +32,12 @@ export const InputSchema = z
 
 export const OutputSchema = z.object({
   title: z.string(),
-  report: z.string().describe("The full report as markdown text"),
+  report: z.string().describe("The full report as text (markdown), the same content as the file"),
   char_count: z.number().describe("Length of the report text in characters (800-1500)"),
   word_count: z.number(),
-  mode: z.enum(["instant", "detailed"]),
+  tier: z.enum(["fast", "depth"]),
   models_used: z.array(z.object({ id: z.string(), provider: z.string().optional() })),
-  sources: z.array(z.string()).describe("Web pages Claude consulted (detailed mode only)"),
+  sources: z.array(z.string()).describe("Web pages Claude consulted (depth tier only)"),
   files: z.array(
     z.object({
       filename: z.string(),

@@ -5,10 +5,10 @@ import type { AgentStream, AgentUsage, UsageRecord } from "catelog";
 import { runReport } from "./agent.js";
 import { InputSchema } from "./schema.js";
 
-// CLI (no server): pnpm start instant|detailed pdf|docx "topic" [source.pdf|source.docx]
-const [mode, format, topic, filePath] = process.argv.slice(2);
-if (!mode || !format) {
-  console.error('usage: pnpm start <instant|detailed> <pdf|docx> "<topic>" [source.pdf|source.docx]');
+// CLI (no server): pnpm start fast|depth pdf|docx "topic" [source.pdf|source.docx]
+const [tier, format, topic, filePath] = process.argv.slice(2);
+if (!tier || !format) {
+  console.error('usage: pnpm start <fast|depth> <pdf|docx> "<topic>" [source.pdf|source.docx]');
   process.exit(1);
 }
 
@@ -28,7 +28,7 @@ const records: UsageRecord[] = [];
 const usage: AgentUsage = { record: (u) => void records.push(u) };
 
 const input = InputSchema.parse({
-  mode,
+  tier,
   output_format: format,
   topic,
   file_base64: filePath ? (await readFile(filePath)).toString("base64") : undefined,
