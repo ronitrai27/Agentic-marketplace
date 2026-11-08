@@ -12,6 +12,8 @@ import {
   Search,
   Brain,
   Globe,
+  Settings2,
+  Cpu,
 } from "lucide-react";
 import {
   Dialog,
@@ -31,6 +33,7 @@ import type { PricingPlan } from "@/lib/pricing-plan";
 import { validateTags } from "@/lib/agent-tags";
 import { validateDescription } from "@/lib/agent-description";
 import { DescriptionField } from "./description-field";
+import { SectionHeading } from "./section-heading";
 import { modelIcon } from "@/lib/agent-display";
 
 const FLOW = ["Check", "Dry Run", "Publish", "Sign contract"];
@@ -322,7 +325,8 @@ export function RegisterAgentDialog({
   // SDK 1.2.1 and later send none, and the default "Agent: Name" placeholder is not worth keeping.
   const sentDescription = m?.description;
   useEffect(() => {
-    if (!hydrated || !sentDescription || /^Agent: /.test(sentDescription)) return;
+    if (!hydrated || !sentDescription || /^Agent: /.test(sentDescription))
+      return;
     setDescription((d) => (d ? d : sentDescription));
   }, [hydrated, sentDescription]);
   const ready = result?.health.status === "ready" || DEV_MODE;
@@ -407,7 +411,9 @@ export function RegisterAgentDialog({
     }
     const descCheck = validateDescription(description);
     if (!descCheck.ok) {
-      toast.error(descCheck.message ?? "Write a description of 20 to 100 words.");
+      toast.error(
+        descCheck.message ?? "Write a description of 20 to 100 words.",
+      );
       return;
     }
     const caps = m.capabilities;
@@ -505,32 +511,44 @@ export function RegisterAgentDialog({
           )}
 
           {(DEV_MODE || (result && m)) && currentStep === 2 && (
-            <div className="space-y-8">
+            <div className="space-y-8 pb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-md border bg-muted p-1 shrink-0">
+                    <Settings2 className="size-5 shrink-0" />
+                  </div>
+                  <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-foreground">
+                    Let&apos;s set up the Agent
+                  </h2>
+                </div>
+
+                <RainbowButton
+                  type="button"
+                  size="sm"
+                  className="h-8 shrink-0 rounded-md px-3 text-xs font-medium cursor-pointer"
+                >
+                  Register with AI
+                </RainbowButton>
+              </div>
               {/* Description first: it is what buyers and the chef match tasks on, and the tags are suggested from it */}
               <DescriptionField value={description} onChange={setDescription} />
               <TagsStep
                 selected={tags}
                 onChange={setTags}
-                onRegisterAi={() => setAiPromptOpen(true)}
                 description={description}
               />
               {models.length > 0 && (
-                <section className="space-y-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-foreground">
-                      Models used
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1.5">
-                      Detected from your dry run and saved with your agent.
-                    </p>
-                  </div>
+                <section className="space-y-4 border-b border-border pb-8">
+                  <SectionHeading icon={Cpu} title="Models used">
+                    Detected from your dry run and saved with your agent.
+                  </SectionHeading>
                   <ul className="flex flex-wrap gap-2">
                     {models.map((mod) => {
                       const icon = modelIcon(mod.id, mod.provider);
                       return (
                         <li
                           key={mod.id}
-                          className="rounded-lg border border-border px-3 py-2 text-xs flex items-center gap-2.5"
+                          className="rounded-lg border border-border/80 bg-muted/60 px-3 py-2 text-xs flex items-center gap-2.5 dark:bg-muted/40"
                         >
                           {icon ? (
                             // eslint-disable-next-line @next/next/no-img-element

@@ -36,7 +36,6 @@ type Details = {
   streaming: boolean;
   ratingAvg: number;
   ratingCount: number;
-  stars: number[];
   recentReviews: { rating: number; comment: string; likes: number; createdAt: number }[];
   totalRuns: number;
   successRuns: number;
@@ -75,8 +74,7 @@ const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 function block(d: Details): string {
   const success = d.totalRuns > 0 ? `${Math.round((d.successRuns / d.totalRuns) * 100)}%` : "n/a";
   const latency = d.avgLatencyMs !== null ? `${(d.avgLatencyMs / 1000).toFixed(1)}s` : "n/a";
-  const rating = d.ratingCount > 0 ? `${d.ratingAvg.toFixed(1)} / 5 from ${d.ratingCount} review${d.ratingCount === 1 ? "" : "s"}` : "no reviews yet";
-  const breakdown = d.ratingCount > 0 ? [5, 4, 3, 2, 1].map((n) => `${n}★ ${d.stars[n - 1]}`).join(", ") : "";
+  const rating = d.ratingCount > 0 ? `${Number(d.ratingAvg.toFixed(1))}` : "no rating yet";
   return [
     `AGENT: ${d.name}${d.status === "paused" ? " (paused: cannot run right now)" : ""}`,
     `Description: ${d.description}`,
@@ -84,14 +82,15 @@ function block(d: Details): string {
     `Tags: ${d.tags.map((t) => tagById(t)?.label ?? t).join(", ") || "none"}`,
     `Models: ${[...new Set(d.models.map((m) => m.id))].join(", ") || "unknown"}`,
     `Price: ${d.pricing ?? "not set"}`,
-    `Rating: ${rating}${breakdown ? ` (${breakdown})` : ""}`,
+    `Rating: ${rating}`,
+    `Reviews: ${d.ratingCount}`,
     `Stats: ${d.totalRuns} runs, ${success} success (${d.successRuns} ok / ${d.failedRuns} failed), avg ${latency}` +
       `${d.lastRunAt ? `, last run ${day(d.lastRunAt)}` : ""}`,
     `Limits: ${d.maxTimeoutSeconds ? `max ${d.maxTimeoutSeconds}s per run` : "default timeout"}${d.streaming ? ", streams output" : ""}`,
     `Input fields:\n${schemaLines(d.inputSchemaJson).map((l) => `  - ${l}`).join("\n")}`,
     `Output fields:\n${schemaLines(d.outputSchemaJson).map((l) => `  - ${l}`).join("\n")}`,
     d.recentReviews.length
-      ? `Newest reviews:\n${d.recentReviews.map((r) => `  - ${r.rating}★ (${day(r.createdAt)}): "${r.comment}"`).join("\n")}`
+      ? `Newest ${d.recentReviews.length} reviews:\n${d.recentReviews.map((r) => `  - ${r.rating}★ (${day(r.createdAt)}): "${r.comment}"`).join("\n")}`
       : "Newest reviews: none",
     `Listed since ${day(d.createdAt)}`,
   ].join("\n");
@@ -133,11 +132,13 @@ export async function getAgentDetails(rawArgs: unknown): Promise<GetAgentDetails
     const many = rows.length > 1;
     const how = many
       ? `Show these ${rows.length} agents side by side in ONE markdown table: a column per agent, a row per fact ` +
-        `(What it does, Capabilities, Tags, Models, Price, Rating, Rating breakdown, Runs & success, Avg time, Input, Output). ` +
-        `Keep cells short. Then 1-2 sentences under the table on which suits the user's task better and why, from the descriptions.`
+        `(What it does, Capabilities, Tags, Models, Price, Rating, Reviews, Runs & success, Avg time, Input, Output). ` +
+        `Rating is just the number (e.g. 3.5) and Reviews just the total count (e.g. 10); no star breakdown. Keep cells short. ` +
+        `Then 1-2 sentences under the table on which suits the user's task better and why, from the descriptions.`
       : `Show this agent in ONE two-column markdown table (Field | Value): What it does, Capabilities, Tags, Models, Price, Rating, ` +
-        `Rating breakdown, Runs & success, Avg time, Input, Output. Summarise schemas as field names with (required). ` +
-        `Then the newest review or two as a short quote line, if any.`;
+        `Reviews, Runs & success, Avg time, Input, Output. Rating is just the number (e.g. 3.5) and Reviews just the total count ` +
+        `(e.g. 10); no star breakdown. Summarise schemas as field names with (required). ` +
+        `Then list the newest reviews (up to 5) under the table, one short line each: rating, date and the comment.`;
     return {
       ok: true,
       text: `${notes.length ? `${notes.join("\n")}\n` : ""}${how}\nUse only these facts; say "n/a" for missing ones.\n\n${rows.map(block).join("\n\n")}`,

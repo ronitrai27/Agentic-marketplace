@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Check, Lightbulb } from "lucide-react";
+import { Check, FileText, Lightbulb } from "lucide-react";
+import { SectionHeading } from "./section-heading";
 import { Textarea } from "@/components/ui/textarea";
 import {
   MAX_DESCRIPTION_CHARS,
@@ -48,18 +49,13 @@ export function DescriptionField({
       : "bg-foreground/40";
 
   return (
-    <section className="space-y-3">
-      <div>
-        <h3 className="text-base font-semibold text-foreground">
-          What does your agent do?
-        </h3>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Buyers read this, and marketplace search uses it to match tasks to
-          your agent. A clear description means more matches and more revenue.
-        </p>
-      </div>
+    <section className="space-y-4 border-b border-border pb-8">
+      <SectionHeading icon={FileText} title="What does your agent do?">
+        Buyers read this, and the marketplace uses it to match tasks to your
+        agent. A clear description means more matches and more revenue.
+      </SectionHeading>
 
-      <div className="rounded-xl border border-border bg-background shadow-2xs transition-colors focus-within:border-foreground/40">
+      <div className="rounded-xl border border-border/80 bg-muted/60 transition-colors hover:bg-muted focus-within:border-foreground/40 focus-within:bg-background dark:bg-muted/40">
         <Textarea
           rows={5}
           value={value}
@@ -71,7 +67,7 @@ export function DescriptionField({
         />
 
         <div className="px-3.5 pb-3 pt-1">
-          <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="relative h-1.5 overflow-hidden rounded-full bg-foreground/10">
             <div
               className={`h-full rounded-full transition-all duration-200 ${bar}`}
               style={{ width: `${pct}%` }}

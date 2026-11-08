@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { CircleAlert, Lock } from "lucide-react";
+import { CircleAlert, CircleDollarSign, Lock } from "lucide-react";
+import { FIELD_FILL, SectionHeading } from "./section-heading";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -53,7 +54,7 @@ function Money({
         value={value}
         placeholder={placeholder ?? "0.00"}
         onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ""))}
-        className="pl-6"
+        className={`pl-6 ${FIELD_FILL}`}
       />
     </div>
   );
@@ -154,12 +155,9 @@ export function PricingStep({
 
   return (
     <section className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold text-foreground">Pricing</h3>
-        <p className="text-sm text-muted-foreground mt-1.5">
-          Buyers pay only when a run succeeds. Failed or timed-out runs are never charged.
-        </p>
-      </div>
+      <SectionHeading icon={CircleDollarSign} title="Pricing">
+        Buyers pay only when a run succeeds. Failed or timed-out runs are never charged.
+      </SectionHeading>
 
       {/* Shape */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -177,7 +175,7 @@ export function PricingStep({
                 setPicked(s);
               }}
               className={`text-left rounded-lg border p-3 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
-                on ? "border-foreground bg-muted/50" : "border-border hover:bg-muted/40"
+                on ? "border-foreground bg-background shadow-sm ring-1 ring-foreground" : "border-border hover:border-foreground/40"
               }`}
             >
               <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
@@ -215,7 +213,7 @@ export function PricingStep({
                   id="unit-name"
                   value={unitLabel || options.unit.label}
                   onChange={(e) => edit(setUnitLabel)(e.target.value)}
-                  className="w-36"
+                  className={`w-36 ${FIELD_FILL}`}
                 />
               </div>
               <div className="space-y-1.5">
@@ -240,7 +238,7 @@ export function PricingStep({
                   value={maxUnits}
                   placeholder="No limit"
                   onChange={(e) => edit(setMaxUnits)(e.target.value.replace(/\D/g, ""))}
-                  className="w-36"
+                  className={`w-36 ${FIELD_FILL}`}
                 />
               </div>
             </div>

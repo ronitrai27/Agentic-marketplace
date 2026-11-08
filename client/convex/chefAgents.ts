@@ -62,7 +62,7 @@ export const enrich = query({
 
 /**
  * Full details of 1-3 agents for the chef's get_agent_details tool: what it does, its input/output schema, run stats,
- * rating breakdown and the newest reviews. Public marketplace facts only: no owner id, no reviewer ids, and the
+ * rating, review count and the 5 newest reviews. Public marketplace facts only: no owner id, no reviewer ids, and the
  * creator's private price floor is never read.
  */
 export const details = query({
@@ -87,14 +87,12 @@ export const details = query({
         .withIndex("by_agent_created", (q) => q.eq("agentId", id))
         .order("desc")
         .first();
+      // the 5 newest only: the rating average and total count come from the agent row
       const reviews = await ctx.db
         .query("agent_reviews")
         .withIndex("by_agent_created", (q) => q.eq("agentId", id))
         .order("desc")
-        .take(500);
-
-      const stars = [0, 0, 0, 0, 0];
-      for (const r of reviews) stars[Math.min(5, Math.max(1, Math.round(r.rating))) - 1]++;
+        .take(5);
 
       let pricing: string | null = null;
       if (price) {
@@ -121,8 +119,7 @@ export const details = query({
         streaming: a.capabilities?.streaming ?? false,
         ratingAvg: a.ratingAvg ?? 0,
         ratingCount: a.ratingCount ?? 0,
-        stars, // index 0 = 1 star ... index 4 = 5 stars
-        recentReviews: reviews.slice(0, 3).map((r) => ({
+        recentReviews: reviews.map((r) => ({
           rating: r.rating,
           comment: r.comment.length > 240 ? `${r.comment.slice(0, 237)}…` : r.comment,
           likes: r.likes ?? 0,

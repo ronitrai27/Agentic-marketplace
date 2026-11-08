@@ -1,11 +1,18 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, RefreshCw, Search, Sparkles, X } from "lucide-react";
+import {
+  Check,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Tag as TagIcon,
+  X,
+} from "lucide-react";
+import { FIELD_FILL, SectionHeading } from "./section-heading";
 import { MIN_DESCRIPTION_WORDS, wordCount } from "@/lib/agent-description";
 import { Input } from "@/components/ui/input";
-import { RainbowButton } from "@/components/ui/rainbow-button";
-import { AgentPromptDialog } from "./agent-prompt-dialog";
 import {
   AGENT_TAGS,
   MAX_TAGS,
@@ -55,13 +62,26 @@ function useTagSuggestions(description: string) {
             body: JSON.stringify({ description: text }),
             signal: ctrl.signal,
           });
-          const data = (await res.json().catch(() => ({}))) as { tags?: string[]; error?: string };
-          if (!res.ok) throw new Error(data.error ?? "Could not suggest tags right now.");
-          setS({ state: "ready", tags: (data.tags ?? []).filter((id) => tagById(id)) });
+          const data = (await res.json().catch(() => ({}))) as {
+            tags?: string[];
+            error?: string;
+          };
+          if (!res.ok)
+            throw new Error(data.error ?? "Could not suggest tags right now.");
+          setS({
+            state: "ready",
+            tags: (data.tags ?? []).filter((id) => tagById(id)),
+          });
         } catch (e) {
           if (ctrl.signal.aborted) return;
           lastKey.current = ""; // let the next edit (or Retry) try again
-          setS({ state: "error", message: e instanceof Error ? e.message : "Could not suggest tags right now." });
+          setS({
+            state: "error",
+            message:
+              e instanceof Error
+                ? e.message
+                : "Could not suggest tags right now.",
+          });
         }
       },
       now.current ? 0 : SUGGEST_DEBOUNCE_MS,
@@ -86,17 +106,14 @@ function useTagSuggestions(description: string) {
 export function TagsStep({
   selected,
   onChange,
-  onRegisterAi,
   description = "",
 }: {
   selected: string[];
   onChange: (ids: string[]) => void;
-  onRegisterAi?: () => void;
   /** The agent's description: tags are suggested from it. */
   description?: string;
 }) {
   const [query, setQuery] = useState("");
-  const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const full = selected.length >= MAX_TAGS;
   const { s: suggest, enough, retry } = useTagSuggestions(description);
   const suggested = suggest.state === "ready" ? suggest.tags : [];
@@ -123,52 +140,95 @@ export function TagsStep({
         disabled={blocked}
         onClick={() => toggle(id)}
         title={blocked ? `You can pick up to ${MAX_TAGS} tags` : undefined}
-        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
           on
             ? "border-foreground bg-foreground text-background"
-            : "border-border text-foreground hover:bg-muted"
+            : "border-border bg-background text-foreground hover:border-foreground/40"
         }`}
       >
-        {on && <Check className="size-2.5" />}
+        {on ? (
+          <Check className="size-3" />
+        ) : (
+          <Plus className="size-3 text-muted-foreground" />
+        )}
         {label}
         {via && !on && (
-          <span className="text-[9px] text-muted-foreground">· {via}</span>
+          <span className="text-[10px] text-muted-foreground">· {via}</span>
         )}
       </button>
     );
   };
 
-  return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-base font-semibold text-foreground">Tags</h3>
-          <p className="text-sm text-muted-foreground mt-1.5">
-            Pick {MIN_TAGS} to {MAX_TAGS} tags so buyers can find it. Use the
-            suggestions from your description, or search by what it does, for
-            example &quot;plagiarism&quot;, &quot;cold email&quot; or
-            &quot;invoice&quot;.
-          </p>
-        </div>
+  /** Suggestion chip: violet so AI picks read differently from the library; dark once added. */
+  const suggestChip = (id: string) => {
+    const on = selected.includes(id);
+    const blocked = !on && full;
+    return (
+      <button
+        key={id}
+        type="button"
+        disabled={blocked}
+        onClick={() => toggle(id)}
+        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
+          on ? "border-foreground bg-foreground text-background" : ""
+        }`}
+      >
+        {on ? <Check className="size-3" /> : <Plus className="size-3" />}
+        {tagById(id)?.label ?? id}
+      </button>
+    );
+  };
 
-        <div className="shrink-0">
-          <RainbowButton
-            type="button"
-            size="sm"
-            onClick={() => {
-              if (onRegisterAi) onRegisterAi();
-              else setAiPromptOpen(true);
-            }}
-            className="h-8 rounded-md px-3 text-xs font-medium cursor-pointer"
+  const ok = selected.length >= MIN_TAGS;
+
+  return (
+    <section className="space-y-5 border-b border-border pb-8">
+      <SectionHeading
+        icon={TagIcon}
+        title="Tags"
+        right={
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${
+              ok
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                : "bg-muted text-muted-foreground"
+            }`}
           >
-            Register with AI
-          </RainbowButton>
-        </div>
+            {selected.length} / {MAX_TAGS} picked
+          </span>
+        }
+      >
+        Pick {MIN_TAGS} to {MAX_TAGS} tags so buyers can find your agent.
+      </SectionHeading>
+
+      {/* 1. Your tags: filled slots, then the empty ones */}
+      <div className="flex flex-wrap items-center gap-2">
+        {selected.map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => toggle(id)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background cursor-pointer hover:opacity-85"
+            aria-label={`Remove ${tagById(id)?.label ?? id}`}
+          >
+            {tagById(id)?.label ?? id}
+            <X className="size-3 opacity-70" />
+          </button>
+        ))}
+        {Array.from({ length: MAX_TAGS - selected.length }, (_, i) => (
+          <span
+            key={`slot-${i}`}
+            className="inline-flex h-7 w-24 items-center justify-center rounded-full border border-dashed border-border text-[11px] text-muted-foreground"
+          >
+            {i < MIN_TAGS - selected.length ? "required" : "optional"}
+          </span>
+        ))}
       </div>
 
-      <div className="rounded-lg border border-dashed border-border p-3 space-y-2">
+      {/* 2. Suggested from the description (violet = AI) */}
+      <div className="rounded-xl bg-yellow-300/10 p-3.5 space-y-2.5 ">
         <div className="flex items-center justify-between gap-3">
-          <p className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+          <p className="inline-flex items-center gap-1.5 text-xs font-medium ">
             <Sparkles className="size-3.5" />
             Suggested from your description
           </p>
@@ -177,122 +237,106 @@ export function TagsStep({
               <button
                 type="button"
                 onClick={addAll}
-                className="text-[11px] font-medium text-foreground underline-offset-2 hover:underline cursor-pointer"
+                className="text-xs font-medium  hover:underline underline-offset-2 cursor-pointer d"
               >
-                Use these
+                Add all
               </button>
             )}
             {(suggest.state === "ready" || suggest.state === "error") && (
               <button
                 type="button"
                 onClick={retry}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
                 aria-label="Suggest tags again"
               >
                 <RefreshCw className="size-3" />
-                {suggest.state === "error" ? "Retry" : "Suggest again"}
+                {suggest.state === "error" ? "Retry" : "Refresh"}
               </button>
             )}
           </div>
         </div>
         {!enough ? (
           <p className="text-xs text-muted-foreground">
-            Write at least {MIN_DESCRIPTION_WORDS} words in the description
-            above and we&apos;ll suggest {MAX_TAGS} tags that match it.
+            Write at least {MIN_DESCRIPTION_WORDS} words above and AI will
+            suggest {MAX_TAGS} tags that match it.
           </p>
         ) : suggest.state === "loading" || suggest.state === "idle" ? (
-          <div className="flex flex-wrap gap-2" aria-busy="true" aria-label="Suggesting tags">
+          <div
+            className="flex flex-wrap gap-2"
+            aria-busy="true"
+            aria-label="Suggesting tags"
+          >
             {Array.from({ length: MAX_TAGS }, (_, i) => (
-              <span key={i} className="h-6 w-20 animate-pulse rounded-full bg-muted" />
+              <span
+                key={i}
+                className="h-7 w-24 animate-pulse rounded-full bg-violet-200/60 dark:bg-violet-500/20"
+              />
             ))}
           </div>
         ) : suggest.state === "error" ? (
           <p className="text-xs text-destructive">{suggest.message}</p>
         ) : suggested.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No tag fits this description well. Pick tags below.
+            No tag fits this description well. Browse below.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {suggested.map((id) => chip(id, tagById(id)?.label ?? id))}
+            {suggested.map(suggestChip)}
           </div>
         )}
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search tags…"
-          className="pl-9"
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
-            aria-label="Clear search"
-          >
-            <X className="size-3.5" />
-          </button>
-        )}
-      </div>
-
-      <div className="rounded-lg border border-border p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-foreground">Selected</p>
-          <p
-            className={`text-[11px] ${
-              selected.length < MIN_TAGS
-                ? "text-muted-foreground"
-                : "text-green-600 dark:text-green-400"
-            }`}
-          >
-            {selected.length} of {MAX_TAGS}
-            {selected.length < MIN_TAGS &&
-              ` · pick ${MIN_TAGS - selected.length} more`}
-          </p>
+      {/* 3. Browse: search and the full list in one box */}
+      <div className="overflow-hidden rounded-xl border border-border">
+        <div className="relative border-b border-border">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search all tags, e.g. plagiarism, cold email, invoice"
+            className={`h-10 rounded-none border-0 pl-9 ${FIELD_FILL} focus-visible:ring-0`}
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+              aria-label="Clear search"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
-        {selected.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Nothing selected yet.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {selected.map((id) => chip(id, tagById(id)?.label ?? id))}
-          </div>
-        )}
-      </div>
 
-      {/* Capped height: the list scrolls so the rest of the step (pricing later) stays in view */}
-      <div className="max-h-56 overflow-y-auto rounded-lg border border-border p-3 space-y-4">
-        {searching ? (
-          matches.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No tag matches &quot;{query}&quot;. Try a broader word, like
-              &quot;research&quot; or &quot;writing&quot;.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {matches.map(({ tag, via }) => chip(tag.id, tag.label, via))}
-            </div>
-          )
-        ) : (
-          groups.map((g) => (
-            <section key={g} className="space-y-2">
-              <p className="text-[10px] font-medium text-muted-foreground">
-                {TAG_GROUP_LABEL[g]}
+        {/* Capped height: the list scrolls so pricing stays reachable */}
+        <div className="max-h-56 overflow-y-auto p-3.5 space-y-4">
+          {searching ? (
+            matches.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No tag matches &quot;{query}&quot;. Try a broader word, like
+                &quot;research&quot; or &quot;writing&quot;.
               </p>
+            ) : (
               <div className="flex flex-wrap gap-2">
-                {AGENT_TAGS.filter((t) => t.group === g).map((t) =>
-                  chip(t.id, t.label),
-                )}
+                {matches.map(({ tag, via }) => chip(tag.id, tag.label, via))}
               </div>
-            </section>
-          ))
-        )}
+            )
+          ) : (
+            groups.map((g) => (
+              <div key={g} className="space-y-2">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {TAG_GROUP_LABEL[g]}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {AGENT_TAGS.filter((t) => t.group === g).map((t) =>
+                    chip(t.id, t.label),
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
-
-      <AgentPromptDialog open={aiPromptOpen} onOpenChange={setAiPromptOpen} />
-    </div>
+    </section>
   );
 }
