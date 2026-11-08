@@ -6,11 +6,11 @@ import type { JevResponse } from "./jev";
  */
 export const THRESHOLDS = {
   /** jailbreak / hijack at or above this: refuse. */
-  block: 0.7,
+  block: 0.8,
   /** jailbreak / hijack between this and `block`: allow, but with the hardened prompt on the heavy model. */
-  suspicious: 0.3,
-  /** in_scope below this, with no task in progress: refuse. */
-  inScopeMin: 0.6,
+  suspicious: 0.5,
+  /** in_scope below this, with no task in progress: refuse (only clearly disallowed topics: sexual, cooking, medical, self-harm). */
+  inScopeMin: 0.25,
   /** chitchat probability needed to use the instant model. */
   chitchatMin: 0.8,
 } as const;

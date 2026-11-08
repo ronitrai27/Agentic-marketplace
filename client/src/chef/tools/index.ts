@@ -2,6 +2,8 @@ import { tool } from "@langchain/core/tools";
 import { FindAgentsArgs, findAgents, type FindAgentsResult } from "./find-agents";
 import { GetAgentDetailsArgs, getAgentDetails } from "./get-agent-details";
 import { ProposeRunArgs, proposeRun, type Proposal } from "./propose-run";
+import { GetRunResultsArgs, getRunResults } from "./get-run-results";
+import { ListMyRunsArgs, listMyRuns, type MyRun } from "./list-my-runs";
 
 /** Declared to the model. The node runs tools itself (so it can stream their progress), via `runTool`. */
 export const findAgentsTool = tool(async (args) => (await findAgents(args)).text, {
@@ -35,12 +37,32 @@ export const proposeRunTool = tool(async (args) => (await proposeRun(args)).text
   schema: ProposeRunArgs,
 });
 
-export const CHEF_TOOLS = [findAgentsTool, getAgentDetailsTool, proposeRunTool];
+export const listMyRunsTool = tool(async (args) => (await listMyRuns(args)).text, {
+  name: "list_my_runs",
+  description:
+    "Show the user's own past and current agent runs as a table (agent, status, date, duration, cost) with a button to open each output in the side sheet. " +
+    "Call it when the user asks about their runs, history, recent work or a past output (\"my runs\", \"what did I run\", \"show failed runs\"). " +
+    "The table is shown by the UI: do not repeat it.",
+  schema: ListMyRunsArgs,
+});
+
+export const getRunResultsTool = tool(async (args) => (await getRunResults(args)).text, {
+  name: "get_run_results",
+  description:
+    "Read one finished run: status, time taken, credits, the input given and its output (truncated to the first 3000 characters). " +
+    "Call it when the user asks what a run produced, to summarize or explain its output, or how it went in detail. " +
+    "Take the run id from the run note or list_my_runs; with no id it reads the newest finished run of this chat.",
+  schema: GetRunResultsArgs,
+});
+
+export const CHEF_TOOLS = [findAgentsTool, getAgentDetailsTool, proposeRunTool, listMyRunsTool, getRunResultsTool];
 
 export type ToolRun = {
   ok: boolean;
   /** Text handed back to the model. */
   text: string;
+  /** Present for list_my_runs, so the UI can render the runs table. */
+  runs?: MyRun[];
   /** Present for find_agents, so the UI can render the picker. */
   agents?: FindAgentsResult;
   /** Present for a successful propose_run: the graph pauses for the human's answer. */
@@ -61,8 +83,16 @@ export async function runTool(name: string, args: unknown): Promise<ToolRun> {
     const r = await proposeRun(args);
     return { ok: r.ok, text: r.text, proposal: r.proposal };
   }
+  if (name === "get_run_results") {
+    const r = await getRunResults(args);
+    return { ok: r.ok, text: r.text };
+  }
+  if (name === "list_my_runs") {
+    const r = await listMyRuns(args);
+    return { ok: r.ok, text: r.text, runs: r.runs };
+  }
   return {
     ok: false,
-    text: `There is no tool called "${name}". The tools are find_agents, get_agent_details and propose_run.`,
+    text: `There is no tool called "${name}". The tools are find_agents, get_agent_details, propose_run, list_my_runs and get_run_results.`,
   };
 }

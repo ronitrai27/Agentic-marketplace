@@ -11,7 +11,9 @@ import { ChefGraphState, chefModelId, type PendingProposal } from "../state";
 import { HEAVY_SYSTEM_PROMPT } from "./prompt";
 import { CHEF_TOOLS, runTool, type ToolRun } from "../tools";
 import { chefRequest } from "../tools/context";
+import { api } from "../../../convex/_generated/api";
 import { findAgents } from "../tools/find-agents";
+import type { MyRun } from "../tools/list-my-runs";
 
 const MAX_STEPS = 4; // model calls per turn: tool, tool, ..., answer
 const HISTORY = 20;
@@ -29,6 +31,7 @@ export type HeavyEvent =
       preselect?: string;
       agents: { slug: string; name: string; logoUrl?: string; ratingAvg: number; ratingCount: number; models: { id: string; provider?: string }[] }[];
     }
+  | { t: "runs"; id: string; step: number; runs: MyRun[] }
   | { t: "proposal"; id: string; step: number; proposalId: string; agentNames: string[]; totalCredits: number; enough: boolean }
   | { t: "token"; text: string };
 
@@ -100,6 +103,37 @@ const textOf = (m: BaseMessage) =>
     ? m.content
     : (m.content as Array<{ type?: string; text?: string }>).map((b) => (b.type === "text" ? (b.text ?? "") : "")).join("");
 
+const STATE_WORDS: Record<string, string> = {
+  awaiting_input: "credits held, waiting for the user to give the input and press Run",
+  queued: "queued",
+  running: "still running",
+  succeeded: "finished successfully, output is ready",
+  failed: "failed",
+  cancelled: "cancelled",
+};
+
+/** A few lines on the newest runs started from this chat, so the model knows what finished. Empty when none or on error. */
+async function chatRunNote(): Promise<string> {
+  const req = chefRequest.getStore();
+  if (!req?.chatId) return "";
+  try {
+    const runs = await req.convex.query(api.chatRuns.chatRunsNote, { chatId: req.chatId });
+    if (runs.length === 0) return "";
+    const lines = runs.map(
+      (r) =>
+        `- ${r.agentName} (run id ${r.id}): ${STATE_WORDS[r.status] ?? r.status}` +
+        (r.status === "succeeded" && r.chargedCredits !== null ? `, ${r.chargedCredits} credits charged` : ""),
+    );
+    return (
+      `Runs started from this chat (newest first). The user already sees an "Open output" button for finished ones.\n${lines.join("\n")}\n` +
+      `You may mention these naturally (for example when the user says thanks or asks how it went). To read what a finished run produced, ` +
+      `its time or cost, call get_run_results; do not guess its output.`
+    );
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Heavy layer: the tool-using model. It reasons (a short summary is streamed first), calls find_agents, and
  * answers. Everything the user should watch (reasoning, tool runs, the agent picker, answer tokens) goes out
@@ -117,6 +151,10 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
   const userText = chefRequest.getStore()?.lastUserText ?? "";
   const speculative = userText ? findAgents({ query: userText, mode: "task" }).catch(() => null) : null;
 
+  // Awareness: what happened to the runs started from this chat, fresh every turn and never saved in the checkpoint
+  const runNote = await chatRunNote();
+  const system = [new SystemMessage(HEAVY_SYSTEM_PROMPT), ...(runNote ? [new SystemMessage(runNote)] : [])];
+
   for (let step = 0; step < MAX_STEPS; step++) {
     const rid = `r${step}`;
     let reasoningStarted = 0;
@@ -133,7 +171,7 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
     let callArgs = ""; // arguments of the first tool call as they stream
     let planSent = 0;
     try {
-      const stream = await getModel(useReasoning).stream([new SystemMessage(HEAVY_SYSTEM_PROMPT), ...convo, ...produced]);
+      const stream = await getModel(useReasoning).stream([...system, ...convo, ...produced]);
       for await (const chunk of stream) {
         full = full ? full.concat(chunk) : chunk;
         const p = parts(chunk);
@@ -222,6 +260,7 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
           agents: res.agents.agents,
         });
       }
+      if (res.runs && res.runs.length > 0) emit({ t: "runs", id, step, runs: res.runs });
       if (res.proposal) {
         // HITL: no ToolMessage yet; the hitl node writes it with the human's decision
         const p = res.proposal;

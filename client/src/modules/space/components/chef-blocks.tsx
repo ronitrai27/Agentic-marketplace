@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Check, SearchIcon, Star, TerminalIcon } from "lucide-react";
+import { Check, ExternalLink, SearchIcon, Star, TerminalIcon } from "lucide-react";
 import {
   Trace,
   TraceCollapsible,
@@ -22,6 +22,7 @@ import { DotmSquare1 } from "@/components/ui/dotm-square-1";
 import { selectionMessage } from "@/chef/tools/selection";
 import { AgentLogo } from "./agent-logo";
 import { ModelLogos } from "./agent-card";
+import { openRun } from "./runs/run-store";
 
 /** Small light-grey dot matrix, used instead of a spinner while the chef works. */
 export function ThinkingMatrix() {
@@ -64,7 +65,18 @@ export type Block =
       needsChoice: boolean;
       preselect?: string;
       agents: PickAgent[];
-    };
+    }
+  | { kind: "runs"; id: string; step: number; runs: RunRow[] };
+
+export type RunRow = {
+  id: string;
+  agentName: string;
+  logoUrl: string | null;
+  status: string;
+  createdAt: number;
+  durationMs: number | null;
+  chargedCredits: number | null;
+};
 
 const fmtSecs = (ms: number) => `${Math.max(1, Math.round(ms / 1000))}s`;
 
@@ -132,7 +144,90 @@ const TOOL_LABELS: Record<
     },
     failed: "Failed to read agent details",
   },
+  get_run_results: {
+    running: "Reading the run results…",
+    done: () => "Read the run results",
+    failed: "Failed to read the run results",
+  },
+  list_my_runs: {
+    running: "Loading your runs…",
+    done: () => "Loaded your runs",
+    failed: "Failed to load your runs",
+  },
 };
+
+// ─── my runs table ───
+
+const RUN_STATUS: Record<string, { label: string; cls: string }> = {
+  succeeded: { label: "Done", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  failed: { label: "Failed", cls: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300" },
+  cancelled: { label: "Cancelled", cls: "bg-muted text-muted-foreground" },
+  running: { label: "Running", cls: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300" },
+  queued: { label: "Queued", cls: "bg-muted text-muted-foreground" },
+};
+const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const fmtDur = (ms: number | null) => {
+  if (ms === null) return "-";
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+};
+
+/** The user's runs as a table; Open shows the run (and its output) in the side sheet. */
+function RunsTable({ b }: { b: Extract<Block, { kind: "runs" }> }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      className="w-full overflow-x-auto rounded-lg border border-border bg-background"
+    >
+      <table className="w-full min-w-[520px] text-left text-xs">
+        <thead>
+          <tr className="border-b border-border text-[11px] text-muted-foreground">
+            <th className="px-3 py-2 font-medium">Agent</th>
+            <th className="px-3 py-2 font-medium">Status</th>
+            <th className="px-3 py-2 font-medium">Date</th>
+            <th className="px-3 py-2 font-medium">Time</th>
+            <th className="px-3 py-2 font-medium">Cost</th>
+            <th className="px-3 py-2" />
+          </tr>
+        </thead>
+        <tbody>
+          {b.runs.map((r) => {
+            const st = RUN_STATUS[r.status] ?? { label: r.status, cls: "bg-muted text-muted-foreground" };
+            return (
+              <tr key={r.id} className="border-b border-border/60 last:border-0">
+                <td className="px-3 py-2">
+                  <span className="flex items-center gap-2">
+                    <AgentLogo name={r.agentName} logoUrl={r.logoUrl ?? undefined} className="size-6 shrink-0 text-[10px]" />
+                    <span className="truncate font-medium text-foreground">{r.agentName}</span>
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span className={`rounded-full px-1.5 py-px text-[10px] font-medium ${st.cls}`}>{st.label}</span>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 tabular-nums text-muted-foreground">{fmtDate(r.createdAt)}</td>
+                <td className="px-3 py-2 tabular-nums text-muted-foreground">{fmtDur(r.durationMs)}</td>
+                <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                  {r.chargedCredits !== null ? `${r.chargedCredits} cr` : "-"}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <button
+                    type="button"
+                    onClick={() => openRun(r.id)}
+                    className="inline-flex h-6 cursor-pointer items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    {r.status === "succeeded" ? "View output" : "Open"} <ExternalLink className="size-3" />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </motion.div>
+  );
+}
 
 /** One tool run: a Trace line that opens to the input and the result in code blocks. */
 function ToolBlock({ b }: { b: Extract<Block, { kind: "tool" }> }) {
@@ -324,6 +419,8 @@ export function ChefBlocks({
           <ReasoningBlock key={`${b.kind}-${b.id}`} b={b} />
         ) : b.kind === "tool" ? (
           <ToolBlock key={`${b.kind}-${b.id}`} b={b} />
+        ) : b.kind === "runs" ? (
+          <RunsTable key={`${b.kind}-${b.id}`} b={b} />
         ) : (
           <AgentPicker key={`${b.kind}-${b.id}`} b={b} onConfirm={onConfirm} />
         ),

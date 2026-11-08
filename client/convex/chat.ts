@@ -117,7 +117,49 @@ export const listMine = query({
       .query("chats")
       .withIndex("by_user_last", (q) => q.eq("userId", identity.subject))
       .order("desc")
-      .take(30);
+      .take(100);
     return rows.map((c) => ({ chatId: c.chatId, title: c.title, lastMessageAt: c.lastMessageAt }));
+  },
+});
+
+const CLEAR_CHATS = 25;
+const CLEAR_MSGS = 300;
+
+/**
+ * Deletes the user's chat history (chats, messages and the approval cards in them), one bounded batch at a time.
+ * Returns `more: true` while something is left: the browser calls it again until it is false. Runs and credits
+ * are untouched.
+ */
+export const clearAll = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Sign in first." });
+    const userId = identity.subject;
+    const chats = await ctx.db
+      .query("chats")
+      .withIndex("by_user_last", (q) => q.eq("userId", userId))
+      .take(CLEAR_CHATS);
+    let more = chats.length === CLEAR_CHATS;
+    for (const c of chats) {
+      const msgs = await ctx.db
+        .query("chat_messages")
+        .withIndex("by_chat_order", (q) => q.eq("chatId", c.chatId))
+        .take(CLEAR_MSGS);
+      for (const m of msgs) {
+        if (m.userId !== userId) continue;
+        if (m.proposalId) {
+          const p = await ctx.db
+            .query("chat_runs")
+            .withIndex("by_proposal", (q) => q.eq("proposalId", m.proposalId!))
+            .first();
+          if (p && p.userId === userId) await ctx.db.delete(p._id);
+        }
+        await ctx.db.delete(m._id);
+      }
+      if (msgs.length === CLEAR_MSGS) more = true; // this chat has more messages: it stays for the next pass
+      else await ctx.db.delete(c._id);
+    }
+    return { more };
   },
 });

@@ -134,6 +134,7 @@ export function RunProposalCard({
   }
 
   return (
+    <div className="flex w-full flex-col gap-3">
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -151,30 +152,22 @@ export function RunProposalCard({
           )}
         </div>
 
-        {p.status === "approved" ? (
-          <ItemGroup className="gap-2">
-            {p.runIds.map((id) => (
-              <RunLiveRow key={id} runId={id} />
-            ))}
-          </ItemGroup>
-        ) : (
-          <ItemGroup className="gap-2">
-            {p.agents.map((a) => (
-              <Item key={a.slug} variant="muted" size="sm">
-                <ItemMedia>
-                  <AgentLogo name={a.name} logoUrl={a.logoUrl} className="size-9 text-sm" />
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle>{a.name}</ItemTitle>
-                  <ItemDescription>
-                    Holds {credits(a.holdCredits)}
-                    {a.tiered ? " (highest tier; you pay only for the tier you pick)" : ""}
-                  </ItemDescription>
-                </ItemContent>
-              </Item>
-            ))}
-          </ItemGroup>
-        )}
+        <ItemGroup className="gap-2">
+          {p.agents.map((a) => (
+            <Item key={a.slug} variant="muted" size="sm">
+              <ItemMedia>
+                <AgentLogo name={a.name} logoUrl={a.logoUrl} className="size-9 text-sm" />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>{a.name}</ItemTitle>
+                <ItemDescription>
+                  Holds {credits(a.holdCredits)}
+                  {a.tiered ? " (highest tier; you pay only for the tier you pick)" : ""}
+                </ItemDescription>
+              </ItemContent>
+            </Item>
+          ))}
+        </ItemGroup>
 
         {pending && (
           <ItemFooter className="flex-wrap gap-2">
@@ -217,6 +210,29 @@ export function RunProposalCard({
         )}
       </Item>
     </motion.div>
+
+    {/* separate card below the approval: the live / finished run */}
+    {p.status === "approved" && p.runIds.length > 0 && (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: "easeOut", delay: 0.1 }}
+        className="w-full"
+      >
+        <Item variant="outline" className="flex-col items-stretch gap-3 bg-background p-3">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+            <Play className="size-3.5" />
+            Agent run
+          </div>
+          <ItemGroup className="gap-2">
+            {p.runIds.map((id) => (
+              <RunLiveRow key={id} runId={id} />
+            ))}
+          </ItemGroup>
+        </Item>
+      </motion.div>
+    )}
+    </div>
   );
 }
 

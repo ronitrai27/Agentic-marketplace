@@ -23,7 +23,7 @@ test("jailbreak is blocked", () => {
   assert.equal(d.reason, "jailbreak");
 });
 
-test("hijack is blocked", () => assert.equal(decide(res(0, 0.8, 1, 0), "understand").reason, "hijack"));
+test("hijack is blocked", () => assert.equal(decide(res(0, 0.85, 1, 0), "understand").reason, "hijack"));
 
 test("out of scope is blocked when no task is running", () => {
   assert.equal(decide(res(0, 0, 0.1, 0), "understand").reason, "out_of_scope");

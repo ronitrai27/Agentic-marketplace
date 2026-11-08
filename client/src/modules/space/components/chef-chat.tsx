@@ -244,6 +244,10 @@ export function useChefChat(chatId: string | null) {
             const p = payload as Omit<Extract<Block, { kind: "agents" }>, "kind">;
             putBlock({ kind: "agents", ...p });
           }
+          if (event === "runs") {
+            const p = payload as Omit<Extract<Block, { kind: "runs" }>, "kind">;
+            putBlock({ kind: "runs", ...p });
+          }
           if (event === "message")
             setLocal((l) => [
               ...l.filter((m) => m.id !== (payload as ChatMsg).id),

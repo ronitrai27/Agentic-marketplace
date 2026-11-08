@@ -192,6 +192,119 @@ export const runCard = query({
   },
 });
 
+/** The newest runs started from one chat, for the chef's per-turn awareness note. Owner only, small on purpose. */
+export const chatRunsNote = query({
+  args: { chatId: v.string() },
+  handler: async (ctx, { chatId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const rows = await ctx.db
+      .query("runs")
+      .withIndex("by_user_created", (q) => q.eq("userId", identity.subject))
+      .order("desc")
+      .take(40);
+    const out = [];
+    for (const r of rows) {
+      if (r.chatId !== chatId) continue;
+      const agent = await ctx.db.get(r.agentId);
+      out.push({
+        id: r._id as string,
+        agentName: agent?.name ?? "Agent",
+        status: r.status,
+        finishedAt: r.finishedAt ?? null,
+        chargedCredits: r.chargedCredits ?? null,
+      });
+      if (out.length === 5) break;
+    }
+    return out;
+  },
+});
+
+/** One run in full for the chef's get_run_results tool: by id, or the newest finished run of this chat. Owner only. */
+export const runResult = query({
+  args: { chatId: v.string(), runId: v.optional(v.string()) },
+  handler: async (ctx, { chatId, runId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    let run: Doc<"runs"> | null = null;
+    if (runId) {
+      const id = ctx.db.normalizeId("runs", runId);
+      run = id ? await ctx.db.get(id) : null;
+    } else {
+      const rows = await ctx.db
+        .query("runs")
+        .withIndex("by_user_created", (q) => q.eq("userId", identity.subject))
+        .order("desc")
+        .take(40);
+      run = rows.find((r) => r.chatId === chatId && ["succeeded", "failed", "cancelled"].includes(r.status)) ?? null;
+    }
+    if (!run || run.userId !== identity.subject) return null;
+    const agent = await ctx.db.get(run.agentId);
+    const output = await ctx.db.query("run_outputs").withIndex("by_run", (q) => q.eq("runId", run!._id)).first();
+    const events = await ctx.db
+      .query("run_events")
+      .withIndex("by_run_seq", (q) => q.eq("runId", run!._id))
+      .order("desc")
+      .take(60);
+    const check = events.find((e) => e.type === "schema.check");
+    return {
+      id: run._id as string,
+      agentName: agent?.name ?? "Agent",
+      status: run.status,
+      createdAt: run.createdAt,
+      durationMs: run.durationMs ?? (run.finishedAt ? run.finishedAt - (run.startedAt ?? run.createdAt) : null),
+      holdCredits: run.holdCredits ?? null,
+      chargedCredits: run.chargedCredits ?? null,
+      error: run.error ?? null,
+      inputJson: run.inputLarge ? null : run.inputJson.slice(0, 800),
+      outputJson: output?.outputJson?.slice(0, 6000) ?? null,
+      outputChars: output?.outputJson?.length ?? 0,
+      schemaCheckJson: check?.dataJson.slice(0, 300) ?? null,
+    };
+  },
+});
+
+/** The signed-in user's own runs for the chef's list_my_runs tool: newest first, input-pending holds left out. */
+export const listMine = query({
+  args: {
+    status: v.optional(v.union(v.literal("succeeded"), v.literal("failed"), v.literal("active"), v.literal("cancelled"))),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { status, limit }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const n = Math.min(Math.max(Math.floor(limit ?? 5), 1), 10);
+    const rows = await ctx.db
+      .query("runs")
+      .withIndex("by_user_created", (q) => q.eq("userId", identity.subject))
+      .order("desc")
+      .filter((q) =>
+        !status
+          ? q.neq(q.field("status"), "awaiting_input")
+          : status === "active"
+            ? q.or(q.eq(q.field("status"), "queued"), q.eq(q.field("status"), "running"))
+            : q.eq(q.field("status"), status),
+      )
+      .take(n);
+    const agents = new Map<string, Doc<"agents"> | null>();
+    const out = [];
+    for (const r of rows) {
+      if (!agents.has(r.agentId)) agents.set(r.agentId, await ctx.db.get(r.agentId));
+      const agent = agents.get(r.agentId);
+      out.push({
+        id: r._id as string,
+        agentName: agent?.name ?? "Deleted agent",
+        logoUrl: agent?.logoUrl ?? null,
+        status: r.status,
+        createdAt: r.createdAt,
+        durationMs: r.durationMs ?? (r.finishedAt ? r.finishedAt - (r.startedAt ?? r.createdAt) : null),
+        chargedCredits: r.chargedCredits ?? null,
+      });
+    }
+    return out;
+  },
+});
+
 /**
  * Posts the chef's "your run finished" message into the chat that started the run, the moment the run ends.
  * Called from every place a run reaches a final state. Written once per run (keyed by run id).

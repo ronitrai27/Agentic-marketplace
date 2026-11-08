@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 import { ActiveRunsIndicator, RecentRunsList, useSidebarRuns } from "@/modules/space/components/runs/active-runs-pill";
+import { ChatHistoryNav } from "@/modules/space/components/chat-history-nav";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
 
 const NAV_LINKS = [
@@ -179,6 +180,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 );
               })}
             </SidebarMenu>
+            <ChatHistoryNav />
           </SidebarGroup>
         </SidebarContent>
 
