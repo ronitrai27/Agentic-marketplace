@@ -18,6 +18,8 @@ export type ChefRequest = {
   /** Lets the speculative instant model stop the moment the guard says the turn is a task, so the heavy model starts right away. */
   gate?: GuardGate;
   convex: ConvexHttpClient;
+  /** The chat this turn belongs to (proposals and the runs they start are tied to it). */
+  chatId?: string;
   /** What the human actually typed this turn. Tools trust this over anything the model passes in. */
   lastUserText: string;
 };

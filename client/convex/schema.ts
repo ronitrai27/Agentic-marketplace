@@ -209,8 +209,11 @@ export default defineSchema({
     /** Client/service generated uuid: makes a retried write a no-op. */
     messageId: v.string(),
     role: v.union(v.literal("user"), v.literal("assistant")),
-    kind: v.union(v.literal("text"), v.literal("refusal")),
+    /** proposal = a run-approval card (see chat_runs); run_done = a run started from this chat has finished. */
+    kind: v.union(v.literal("text"), v.literal("refusal"), v.literal("proposal"), v.literal("run_done")),
     text: v.string(),
+    proposalId: v.optional(v.string()),
+    runId: v.optional(v.string()),
     /** How long the chef took to answer, saved with the reply. */
     durationMs: v.optional(v.number()),
     createdAt: v.number(),
@@ -219,6 +222,31 @@ export default defineSchema({
   })
     .index("by_chat_order", ["chatId", "createdAt", "ord"])
     .index("by_chat_message", ["chatId", "messageId"]),
+
+  // A chef run proposal: the human approves or denies it (HITL) before any credits are held.
+  // The card and the runs it started are rebuilt from this row after a refresh.
+  chat_runs: defineTable({
+    chatId: v.string(),
+    userId: v.string(),
+    proposalId: v.string(),
+    agents: v.array(
+      v.object({
+        agentId: v.id("agents"),
+        slug: v.string(),
+        name: v.string(),
+        logoUrl: v.optional(v.string()),
+        /** Most this run can cost: tiered plans hold their highest tier. */
+        holdCredits: v.number(),
+        tiered: v.boolean(),
+      }),
+    ),
+    totalCredits: v.number(),
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("denied"), v.literal("expired")),
+    runIds: v.array(v.id("runs")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    decidedAt: v.optional(v.number()),
+  }).index("by_proposal", ["proposalId"]),
 
   // For daily stats store.
   agent_stats_daily: defineTable({
@@ -289,6 +317,8 @@ export default defineSchema({
     clientRegion: v.optional(v.string()),
     /** Total wall time from admission to the final status. */
     durationMs: v.optional(v.number()),
+    /** Set when the chef started this run: its end is announced in that chat. */
+    chatId: v.optional(v.string()),
   })
     .index("by_agent_status", ["agentId", "status"])
     .index("by_user_created", ["userId", "createdAt"])

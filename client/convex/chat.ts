@@ -72,16 +72,38 @@ export const messages = query({
       .withIndex("by_chat_order", (q) => q.eq("chatId", chatId))
       .order("asc")
       .take(500);
-    return rows
-      .filter((r) => r.userId === identity.subject)
-      .map((r) => ({
+    const out = [];
+    for (const r of rows) {
+      if (r.userId !== identity.subject) continue;
+      let proposal = undefined;
+      if (r.kind === "proposal" && r.proposalId) {
+        const p = await ctx.db
+          .query("chat_runs")
+          .withIndex("by_proposal", (q) => q.eq("proposalId", r.proposalId!))
+          .first();
+        if (!p) continue;
+        proposal = {
+          proposalId: p.proposalId,
+          agents: p.agents.map((a) => ({ slug: a.slug, name: a.name, logoUrl: a.logoUrl ?? null, holdCredits: a.holdCredits, tiered: a.tiered })),
+          totalCredits: p.totalCredits,
+          // shown as expired the moment the time is up, before the scheduled job marks it
+          status: p.status === "pending" && Date.now() > p.expiresAt ? ("expired" as const) : p.status,
+          runIds: p.runIds as string[],
+          expiresAt: p.expiresAt,
+        };
+      }
+      out.push({
         id: r.messageId,
         role: r.role,
         kind: r.kind,
         text: r.text,
         durationMs: r.durationMs,
         createdAt: r.createdAt,
-      }));
+        ...(proposal ? { proposal } : {}),
+        ...(r.runId ? { runId: r.runId } : {}),
+      });
+    }
+    return out;
   },
 });
 

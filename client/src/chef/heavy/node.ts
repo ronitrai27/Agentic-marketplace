@@ -7,7 +7,7 @@ import {
   ToolMessage,
   type BaseMessage,
 } from "@langchain/core/messages";
-import { ChefGraphState, chefModelId } from "../state";
+import { ChefGraphState, chefModelId, type PendingProposal } from "../state";
 import { HEAVY_SYSTEM_PROMPT } from "./prompt";
 import { CHEF_TOOLS, runTool, type ToolRun } from "../tools";
 import { chefRequest } from "../tools/context";
@@ -29,6 +29,7 @@ export type HeavyEvent =
       preselect?: string;
       agents: { slug: string; name: string; logoUrl?: string; ratingAvg: number; ratingCount: number; models: { id: string; provider?: string }[] }[];
     }
+  | { t: "proposal"; id: string; step: number; proposalId: string; agentNames: string[]; totalCredits: number; enough: boolean }
   | { t: "token"; text: string };
 
 const models = new Map<boolean, ReturnType<typeof build>>();
@@ -188,8 +189,14 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
       return { messages: produced };
     }
 
+    let pending: PendingProposal | null = null;
     for (const call of calls) {
       const id = call.id ?? `${rid}-${call.name}`;
+      if (pending) {
+        // the turn pauses for the human's answer: nothing else runs in it
+        produced.push(new ToolMessage({ content: "Not run: waiting for the user to approve or deny the agent run.", tool_call_id: id, name: call.name }));
+        continue;
+      }
       // the plan is shown as the thinking line; the tool card shows only what was actually searched
       const { plan: _plan, ...shown } = (call.args ?? {}) as Record<string, unknown>;
       emit({ t: "tool", id, step, name: call.name, status: "running", args: shown });
@@ -215,7 +222,18 @@ export const heavyNode: GraphNode<typeof ChefGraphState> = async (state, config)
           agents: res.agents.agents,
         });
       }
+      if (res.proposal) {
+        // HITL: no ToolMessage yet; the hitl node writes it with the human's decision
+        const p = res.proposal;
+        pending = { proposalId: p.proposalId, toolCallId: id, agentNames: p.agents.map((a) => a.name), totalCredits: p.totalCredits, expiresAt: p.expiresAt };
+        emit({ t: "proposal", id, step, proposalId: p.proposalId, agentNames: pending.agentNames, totalCredits: p.totalCredits, enough: p.enough });
+        continue;
+      }
       produced.push(new ToolMessage({ content: res.text, tool_call_id: id, name: call.name }));
+    }
+    if (pending) {
+      console.log(`[chef:heavy] chat=${state.chatId} proposal=${pending.proposalId} waiting for approval ms=${Date.now() - started}`);
+      return { messages: produced, proposal: pending };
     }
   }
 

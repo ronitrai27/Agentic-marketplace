@@ -315,3 +315,9 @@
   from { stroke-dashoffset: 0; }
   to { stroke-dashoffset: -100; }
 }
+
+/* Chef chat run row: progress bar sweep while the agent has not reported a percent yet */
+@keyframes chef-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

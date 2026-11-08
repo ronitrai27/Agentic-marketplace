@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { FindAgentsArgs, findAgents, type FindAgentsResult } from "./find-agents";
 import { GetAgentDetailsArgs, getAgentDetails } from "./get-agent-details";
+import { ProposeRunArgs, proposeRun, type Proposal } from "./propose-run";
 
 /** Declared to the model. The node runs tools itself (so it can stream their progress), via `runTool`. */
 export const findAgentsTool = tool(async (args) => (await findAgents(args)).text, {
@@ -23,7 +24,18 @@ export const getAgentDetailsTool = tool(async (args) => (await getAgentDetails(a
   schema: GetAgentDetailsArgs,
 });
 
-export const CHEF_TOOLS = [findAgentsTool, getAgentDetailsTool];
+export const proposeRunTool = tool(async (args) => (await proposeRun(args)).text, {
+  name: "propose_run",
+  description:
+    "Ask the user to approve running 1 or 2 agents. It does NOT run anything: it shows an approval card with each agent's logo, " +
+    "the credits that will be held (highest tier for tiered pricing) and the wallet balance, then waits for the user to approve or deny. " +
+    "On approval the credits are held and the agent opens in the side sheet, where the user gives its input and it runs in the background. " +
+    "Call it when the user asks to run, use or start an agent they named or picked. Two agents run side by side, independently. " +
+    "Never call it for an agent the user has not chosen. Do not describe the card in text.",
+  schema: ProposeRunArgs,
+});
+
+export const CHEF_TOOLS = [findAgentsTool, getAgentDetailsTool, proposeRunTool];
 
 export type ToolRun = {
   ok: boolean;
@@ -31,6 +43,8 @@ export type ToolRun = {
   text: string;
   /** Present for find_agents, so the UI can render the picker. */
   agents?: FindAgentsResult;
+  /** Present for a successful propose_run: the graph pauses for the human's answer. */
+  proposal?: Proposal;
 };
 
 /** Run one tool call by name. Unknown tools and bad arguments come back as text, never as exceptions. */
@@ -43,8 +57,12 @@ export async function runTool(name: string, args: unknown): Promise<ToolRun> {
     const r = await getAgentDetails(args);
     return { ok: r.ok, text: r.text };
   }
+  if (name === "propose_run") {
+    const r = await proposeRun(args);
+    return { ok: r.ok, text: r.text, proposal: r.proposal };
+  }
   return {
     ok: false,
-    text: `There is no tool called "${name}". The tools are find_agents and get_agent_details.`,
+    text: `There is no tool called "${name}". The tools are find_agents, get_agent_details and propose_run.`,
   };
 }

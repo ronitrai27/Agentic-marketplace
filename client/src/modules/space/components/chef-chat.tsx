@@ -22,14 +22,19 @@ import {
 } from "@/components/ui/trace";
 import { ChefBlocks, ThinkingMatrix, type Block } from "./chef-blocks";
 import { ChefMarkdown } from "./chef-markdown";
+import { RunDoneActions, RunProposalCard, type HitlAnswer, type ProposalView } from "./chef-run-card";
 import { api } from "../../../../convex/_generated/api";
 
 export type ChatMsg = {
   id: string;
   role: "user" | "assistant";
-  kind: "text" | "refusal";
+  kind: "text" | "refusal" | "proposal" | "run_done";
   text: string;
   createdAt: number;
+  /** kind "proposal": the run approval card (HITL). */
+  proposal?: ProposalView;
+  /** kind "run_done": the run that finished. */
+  runId?: string;
   /** Milliseconds the chef took, saved with the reply. */
   durationMs?: number;
 };
@@ -67,6 +72,59 @@ export function useChefChat(chatId: string | null) {
     for (const m of saved ?? []) byId.set(m.id, m); // the saved copy wins
     return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
   }, [local, saved]);
+
+  // An open approval card blocks new questions until it is answered (or runs out)
+  const [now, setNow] = useState(() => Date.now());
+  const openProposal = messages.find((m) => m.proposal?.status === "pending" && m.proposal.expiresAt > now)?.proposal ?? null;
+  useEffect(() => {
+    if (!openProposal) return;
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, openProposal.expiresAt - Date.now()) + 50);
+    return () => clearTimeout(t);
+  }, [openProposal]);
+
+  /** The human's answer to an approval card: the route records it and resumes the chef. */
+  const answer = useCallback(
+    async (a: HitlAnswer): Promise<boolean> => {
+      if (!chatId) return false;
+      try {
+        const res = await fetch(`/api/chef/${chatId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resume: a }),
+        });
+        if (!res.ok || !res.body) {
+          const err = (await res.json().catch(() => null)) as { error?: string } | null;
+          toast.error(err?.error ?? "Couldn't send your answer. Please try again.");
+          return false;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let failed = false;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split(/\r?\n\r?\n/);
+          buf = frames.pop() ?? "";
+          for (const frame of frames) {
+            const event = /^event: (.*)$/m.exec(frame)?.[1];
+            const data = /^data: (.*)$/m.exec(frame)?.[1];
+            if (event === "message" && data) {
+              const msg = JSON.parse(data) as ChatMsg;
+              setLocal((l) => [...l.filter((m) => m.id !== msg.id), msg]);
+            }
+            if (event === "error") failed = true;
+          }
+        }
+        return !failed;
+      } catch {
+        toast.error("Connection lost. Please try again.");
+        return false;
+      }
+    },
+    [chatId],
+  );
 
   const send = useCallback(async function run(
     targetChatId: string,
@@ -128,6 +186,13 @@ export function useChefChat(chatId: string | null) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messageId: id, text }),
       });
+      if (res.status === 409) {
+        // an approval card is still open: the question is not taken
+        setLocal((l) => l.filter((m) => m.id !== id));
+        setTraces(({ [id]: _drop, ...rest }) => rest);
+        toast.warning("Confirm or deny the agent run first.", { description: "Your question was not sent." });
+        return;
+      }
       if (!res.ok || !res.body) {
         fail(
           res.status === 401
@@ -166,6 +231,14 @@ export function useChefChat(chatId: string | null) {
           if (event === "tool") {
             const p = payload as { id: string; step: number; name: string; status: "running" | "done" | "error"; args: unknown; output?: string };
             putBlock({ kind: "tool", id: p.id, step: p.step, name: p.name, args: p.args, status: p.status, output: p.output });
+          }
+          if (event === "proposal") {
+            const p = payload as { agentNames: string[]; totalCredits: number; enough: boolean };
+            toast.info(`Approval needed: run ${p.agentNames.join(" and ")}?`, {
+              description: p.enough
+                ? `${p.totalCredits} credits will be held. Confirm or deny in the chat.`
+                : `Needs ${p.totalCredits} credits, more than your wallet has.`,
+            });
           }
           if (event === "agents") {
             const p = payload as Omit<Extract<Block, { kind: "agents" }>, "kind">;
@@ -212,7 +285,7 @@ export function useChefChat(chatId: string | null) {
     }
   }, []);
 
-  return { messages, traces, blocks, busy, send };
+  return { messages, traces, blocks, busy, send, answer, openProposal };
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -361,12 +434,17 @@ function ReplyFooter({ m }: { m: ChatMsg }) {
 }
 
 export function ChefMessages({
+  chatId,
   messages,
   traces,
   blocks,
   busy,
   onSelectAgent,
+  onAnswer,
 }: {
+  chatId: string | null;
+  /** Approve or deny on a run approval card. */
+  onAnswer: (a: HitlAnswer) => Promise<boolean>;
   messages: ChatMsg[];
   traces: Record<string, Step[]>;
   blocks: Record<string, Block[]>;
@@ -411,6 +489,12 @@ export function ChefMessages({
               <ChefBlocks blocks={blocks[m.id]} onConfirm={onSelectAgent} />
             ) : null}
           </div>
+        ) : m.kind === "proposal" ? (
+          m.proposal && chatId ? (
+            <div key={m.id} className="w-full max-w-xl">
+              <RunProposalCard p={m.proposal} chatId={chatId} onAnswer={onAnswer} />
+            </div>
+          ) : null
         ) : (
           <Message key={m.id}>
             <MessageContent>
@@ -419,8 +503,9 @@ export function ChefMessages({
                   <ChefMarkdown>{m.text}</ChefMarkdown>
                 </BubbleContent>
               </Bubble>
+              {m.kind === "run_done" && m.runId && <RunDoneActions runId={m.runId} />}
               {/* shown the moment the reply is final (it carries its time), not when the connection closes */}
-              {!(busy && m.id === last?.id && m.durationMs === undefined) && (
+              {m.kind !== "run_done" && !(busy && m.id === last?.id && m.durationMs === undefined) && (
                 <ReplyFooter m={m} />
               )}
             </MessageContent>

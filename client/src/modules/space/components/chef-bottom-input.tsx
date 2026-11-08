@@ -8,8 +8,11 @@ import { ComposerLoader } from "@/components/application/composer-loader/compose
 /** The chat input that rises from the bottom once a first message is sent: sweeping border, plus, mic, send. */
 export function ChefBottomInput({
   onSubmit,
+  lockedReason,
 }: {
   onSubmit: (text: string) => void;
+  /** Set while the chef waits on the human (a run approval): typing is paused and this is shown instead. */
+  lockedReason?: string;
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLInputElement>(null);
@@ -19,7 +22,7 @@ export function ChefBottomInput({
 
   const send = () => {
     const t = text.trim();
-    if (!t) return;
+    if (!t || lockedReason) return;
     onSubmit(t);
     setText("");
   };
@@ -59,7 +62,8 @@ export function ChefBottomInput({
                 send();
               }
             }}
-            placeholder="Ask me anything"
+            disabled={!!lockedReason}
+            placeholder={lockedReason ?? "Ask me anything"}
             className="min-w-0 flex-1 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <button
@@ -73,7 +77,7 @@ export function ChefBottomInput({
             type="button"
             aria-label="Send"
             onClick={send}
-            disabled={!text.trim()}
+            disabled={!text.trim() || !!lockedReason}
             className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white transition-opacity hover:bg-amber-600 disabled:opacity-40"
           >
             <ArrowUp className="size-4" />

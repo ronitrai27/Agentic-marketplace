@@ -415,6 +415,8 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
           </Fade>
           {sent && (
             <ChefMessages
+              chatId={activeChatId}
+              onAnswer={chat.answer}
               messages={chat.messages}
               traces={chat.traces}
               blocks={chat.blocks}
@@ -424,7 +426,12 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
           )}
         </motion.div>
       </div>
-      {sent && <ChefBottomInput onSubmit={sendMessage} />}
+      {sent && (
+        <ChefBottomInput
+          onSubmit={sendMessage}
+          lockedReason={chat.openProposal ? "Confirm or deny the agent run above to continue" : undefined}
+        />
+      )}
     </div>
   );
 }

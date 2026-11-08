@@ -1,6 +1,10 @@
 import { after } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { HumanMessage } from "@langchain/core/messages";
+import { Command } from "@langchain/langgraph";
+import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { PendingProposal } from "@/chef/state";
 import { z } from "zod";
 import { getToken } from "@/lib/auth-server";
 import { getChefGraph } from "@/chef/graph";
@@ -10,10 +14,19 @@ import { chefRequest, createGuardGate } from "@/chef/tools/context";
 
 export const maxDuration = 300;
 
-const Body = z.object({
+const TextBody = z.object({
   messageId: z.string().uuid(),
   text: z.string().trim().min(1).max(4000),
 });
+/** The human's answer to a run approval card (HITL). Approved runs were already held by the browser. */
+const ResumeBody = z.object({
+  resume: z.object({
+    proposalId: z.string().uuid(),
+    decision: z.enum(["approved", "denied", "expired"]),
+    runIds: z.array(z.string().min(1).max(64)).max(2).default([]),
+  }),
+});
+const Body = z.union([TextBody, ResumeBody]);
 
 /** The user id from the session token. It only namespaces the thread; Convex still verifies the token on every write. */
 function subjectOf(jwt: string): string | null {
@@ -35,7 +48,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
   if (!z.string().uuid().safeParse(chatId).success || !parsed.success) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
-  const { messageId, text } = parsed.data;
+  const isResume = "resume" in parsed.data;
+  const messageId = "resume" in parsed.data ? crypto.randomUUID() : parsed.data.messageId;
+  const text = "resume" in parsed.data ? "" : parsed.data.text;
 
   // build/open the graph while the session token is being fetched: neither waits for the other
   const graphPromise = getChefGraph();
@@ -47,22 +62,97 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
 
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
   convex.setAuth(token);
-  const outbox = new ChatOutbox(convex, chatId, text.slice(0, 60));
+  const outbox = new ChatOutbox(convex, chatId, text.slice(0, 60) || "New chat");
+  const threadConfig = { configurable: { thread_id: `${userId}:${chatId}` } };
+
+  // HITL: a run approval this thread is paused on, if any
+  let graph: Awaited<ReturnType<typeof getChefGraph>>;
+  try {
+    graph = await graphPromise;
+  } catch (e) {
+    console.error("[chef] graph unavailable:", e);
+    return Response.json({ error: "Chef is unavailable" }, { status: 503 });
+  }
+  const snap = await graph.getState(threadConfig);
+  const pending =
+    (snap.values as { proposal?: PendingProposal | null })?.proposal &&
+    snap.tasks?.some((t) => (t.interrupts?.length ?? 0) > 0)
+      ? ((snap.values as { proposal: PendingProposal }).proposal)
+      : null;
+
+  /** The answer the graph resumes with, settled in Convex first (approval re-checked against its expiry). */
+  let resume: { proposalId: string; decision: "approved" | "denied" | "expired"; runIds: string[] } | null = null;
+  if ("resume" in parsed.data) {
+    const r = parsed.data.resume;
+    if (!pending || pending.proposalId !== r.proposalId) return Response.json({ error: "Nothing is waiting for approval" }, { status: 409 });
+    try {
+      const { status } = await convex.mutation(api.chatRuns.decide, {
+        proposalId: r.proposalId,
+        decision: r.decision,
+        runIds: r.runIds as Id<"runs">[],
+      });
+      resume = { proposalId: r.proposalId, decision: status, runIds: status === "approved" ? r.runIds : [] };
+      // approved too late: give the holds the browser just made straight back
+      if (r.decision === "approved" && status !== "approved") {
+        await Promise.all(r.runIds.map((id) => convex.mutation(api.runs.cancelAwaiting, { runId: id as Id<"runs"> }).catch(() => {})));
+      }
+    } catch (e) {
+      console.error("[chef] decide failed:", e);
+      return Response.json({ error: e instanceof Error ? e.message : "Could not record the decision" }, { status: 400 });
+    }
+  } else if (pending) {
+    // A new question while an approval is open: refused, unless the approval has already expired
+    if (Date.now() <= pending.expiresAt) {
+      return Response.json({ error: "Approve or deny the agent run first.", code: "PENDING_APPROVAL" }, { status: 409 });
+    }
+    await convex.mutation(api.chatRuns.decide, { proposalId: pending.proposalId, decision: "expired" }).catch(() => {});
+  }
+  const staleProposal = !isResume && pending ? pending : null;
 
   // 1. Save the user's message in the background. Nothing below waits for it.
-  outbox.push({ messageId, role: "user", kind: "text", text, createdAt: Date.now() });
+  if (!isResume) outbox.push({ messageId, role: "user", kind: "text", text, createdAt: Date.now() });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(sse(event, data)));
       // tools read the user's Convex client and what they typed from here, never from the model
-      chefRequest.enterWith({ convex, lastUserText: text, gate: createGuardGate() });
+      chefRequest.enterWith({ convex, chatId, lastUserText: text, gate: createGuardGate() });
+      /** The fixed reply the hitl node wrote, out to the browser and to Convex. */
+      const sendHitl = (update: { messages?: Array<{ type?: string; content?: unknown }> }) => {
+        const reply = update.messages?.filter((m) => m.type === "ai").at(-1)?.content;
+        if (typeof reply !== "string" || !reply) return;
+        const id = crypto.randomUUID();
+        const at = Date.now();
+        send("message", { id, role: "assistant", kind: "text", text: reply, createdAt: at });
+        outbox.push({ messageId: id, role: "assistant", kind: "text", text: reply, createdAt: at });
+      };
       try {
+        if (resume) {
+          // 2'. HITL answer: resume the paused graph; only the hitl node runs
+          const run = await graph.stream(new Command({ resume }), { ...threadConfig, streamMode: "updates", durability: "async" });
+          for await (const update of run) {
+            const u = update as Record<string, any>;
+            if (u.hitl) sendHitl(u.hitl);
+          }
+          send("done", {});
+          return;
+        }
+        if (staleProposal) {
+          // the open approval ran out: close it in the thread before this new question
+          const run = await graph.stream(
+            new Command({ resume: { proposalId: staleProposal.proposalId, decision: "expired", runIds: [] } }),
+            { ...threadConfig, streamMode: "updates", durability: "async" },
+          );
+          for await (const update of run) {
+            const u = update as Record<string, any>;
+            if (u.hitl) sendHitl(u.hitl);
+          }
+        }
+
         // 2. The guard starts at once; the browser sees "Checking query" before any network work is done.
         send("trace", { id: "check", label: "Checking query", status: "running" });
 
-        const graph = await graphPromise;
         const tGraph = ms();
         let tGuard = 0;
         let tFirstToken = 0;
@@ -76,7 +166,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
         const run = await graph.stream(
           { messages: [new HumanMessage({ content: text, id: messageId })], chatId, userId },
           // threads are namespaced by user, so a guessed chat id can never reach someone else's state
-          { configurable: { thread_id: `${userId}:${chatId}` }, streamMode: ["updates", "messages", "custom"], durability: "async" },
+          { ...threadConfig, streamMode: ["updates", "messages", "custom"], durability: "async" },
         );
 
         for await (const chunk of run) {

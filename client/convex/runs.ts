@@ -5,6 +5,7 @@ import { components, internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { escrowCredits, getCredits, setCredits } from "./escrow";
+import { announceRunEnd } from "./chatRuns";
 import { chargeMicrosFor, microsToCredits, runQuote, type PlanMicros } from "../src/lib/agent-display";
 
 const DEFAULT_TIMEOUT_S = 600;
@@ -276,8 +277,12 @@ export const admit = internalMutation({
 
 /** Step 3 of the confirm dialog: reserve the maximum cost from the wallet and open a run that awaits its input. */
 export const hold = mutation({
-  args: { slug: v.string() },
-  handler: async (ctx, { slug }) => {
+  args: {
+    slug: v.string(),
+    /** Set when the chef started this run (HITL approved): the run's end is announced in that chat. */
+    chatId: v.optional(v.string()),
+  },
+  handler: async (ctx, { slug, chatId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Please sign in to run an agent." });
     const userId = identity.subject;
@@ -298,15 +303,19 @@ export const hold = mutation({
       .order("desc")
       .take(20);
     const plan = await latestPlan(ctx, agent._id);
-    const tiered = plan?.shape === "tiered";
+    // Chef runs always hold up front, the highest tier for tiered plans; the charge settles to the real tier later
+    const tiered = plan?.shape === "tiered" && !chatId;
     const existing = open.find(
       (r) => r.agentId === agent._id && r.status === "awaiting_input" && (tiered || r.holdStatus === "held"),
     );
-    if (existing) return { runId: existing._id, holdCredits: existing.holdCredits ?? 0 };
+    if (existing) {
+      if (chatId && existing.chatId !== chatId) await ctx.db.patch(existing._id, { chatId });
+      return { runId: existing._id, holdCredits: existing.holdCredits ?? 0 };
+    }
 
     const quote = runQuote(plan);
     if (!quote.holdMicros) throw new ConvexError({ code: "NO_PRICE", message: "This agent has no price set." });
-    // Tiered: nothing is held yet (the option is not chosen), the wallet only has to cover the cheapest option
+    // Tiered (buyer flow): nothing is held yet (the option is not chosen), the wallet only has to cover the cheapest option
     const holdCredits = microsToCredits(
       tiered ? runQuote({ ...plan, tiers: [plan.tiers.reduce((a, b) => (b.priceMicros < a.priceMicros ? b : a))] }).holdMicros! : quote.holdMicros,
     );
@@ -332,6 +341,7 @@ export const hold = mutation({
       createdAt: Date.now(),
       callerName: identity.name || identity.email || undefined,
       callerAvatar: identity.pictureUrl || undefined,
+      ...(chatId ? { chatId: chatId.slice(0, 64) } : {}),
     });
     await ctx.scheduler.runAfter(HOLD_TTL_MS, internal.runs.expireAwaiting, { runId });
     return { runId, holdCredits: tiered ? 0 : holdCredits };
@@ -348,6 +358,7 @@ export const cancelAwaiting = mutation({
     if (run.status !== "awaiting_input") return { ok: false as const };
     await releaseHold(ctx, run);
     await ctx.db.patch(runId, { status: "cancelled", finishedAt: Date.now() });
+    await announceRunEnd(ctx, run, "cancelled");
     return { ok: true as const };
   },
 });
@@ -363,6 +374,7 @@ export const expireAwaiting = internalMutation({
       finishedAt: Date.now(),
       error: { code: "HOLD_EXPIRED", message: "No input was sent in time, so the hold was released." },
     });
+    await announceRunEnd(ctx, run, "cancelled", { error: "no input was sent in time" });
   },
 });
 
@@ -479,6 +491,7 @@ export const setStatus = internalMutation({
       ...(args.error ? { error: args.error } : {}),
       ...(args.status === "running" ? { startedAt: now } : { finishedAt: now }),
     });
+    if (args.status !== "running") await announceRunEnd(ctx, run, args.status, { error: args.error?.message });
     return { ok: true as const };
   },
 });
@@ -511,6 +524,7 @@ export const reapStale = internalMutation({
           finishedAt: now,
           error: { code: "TIMEOUT", message: `Run exceeded the agent's ${Math.round(run.timeoutSeconds / 60)} min limit and was stopped.` },
         });
+        await announceRunEnd(ctx, run, "failed", { error: "it ran past its time limit and was stopped" });
         reaped++;
       }
     }
@@ -558,6 +572,7 @@ export const complete = internalMutation({
           ? JSON.stringify({ truncated: true, preview: outputJson.slice(0, MAX_OUTPUT_CHARS) })
           : outputJson,
     });
+    await announceRunEnd(ctx, run, "succeeded", { charged });
     return { ok: true as const, charged };
   },
 });

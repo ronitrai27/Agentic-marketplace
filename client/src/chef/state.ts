@@ -119,6 +119,25 @@ export function initialChefState(chatId: string, userId: string): ChefState {
   };
 }
 
+/** What the graph keeps about a run approval while it waits (the card itself lives in Convex chat_runs). */
+export const PendingProposal = z.object({
+  proposalId: z.string(),
+  /** The propose_run call this answers: its ToolMessage is written once the human decides. */
+  toolCallId: z.string(),
+  agentNames: z.array(z.string()),
+  totalCredits: z.number(),
+  expiresAt: z.number(),
+});
+export type PendingProposal = z.infer<typeof PendingProposal>;
+
+/** The human's answer, passed back in with Command({ resume }). */
+export const HitlDecision = z.object({
+  proposalId: z.string(),
+  decision: z.enum(["approved", "denied", "expired"]),
+  runIds: z.array(z.string()).default(() => []),
+});
+export type HitlDecision = z.infer<typeof HitlDecision>;
+
 // ─── LangGraph state (what the compiled graph reads and writes, checkpointed per thread) ───
 
 import { StateSchema, MessagesValue, ReducedValue } from "@langchain/langgraph";
@@ -138,6 +157,8 @@ export const ChefGraphState = new StateSchema({
     reducer: (current, update) => ({ ...current, ...update }),
   }),
   spentCredits: new ReducedValue(z.number().default(0), { reducer: (a, b) => a + b }),
+  /** A run approval waiting on the human (HITL). Set by the heavy node, cleared by the hitl node once answered. */
+  proposal: PendingProposal.nullable().default(null),
   /** Set by the guard on every turn: true means the turn is refused and no further step runs. */
   blocked: z.boolean().default(false),
   /** Which GPT answers this turn (chosen by the guard). */

@@ -5,6 +5,7 @@ import { ChefGraphState } from "./state";
 import { finalizeNode, guardNode } from "./guard/node";
 import { instantNode } from "./instant/node";
 import { heavyNode } from "./heavy/node";
+import { hitlNode } from "./hitl/node";
 
 /**
  * Checkpointer + compiled graph, built once per server process. `setup()` creates the checkpoint tables
@@ -18,12 +19,15 @@ export function buildChefGraph(checkpointer: BaseCheckpointSaver) {
     .addNode("instant", instantNode)
     .addNode("finalize", finalizeNode)
     .addNode("heavy", heavyNode)
+    .addNode("hitl", hitlNode)
     .addEdge(START, "guard")
     .addEdge(START, "instant")
     .addEdge(["guard", "instant"], "finalize")
     // refused or chit-chat turns end here; tasks go on to the tool-using model
     .addConditionalEdges("finalize", (s) => (s.blocked || s.modelKind === "instant" ? END : "heavy"), ["heavy", END])
-    .addEdge("heavy", END)
+    // a run proposal pauses in hitl (interrupt) until the human approves or denies
+    .addConditionalEdges("heavy", (s) => (s.proposal ? "hitl" : END), ["hitl", END])
+    .addEdge("hitl", END)
     .compile({ checkpointer });
 }
 
