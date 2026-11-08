@@ -9,7 +9,7 @@ export const GetRunResultsArgs = z.object({
     .string()
     .max(64)
     .optional()
-    .describe("The run id from the run note or list_my_runs. Leave out to read the newest finished run of this chat."),
+    .describe("Only when you know a run id (from the run note). Otherwise OMIT this field entirely (never pass an empty string): it reads the user's newest finished run."),
 });
 
 export type GetRunResultsResult = { ok: boolean; text: string };
@@ -25,7 +25,7 @@ export async function getRunResults(rawArgs: unknown): Promise<GetRunResultsResu
   if (!parsed.success) return { ok: false, text: "The get_run_results call was invalid. Call it again with a run id, or none for the newest finished run." };
 
   try {
-    const r = await req.convex.query(api.chatRuns.runResult, { chatId: req.chatId, runId: parsed.data.runId });
+    const r = await req.convex.query(api.chatRuns.runResult, { chatId: req.chatId, runId: parsed.data.runId?.trim() || undefined });
     if (!r) return { ok: false, text: "No such finished run was found for this user. Say so plainly; do not guess." };
 
     const secs = r.durationMs !== null ? `${(r.durationMs / 1000).toFixed(1)}s` : "unknown";

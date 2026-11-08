@@ -49,7 +49,7 @@ export async function listMyRuns(rawArgs: unknown): Promise<ListMyRunsResult> {
       text:
         `A table of the user's ${runs.length} newest ${parsed.data.status ?? ""} run${runs.length === 1 ? "" : "s"} is now shown to them, ` +
         `with a button to open each output. Do NOT repeat the table. Reply with one short sentence at most. ` +
-        `Runs: ${runs.map((r) => `${r.agentName} (${r.status})`).join(", ")}.`,
+        `Runs (newest first; use a run id with get_run_results to read one): ${runs.map((r) => `${r.agentName} [${r.status}] id ${r.id}`).join("; ")}.`,
     };
   } catch (e) {
     console.error("[chef:list_my_runs] failed:", e instanceof Error ? e.message : e);

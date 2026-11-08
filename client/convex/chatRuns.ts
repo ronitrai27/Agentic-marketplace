@@ -227,8 +227,8 @@ export const runResult = query({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
     let run: Doc<"runs"> | null = null;
-    if (runId) {
-      const id = ctx.db.normalizeId("runs", runId);
+    if (runId?.trim()) {
+      const id = ctx.db.normalizeId("runs", runId.trim());
       run = id ? await ctx.db.get(id) : null;
     } else {
       const rows = await ctx.db
@@ -236,7 +236,9 @@ export const runResult = query({
         .withIndex("by_user_created", (q) => q.eq("userId", identity.subject))
         .order("desc")
         .take(40);
-      run = rows.find((r) => r.chatId === chatId && ["succeeded", "failed", "cancelled"].includes(r.status)) ?? null;
+      // newest finished run of this chat, else the user's newest finished run anywhere (runs started elsewhere count too)
+      const done = rows.filter((r) => ["succeeded", "failed", "cancelled"].includes(r.status));
+      run = done.find((r) => r.chatId === chatId) ?? done[0] ?? null;
     }
     if (!run || run.userId !== identity.subject) return null;
     const agent = await ctx.db.get(run.agentId);

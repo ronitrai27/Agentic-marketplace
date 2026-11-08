@@ -51,7 +51,7 @@ export const getRunResultsTool = tool(async (args) => (await getRunResults(args)
   description:
     "Read one finished run: status, time taken, credits, the input given and its output (truncated to the first 3000 characters). " +
     "Call it when the user asks what a run produced, to summarize or explain its output, or how it went in detail. " +
-    "Take the run id from the run note or list_my_runs; with no id it reads the newest finished run of this chat.",
+    "With no run id it reads the user's newest finished run (so for \"my latest run\" just omit runId); pass a run id only when the run note gives one.",
   schema: GetRunResultsArgs,
 });
 
