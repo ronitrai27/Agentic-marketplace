@@ -186,6 +186,23 @@ export function useChefChat(chatId: string | null) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messageId: id, text }),
       });
+      if (res.status === 401 || res.status === 429) {
+        // not signed in / too many questions: the question is not taken, so it leaves the chat again
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+        setLocal((l) => l.filter((m) => m.id !== id));
+        setTraces(({ [id]: _drop, ...rest }) => rest);
+        if (res.status === 401) {
+          toast.error("You need to log in first.", {
+            description: "Sign in to chat with the chef.",
+            action: { label: "Log in", onClick: () => window.location.assign("/auth") },
+          });
+        } else {
+          toast.warning(body?.error ?? "You're sending messages too fast. Please wait a moment.", {
+            description: "Limit: 5 messages per minute.",
+          });
+        }
+        return;
+      }
       if (res.status === 409) {
         // an approval card is still open: the question is not taken
         setLocal((l) => l.filter((m) => m.id !== id));

@@ -38,7 +38,7 @@ import { CardDitherBackground } from "@/components/ui/card-dither-background";
 
 const NAV_LINKS = [
   { label: "Home", href: "/space", icon: Home },
-  { label: "Marketplace", href: "/marketplace", icon: Store },
+  { label: "Marketplace", href: "/space/marketplace", icon: Store },
   { label: "Recent Runs", href: "/space/runs", icon: History },
   { label: "Transactions", href: "/space/transactions", icon: Receipt },
   { label: "Wallet", href: "/space/wallet", icon: Wallet },

@@ -111,7 +111,6 @@ async function init() {
   else writeFileSync(target, "");
 
   console.log(`✔ Added ${target} (${guide.label})`);
-  if (lang === "py") console.log("  The Python SDK is not released yet, so this file is an empty placeholder.");
 }
 
 async function main() {

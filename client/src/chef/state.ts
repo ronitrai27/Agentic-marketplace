@@ -133,8 +133,10 @@ export type PendingProposal = z.infer<typeof PendingProposal>;
 /** The human's answer, passed back in with Command({ resume }). */
 export const HitlDecision = z.object({
   proposalId: z.string(),
-  decision: z.enum(["approved", "denied", "expired"]),
+  /** "failed": the user pressed Confirm but starting was refused (wallet, agent server...); `reason` says exactly why. */
+  decision: z.enum(["approved", "denied", "expired", "failed"]),
   runIds: z.array(z.string()).default(() => []),
+  reason: z.string().max(300).optional(),
 });
 export type HitlDecision = z.infer<typeof HitlDecision>;
 

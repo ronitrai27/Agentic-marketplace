@@ -6,7 +6,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { PendingProposal } from "@/chef/state";
 import { z } from "zod";
-import { getToken } from "@/lib/auth-server";
+import { chefAuth, chefRateLimit } from "@/chef/gate";
 import { getChefGraph } from "@/chef/graph";
 import { REFUSAL_TEXT } from "@/chef/guard/node";
 import { ChatOutbox } from "@/chef/outbox";
@@ -22,21 +22,12 @@ const TextBody = z.object({
 const ResumeBody = z.object({
   resume: z.object({
     proposalId: z.string().uuid(),
-    decision: z.enum(["approved", "denied", "expired"]),
+    decision: z.enum(["approved", "denied", "expired", "failed"]),
     runIds: z.array(z.string().min(1).max(64)).max(2).default([]),
+    reason: z.string().trim().max(300).optional(),
   }),
 });
 const Body = z.union([TextBody, ResumeBody]);
-
-/** The user id from the session token. It only namespaces the thread; Convex still verifies the token on every write. */
-function subjectOf(jwt: string): string | null {
-  try {
-    const payload = JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8"));
-    return typeof payload.sub === "string" ? payload.sub : null;
-  } catch {
-    return null;
-  }
-}
 
 const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
@@ -55,10 +46,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
   // build/open the graph while the session token is being fetched: neither waits for the other
   const graphPromise = getChefGraph();
   graphPromise.catch(() => {}); // a failure is reported inside the stream below
-  const token = await getToken();
+  const gate = await chefAuth();
   const tAuth = ms();
-  const userId = token ? subjectOf(token) : null;
-  if (!token || !userId) return Response.json({ error: "Sign in first" }, { status: 401 });
+  if (!gate.ok) return gate.response;
+  const { token, userId } = gate;
+  // 5 new questions per minute per user; answering an approval card is not a question
+  if (!isResume) {
+    const limited = await chefRateLimit(userId);
+    if (limited) return limited;
+  }
 
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
   convex.setAuth(token);
@@ -81,17 +77,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
       : null;
 
   /** The answer the graph resumes with, settled in Convex first (approval re-checked against its expiry). */
-  let resume: { proposalId: string; decision: "approved" | "denied" | "expired"; runIds: string[] } | null = null;
+  let resume: { proposalId: string; decision: "approved" | "denied" | "expired" | "failed"; runIds: string[]; reason?: string } | null = null;
   if ("resume" in parsed.data) {
     const r = parsed.data.resume;
     if (!pending || pending.proposalId !== r.proposalId) return Response.json({ error: "Nothing is waiting for approval" }, { status: 409 });
     try {
       const { status } = await convex.mutation(api.chatRuns.decide, {
         proposalId: r.proposalId,
-        decision: r.decision,
+        // Convex has no "failed" state: a failed start closes the card as denied, nothing held
+        decision: r.decision === "failed" ? "denied" : r.decision,
         runIds: r.runIds as Id<"runs">[],
       });
-      resume = { proposalId: r.proposalId, decision: status, runIds: status === "approved" ? r.runIds : [] };
+      resume = {
+        proposalId: r.proposalId,
+        decision: r.decision === "failed" && status === "denied" ? "failed" : status,
+        runIds: status === "approved" ? r.runIds : [],
+        ...(r.decision === "failed" && status === "denied" ? { reason: r.reason ?? "the run could not be started" } : {}),
+      };
       // approved too late: give the holds the browser just made straight back
       if (r.decision === "approved" && status !== "approved") {
         await Promise.all(r.runIds.map((id) => convex.mutation(api.runs.cancelAwaiting, { runId: id as Id<"runs"> }).catch(() => {})));

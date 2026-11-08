@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 import { RecipeCards } from "./recipe-cards";
 import { TryAgents } from "./try-agents";
 import {
@@ -152,6 +153,7 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
   );
   const chat = useChefChat(activeChatId);
   const router = useRouter();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
 
   /** Back to the start screen. The chat stays in History. */
   const clearChat = () => {
@@ -162,6 +164,20 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
 
   /** First message creates the chat id and puts it in the URL; every message then goes to the chef route. */
   const sendMessage = (text: string) => {
+    // Guests (and a missing session) can look around but not chat: say so before anything is sent
+    let guest = false;
+    try {
+      guest = localStorage.getItem("catelxg_guest_mode") === "true";
+    } catch {
+      /* storage unavailable: the server still checks */
+    }
+    if (guest || (!sessionPending && !session)) {
+      toast.error("You need to log in first.", {
+        description: "Sign in to chat with the chef.",
+        action: { label: "Log in", onClick: () => router.push("/auth") },
+      });
+      return;
+    }
     let id = activeChatId;
     if (!id) {
       id = crypto.randomUUID();

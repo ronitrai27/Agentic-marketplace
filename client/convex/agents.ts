@@ -2,6 +2,7 @@ import { mutation, query, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { validateTags } from "../src/lib/agent-tags";
+import { priceSummary, type PlanMicros } from "../src/lib/agent-display";
 import { cleanCapabilities } from "../src/lib/agent-capabilities";
 import { validateDescription } from "../src/lib/agent-description";
 import {
@@ -324,6 +325,58 @@ export const archive = mutation({
 
     await ctx.db.patch(agentId, { status: "archived", updatedAt: Date.now() });
     return { agentId };
+  },
+});
+
+/**
+ * Every active agent as one lean row for the marketplace table: price, rating and run stats included.
+ * Never returns the creator's private price floor. Sorting, search and paging happen in the browser.
+ */
+export const listMarketplace = query({
+  args: {},
+  handler: async (ctx) => {
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .take(1000);
+    return await Promise.all(
+      agents.map(async (a) => {
+        const price = await ctx.db
+          .query("agent_pricing")
+          .withIndex("by_agent_created", (q) => q.eq("agentId", a._id))
+          .order("desc")
+          .first();
+        const stats = await ctx.db
+          .query("agent_stats")
+          .withIndex("by_agent", (q) => q.eq("agentId", a._id))
+          .first();
+        const plan = (price?.plan as PlanMicros | undefined) ?? null;
+        const fromMicros = !plan
+          ? null
+          : plan.shape === "per_run"
+            ? plan.priceMicros
+            : plan.shape === "per_unit"
+              ? plan.pricePerUnitMicros
+              : Math.min(...plan.tiers.map((t) => t.priceMicros));
+        return {
+          id: a._id as string,
+          slug: a.slug,
+          name: a.name,
+          description: a.description,
+          logoUrl: a.logoUrl ?? null,
+          tags: a.tags,
+          models: a.models,
+          ratingAvg: a.ratingAvg ?? 0,
+          ratingCount: a.ratingCount ?? 0,
+          priceLabel: priceSummary(plan),
+          priceMicros: fromMicros,
+          totalRuns: stats?.totalRuns ?? 0,
+          successRate: stats && stats.totalRuns > 0 ? Math.round((stats.successRuns / stats.totalRuns) * 100) : null,
+          avgLatencyMs: stats && stats.totalRuns > 0 ? Math.round(stats.totalLatencyMs / stats.totalRuns) : null,
+          createdAt: a.createdAt,
+        };
+      }),
+    );
   },
 });
 

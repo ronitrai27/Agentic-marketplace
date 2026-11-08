@@ -36,7 +36,13 @@ export type ProposalView = {
   expiresAt: number;
 };
 
-export type HitlAnswer = { proposalId: string; decision: "approved" | "denied" | "expired"; runIds: string[] };
+export type HitlAnswer = {
+  proposalId: string;
+  decision: "approved" | "denied" | "expired" | "failed";
+  runIds: string[];
+  /** decision "failed": the exact reason the run could not start, told to the user by the chef. */
+  reason?: string;
+};
 
 const credits = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, "")} credits`;
 const clock = (ms: number) => {
@@ -120,7 +126,12 @@ export function RunProposalCard({
         description: "Fill in the input below and press Run.",
       });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong.", { id: t });
+      const reason = e instanceof Error ? e.message : "Something went wrong.";
+      toast.error(reason, { id: t });
+      // Close the card instead of leaving it stuck: the chef is told the exact reason, says it, and offers other agents.
+      // (Holds were already given back above; nothing is charged.)
+      setBusy("Telling the chef");
+      await onAnswer({ proposalId: p.proposalId, decision: "failed", runIds: [], reason: reason.slice(0, 280) });
     } finally {
       setBusy(null);
     }

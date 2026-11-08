@@ -12,6 +12,12 @@ export function hitlReply(d: HitlDecision, names: string[], credits: number): st
       "I'll post here as soon as the output is ready."
     );
   }
+  if (d.decision === "failed") {
+    return (
+      `I couldn't start ${who}: ${d.reason ?? "something went wrong"}. Nothing was held or charged. ` +
+      "If you want, I can look for other agents that can do this task."
+    );
+  }
   if (d.decision === "expired") return `That approval for ${who} expired after 10 minutes, so nothing was held. Ask me again whenever you want to run it.`;
   return `Okay, I won't run ${who}. Nothing was held or charged.`;
 }
@@ -33,8 +39,10 @@ export const hitlNode: GraphNode<typeof ChefGraphState> = async (state) => {
     d.decision === "approved"
       ? `The user APPROVED. Credits held; run ids ${d.runIds.join(", ")}. The user fills the agent's input in the chat card; pressing Run sends it to the marketplace, which runs it in the background. ` +
         "The chat is told automatically when it finishes; do not claim results you have not seen."
-      : d.decision === "expired"
-        ? "The approval expired unanswered. Nothing was held."
+      : d.decision === "failed"
+        ? `The user confirmed but the run could not start. Reason: ${d.reason ?? "unknown"}. Nothing was held or charged. The user was already told and offered other agents; if they say yes, call find_agents (mode "task") for the same task.`
+        : d.decision === "expired"
+          ? "The approval expired unanswered. Nothing was held."
         : "The user DENIED the run. Nothing was held. Do not propose it again unless they ask.";
   return {
     messages: [

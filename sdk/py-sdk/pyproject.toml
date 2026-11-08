@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "catelog"
+version = "1.2.1"
+description = "Official Python SDK for Marketplace Agent Protocol Specification (MAPS)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+  { name = "ROX" }
+]
+keywords = [
+  "ai",
+  "agent",
+  "marketplace",
+  "maps",
+  "protocol",
+  "langgraph",
+  "openai",
+  "claude",
+  "sdk"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.optional-dependencies]
+pydantic = ["pydantic>=2.0.0"]
+dev = ["pydantic>=2.0.0", "pytest>=8.0.0"]
+
+[project.scripts]
+catelog = "catelog.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+catelog = ["py.typed", "Catelog-PY.md", "Catelog-TS.md"]
+

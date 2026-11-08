@@ -18,7 +18,7 @@ function getModel() {
     model: chefModelId("instant"),
     apiKey: process.env.OPENAI_API_KEY ?? process.env.OPENAPI_KEY,
     streaming: true,
-    maxCompletionTokens: 300,
+    maxCompletionTokens: 700, // room for a structured answer (lists, a short table) without being cut off
     modelKwargs: { reasoning_effort: "low" },
   });
   return model;
