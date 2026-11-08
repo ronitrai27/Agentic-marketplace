@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { Check, Search, X } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Check, RefreshCw, Search, Sparkles, X } from "lucide-react";
+import { MIN_DESCRIPTION_WORDS, wordCount } from "@/lib/agent-description";
 import { Input } from "@/components/ui/input";
 import { RainbowButton } from "@/components/ui/rainbow-button";
 import { AgentPromptDialog } from "./agent-prompt-dialog";
@@ -15,18 +16,92 @@ import {
   type TagGroup,
 } from "@/lib/agent-tags";
 
+type Suggest =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ready"; tags: string[] }
+  | { state: "error"; message: string };
+
+/** Waits this long after the creator stops typing before asking for suggestions. */
+const SUGGEST_DEBOUNCE_MS = 1200;
+
+/** Tag ids suggested from the description by the server (Groq). Refetches when the description settles on new text. */
+function useTagSuggestions(description: string) {
+  const [s, setS] = useState<Suggest>({ state: "idle" });
+  const [nonce, setNonce] = useState(0);
+  const text = description.trim();
+  const enough = wordCount(text) >= MIN_DESCRIPTION_WORDS;
+  const lastKey = useRef("");
+  /** Set by "Suggest again": skip the typing debounce. */
+  const now = useRef(false);
+
+  useEffect(() => {
+    if (!enough) {
+      lastKey.current = "";
+      setS({ state: "idle" });
+      return;
+    }
+    const key = `${text}#${nonce}`;
+    if (key === lastKey.current) return;
+    const ctrl = new AbortController();
+    const timer = setTimeout(
+      async () => {
+        lastKey.current = key;
+        setS({ state: "loading" });
+        try {
+          const res = await fetch("/api/agents/suggest-tags", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description: text }),
+            signal: ctrl.signal,
+          });
+          const data = (await res.json().catch(() => ({}))) as { tags?: string[]; error?: string };
+          if (!res.ok) throw new Error(data.error ?? "Could not suggest tags right now.");
+          setS({ state: "ready", tags: (data.tags ?? []).filter((id) => tagById(id)) });
+        } catch (e) {
+          if (ctrl.signal.aborted) return;
+          lastKey.current = ""; // let the next edit (or Retry) try again
+          setS({ state: "error", message: e instanceof Error ? e.message : "Could not suggest tags right now." });
+        }
+      },
+      now.current ? 0 : SUGGEST_DEBOUNCE_MS,
+    );
+    now.current = false;
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [text, enough, nonce]);
+
+  return {
+    s,
+    enough,
+    retry: () => {
+      now.current = true;
+      setNonce((n) => n + 1);
+    },
+  };
+}
+
 export function TagsStep({
   selected,
   onChange,
   onRegisterAi,
+  description = "",
 }: {
   selected: string[];
   onChange: (ids: string[]) => void;
   onRegisterAi?: () => void;
+  /** The agent's description: tags are suggested from it. */
+  description?: string;
 }) {
   const [query, setQuery] = useState("");
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const full = selected.length >= MAX_TAGS;
+  const { s: suggest, enough, retry } = useTagSuggestions(description);
+  const suggested = suggest.state === "ready" ? suggest.tags : [];
+  const unpicked = suggested.filter((id) => !selected.includes(id));
+  const addAll = () => onChange([...selected, ...unpicked].slice(0, MAX_TAGS));
 
   const matches = useMemo(() => searchTags(query), [query]);
   const searching = query.trim().length > 0;
@@ -67,13 +142,12 @@ export function TagsStep({
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-base font-semibold text-foreground">
-            Describe your agent
-          </h3>
+          <h3 className="text-base font-semibold text-foreground">Tags</h3>
           <p className="text-sm text-muted-foreground mt-1.5">
-            Pick {MIN_TAGS} to {MAX_TAGS} tags so buyers can find it. Search by
-            what it does, for example &quot;plagiarism&quot;, &quot;cold
-            email&quot; or &quot;invoice&quot;.
+            Pick {MIN_TAGS} to {MAX_TAGS} tags so buyers can find it. Use the
+            suggestions from your description, or search by what it does, for
+            example &quot;plagiarism&quot;, &quot;cold email&quot; or
+            &quot;invoice&quot;.
           </p>
         </div>
 
@@ -92,6 +166,59 @@ export function TagsStep({
         </div>
       </div>
 
+      <div className="rounded-lg border border-dashed border-border p-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <p className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+            <Sparkles className="size-3.5" />
+            Suggested from your description
+          </p>
+          <div className="flex items-center gap-3">
+            {unpicked.length > 0 && !full && (
+              <button
+                type="button"
+                onClick={addAll}
+                className="text-[11px] font-medium text-foreground underline-offset-2 hover:underline cursor-pointer"
+              >
+                Use these
+              </button>
+            )}
+            {(suggest.state === "ready" || suggest.state === "error") && (
+              <button
+                type="button"
+                onClick={retry}
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                aria-label="Suggest tags again"
+              >
+                <RefreshCw className="size-3" />
+                {suggest.state === "error" ? "Retry" : "Suggest again"}
+              </button>
+            )}
+          </div>
+        </div>
+        {!enough ? (
+          <p className="text-xs text-muted-foreground">
+            Write at least {MIN_DESCRIPTION_WORDS} words in the description
+            above and we&apos;ll suggest {MAX_TAGS} tags that match it.
+          </p>
+        ) : suggest.state === "loading" || suggest.state === "idle" ? (
+          <div className="flex flex-wrap gap-2" aria-busy="true" aria-label="Suggesting tags">
+            {Array.from({ length: MAX_TAGS }, (_, i) => (
+              <span key={i} className="h-6 w-20 animate-pulse rounded-full bg-muted" />
+            ))}
+          </div>
+        ) : suggest.state === "error" ? (
+          <p className="text-xs text-destructive">{suggest.message}</p>
+        ) : suggested.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No tag fits this description well. Pick tags below.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {suggested.map((id) => chip(id, tagById(id)?.label ?? id))}
+          </div>
+        )}
+      </div>
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
         <Input
@@ -99,7 +226,6 @@ export function TagsStep({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search tags…"
           className="pl-9"
-          autoFocus
         />
         {query && (
           <button

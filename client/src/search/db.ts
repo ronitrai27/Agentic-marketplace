@@ -57,6 +57,16 @@ export function ensureSearchSchema(): Promise<void> {
       await db.query(`alter table agent_search add column fts tsvector generated always as (${FTS_EXPR}) stored`);
       await db.query("update agent_search set content_hash = ''"); // the next reconcile re-embeds with capabilities
     }
+    // The chef's task search embeds description + capabilities + tag labels (no name) in its own column, so the
+    // search bar's `embedding` stays exactly as it is. A table without it re-embeds every agent on the next reconcile.
+    const hasTask = await db.query(
+      "select 1 from information_schema.columns where table_name = 'agent_search' and column_name = 'task_embedding'",
+    );
+    if (hasTask.rowCount === 0) {
+      await db.query(`alter table agent_search add column if not exists task_embedding vector(${EMBED_DIMS})`);
+      await db.query("update agent_search set content_hash = ''");
+    }
+    await db.query("create index if not exists agent_search_task_vec on agent_search using hnsw (task_embedding vector_cosine_ops)");
     await db.query("create index if not exists agent_search_fts on agent_search using gin (fts)");
     await db.query("create index if not exists agent_search_name_trgm on agent_search using gin (name_norm gin_trgm_ops)");
     await db.query("create index if not exists agent_search_tags on agent_search using gin (tags)");

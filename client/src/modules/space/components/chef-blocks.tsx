@@ -124,6 +124,14 @@ const TOOL_LABELS: Record<
         : `Searched agents for “${String(a.query ?? "").slice(0, 40)}”`,
     failed: "Failed to search agents",
   },
+  get_agent_details: {
+    running: "Reading agent details…",
+    done: (a) => {
+      const names = Array.isArray(a.names) ? a.names.map(String) : [];
+      return names.length ? `Read details of ${names.map((n) => `“${n.slice(0, 30)}”`).join(", ")}` : "Read agent details";
+    },
+    failed: "Failed to read agent details",
+  },
 };
 
 /** One tool run: a Trace line that opens to the input and the result in code blocks. */

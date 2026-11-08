@@ -61,6 +61,87 @@ export const enrich = query({
 });
 
 /**
+ * Full details of 1-3 agents for the chef's get_agent_details tool: what it does, its input/output schema, run stats,
+ * rating breakdown and the newest reviews. Public marketplace facts only: no owner id, no reviewer ids, and the
+ * creator's private price floor is never read.
+ */
+export const details = query({
+  args: { ids: v.array(v.string()) },
+  handler: async (ctx, { ids }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Sign in first." });
+
+    const out = [];
+    for (const raw of ids.slice(0, 3)) {
+      const id = ctx.db.normalizeId("agents", raw);
+      if (!id) continue;
+      const a = await ctx.db.get(id);
+      if (!a || a.status === "archived" || a.status === "suspended") continue;
+
+      const stats = await ctx.db
+        .query("agent_stats")
+        .withIndex("by_agent", (q) => q.eq("agentId", id))
+        .first();
+      const price = await ctx.db
+        .query("agent_pricing")
+        .withIndex("by_agent_created", (q) => q.eq("agentId", id))
+        .order("desc")
+        .first();
+      const reviews = await ctx.db
+        .query("agent_reviews")
+        .withIndex("by_agent_created", (q) => q.eq("agentId", id))
+        .order("desc")
+        .take(500);
+
+      const stars = [0, 0, 0, 0, 0];
+      for (const r of reviews) stars[Math.min(5, Math.max(1, Math.round(r.rating))) - 1]++;
+
+      let pricing: string | null = null;
+      if (price) {
+        const p = price.plan;
+        const usd = (m: number) => `$${(m / 1_000_000).toFixed(2)}`;
+        if (p.shape === "per_run") pricing = `${usd(p.priceMicros)} per run`;
+        else if (p.shape === "per_unit")
+          pricing = `${usd(p.pricePerUnitMicros)} per ${p.unitLabel} (min ${usd(p.minChargeMicros)} per run)`;
+        else pricing = `by ${p.fieldKey}: ${p.tiers.map((t) => `${t.value} ${usd(t.priceMicros)}`).join(", ")}`;
+      }
+
+      out.push({
+        id: a._id as string,
+        slug: a.slug,
+        name: a.name,
+        status: a.status,
+        description: a.description,
+        capabilities: a.keyCapabilities ?? [],
+        tags: a.tags,
+        models: a.models,
+        inputSchemaJson: a.inputSchemaJson,
+        outputSchemaJson: a.outputSchemaJson,
+        maxTimeoutSeconds: a.capabilities?.max_timeout_seconds ?? null,
+        streaming: a.capabilities?.streaming ?? false,
+        ratingAvg: a.ratingAvg ?? 0,
+        ratingCount: a.ratingCount ?? 0,
+        stars, // index 0 = 1 star ... index 4 = 5 stars
+        recentReviews: reviews.slice(0, 3).map((r) => ({
+          rating: r.rating,
+          comment: r.comment.length > 240 ? `${r.comment.slice(0, 237)}…` : r.comment,
+          likes: r.likes ?? 0,
+          createdAt: r.createdAt,
+        })),
+        totalRuns: stats?.totalRuns ?? 0,
+        successRuns: stats?.successRuns ?? 0,
+        failedRuns: stats?.failedRuns ?? 0,
+        avgLatencyMs: stats && stats.totalRuns > 0 ? Math.round(stats.totalLatencyMs / stats.totalRuns) : null,
+        lastRunAt: stats?.lastRunAt ?? null,
+        pricing,
+        createdAt: a.createdAt,
+      });
+    }
+    return out;
+  },
+});
+
+/**
  * What the search index is built from: the searchable text of every agent that can appear in search (archived and
  * suspended ones are left out, which is how they leave the index). Public marketplace fields only, like listFeatured.
  */

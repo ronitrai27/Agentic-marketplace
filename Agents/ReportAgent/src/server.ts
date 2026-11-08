@@ -12,8 +12,7 @@ export const agent = createAgent<ReportInput, ReportOutput>({
   id: "report-agent",
   name: "Report Agent",
   version: "2.1.0",
-  description:
-    "Writes a structured report on any topic or uploaded document. Instant mode is fast and short; detailed mode is deeper. Delivered as PDF or DOCX.",
+  // catelog 1.2.1: the description lives on the marketplace listing (register step 3), not in the manifest.
   mode: "async",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,

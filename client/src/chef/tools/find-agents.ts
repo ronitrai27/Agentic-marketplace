@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { api } from "../../../convex/_generated/api";
 import { searchRanked } from "@/search/query";
-import { ensureIndexed } from "@/search/sync";
+import { ensureIndexed, ensureTaskIndexed } from "@/search/sync";
+import { searchTask } from "@/search/task";
 import { chefRequest, type ChefRequest } from "./context";
 import { parseSelection } from "./selection";
 
@@ -126,16 +127,22 @@ export function nameSimilarity(name: string, ref: string): number {
 const PRIOR_RATING = 3.5;
 const PRIOR_WEIGHT = 3;
 
-/** Composite 0..1: relevance first, then reviews (a few 5-star votes don't beat many 4.6s), reliability, speed. */
+/**
+ * Relevance decides; track record only breaks ties between agents that fit about equally.
+ * `fit` is 0.7..1 (1 = best match of the search), so the most a perfect record can add (x1.0 vs x0.85) never lifts
+ * an edge match over the best one: reviews and runs cannot push the wrong agent to the top.
+ */
 function rank(a: Enriched, fit: number): { score: number; reasons: string[] } {
   const bayes = (a.ratingCount * a.ratingAvg + PRIOR_WEIGHT * PRIOR_RATING) / (a.ratingCount + PRIOR_WEIGHT);
   const quality = (bayes - 1) / 4;
   const reliability = a.successRate ?? 0.5;
   const speed = a.avgLatencyMs === null ? 0.5 : 1 / (1 + a.avgLatencyMs / 20_000);
-  const score = 0.45 * fit + 0.25 * quality + 0.2 * reliability + 0.1 * speed;
+  const record = 0.5 * quality + 0.35 * reliability + 0.15 * speed;
+  const score = fit * (0.85 + 0.15 * record);
 
   const reasons: string[] = [];
-  if (fit >= 0.85) reasons.push("strong match for the task");
+  if (fit >= 0.95) reasons.push("description matches the task best");
+  else if (fit >= 0.85) reasons.push("description is a close match for the task");
   if (a.ratingCount >= 5 && a.ratingAvg >= 4.3) reasons.push(`well reviewed (${a.ratingAvg.toFixed(1)} stars, ${a.ratingCount} reviews)`);
   else if (a.ratingCount === 0) reasons.push("no reviews yet");
   if (a.successRate !== null && a.totalRuns >= 10 && a.successRate >= 0.95) reasons.push(`${Math.round(a.successRate * 100)}% of runs succeed`);
@@ -154,7 +161,8 @@ function line(i: number, a: Enriched, reasons: string[]): string {
     a.priceFromMicros !== null ? `from ${usd(a.priceFromMicros)} (${a.pricingShape?.replace("_", " ")})` : null,
     a.models.length ? `models: ${[...new Set(a.models.map((m) => m.id))].join(", ")}` : null,
   ].filter(Boolean);
-  const desc = a.description.length > 140 ? `${a.description.slice(0, 137)}…` : a.description;
+  // the description is what the model judges the fit on, so it gets most of it
+  const desc = a.description.length > 400 ? `${a.description.slice(0, 397)}…` : a.description;
   return `${i}. ${a.name} — ${desc}\n   ${parts.join(" · ")}${reasons.length ? `\n   why: ${reasons.join("; ")}` : ""}`;
 }
 
@@ -171,19 +179,14 @@ const fail = (text: string): FindAgentsResult => ({ ok: false, text, agents: [],
 
 // ─── search + enrich ───
 
-/** Typesense candidates in relevance order, then Convex facts. Archived and suspended agents do not survive the Convex step. */
-async function candidates(req: ChefRequest, q: string, want: "task" | "name") {
+/** Name lookup: index candidates in name order, then Convex facts. Archived and suspended agents do not survive the Convex step. */
+async function candidates(req: ChefRequest, q: string) {
   await ensureIndexed(req.convex); // waits only when the index is empty; otherwise refreshes in the background
-  const found =
-    want === "name"
-      ? await searchRanked(q, { exact: 6, related: 8, similar: 0 })
-      : await searchRanked(q, { exact: 4, related: 10, similar: 3, names: "light" });
+  const found = await searchRanked(q, { exact: 6, related: 8, similar: 0 });
 
   const ordered: { id: string }[] = [];
   const seen = new Set<string>();
-  // a task search ranks by what the agent does, so exact and related are one list ordered by score
-  const head = want === "task" ? [...found.exact, ...found.related].sort((a, b) => b.score - a.score) : [...found.exact, ...found.related];
-  for (const h of [...head, ...found.similar]) {
+  for (const h of [...found.exact, ...found.related]) {
     if (!h.id || seen.has(h.id)) continue;
     seen.add(h.id);
     ordered.push(h);
@@ -201,6 +204,25 @@ async function candidates(req: ChefRequest, q: string, want: "task" | "name") {
   return out;
 }
 
+/**
+ * One agent by name for get_agent_details: the exact name, or a single clearly closest name (typos, "nova").
+ * When several names are about as close, nothing is picked and `options` lists them.
+ */
+export async function lookupByName(req: ChefRequest, ref: string): Promise<{ match?: { id: string; name: string }; options: string[] }> {
+  const pool = await candidates(req, ref);
+  const exact = pool.find((c) => normName(c.a.name) === normName(ref));
+  if (exact) return { match: { id: exact.a.id, name: exact.a.name }, options: [] };
+  const close = pool
+    .map((c) => ({ a: c.a, sim: nameSimilarity(c.a.name, ref) }))
+    .filter((c) => c.sim >= 0.55)
+    .sort((x, y) => y.sim - x.sim);
+  const [first, second] = close;
+  if (first && first.sim >= 0.7 && (!second || first.sim - second.sim >= 0.1)) {
+    return { match: { id: first.a.id, name: first.a.name }, options: [] };
+  }
+  return { options: close.slice(0, 4).map((c) => c.a.name) };
+}
+
 /** Find the agent the user named (exact or approximate), whatever the model passed. */
 async function byName(req: ChefRequest, modelQuery: string, limit: number, strict: boolean): Promise<FindAgentsResult> {
   const refs = [...new Set([modelQuery, cleanRef(req.lastUserText)].filter((r) => normName(r).length >= 2))];
@@ -209,7 +231,7 @@ async function byName(req: ChefRequest, modelQuery: string, limit: number, stric
   let usedRef = refs[0] ?? modelQuery;
 
   for (const ref of refs) {
-    const found = await candidates(req, ref, "name");
+    const found = await candidates(req, ref);
     const hit = found.find((c) => normName(c.a.name) === normName(ref));
     if (!pool.length || hit) {
       pool = found;
@@ -271,8 +293,22 @@ ${byMeaning.text}` };
   };
 }
 
+/** Task search: by what each agent is built for (description + tags), not by name. Only agents that fit come back. */
+async function taskCandidates(req: ChefRequest, q: string, limit: number): Promise<{ a: Enriched; fit: number }[]> {
+  await ensureTaskIndexed(req.convex);
+  const hits = await searchTask(q, limit);
+  if (hits === null) throw new Error("TASK_SEARCH_UNAVAILABLE");
+  if (hits.length === 0) return [];
+  const rows = (await req.convex.query(api.chefAgents.enrich, { ids: hits.map((h) => h.id) })) as Enriched[];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return hits.flatMap((h) => {
+    const a = byId.get(h.id); // archived and suspended agents have no row here
+    return a ? [{ a, fit: 0.7 + 0.3 * h.relevance }] : [];
+  });
+}
+
 async function byTask(req: ChefRequest, query: string, limit: number): Promise<FindAgentsResult> {
-  const found = await candidates(req, query, "task");
+  const found = await taskCandidates(req, query, limit);
   if (found.length === 0) {
     return fail(
       `No agent found currently for "${query}". Tell the user: "No agent found currently." and suggest describing the task differently (what to do, for whom, the output they want).`,
@@ -285,8 +321,11 @@ async function byTask(req: ChefRequest, query: string, limit: number): Promise<F
   return {
     ok: true,
     text:
-      `Top ${ranked.length} agents for "${query}", best first. The user sees them as selectable cards and picks one, so do not list them again; ` +
-      `say in a sentence or two which looks best and why.\n` +
+      (ranked.length === 1
+        ? `One agent is built for "${query}"; the others in the catalogue do different jobs. The user sees it as a card, so do not list it again; ` +
+          `say in a sentence why it fits (from its description).\n`
+        : `${ranked.length} agents fit "${query}", best first; agents built for other jobs were left out. The user sees them as selectable cards ` +
+          `and picks one, so do not list them again; say in a sentence or two which looks best and why, based on what each description says it does.\n`) +
       ranked.map((r, i) => line(i + 1, r.a, r.reasons)).join("\n"),
     agents: ranked.map((r) => toCard(r.a)),
     needsChoice: ranked.length > 1,

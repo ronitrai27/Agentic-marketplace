@@ -506,12 +506,14 @@ export function RegisterAgentDialog({
 
           {(DEV_MODE || (result && m)) && currentStep === 2 && (
             <div className="space-y-8">
+              {/* Description first: it is what buyers and the chef match tasks on, and the tags are suggested from it */}
+              <DescriptionField value={description} onChange={setDescription} />
               <TagsStep
                 selected={tags}
                 onChange={setTags}
                 onRegisterAi={() => setAiPromptOpen(true)}
+                description={description}
               />
-              <DescriptionField value={description} onChange={setDescription} />
               {models.length > 0 && (
                 <section className="space-y-3">
                   <div>

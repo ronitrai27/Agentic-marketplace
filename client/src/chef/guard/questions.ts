@@ -33,8 +33,8 @@ export const GUARD_QUESTIONS: Record<string, JevQuestion> = {
     type: "choice",
     instructions: "What kind of message is this?",
     criteria: {
-      chitchat: "A greeting, thanks, small talk, or a question about Catelog itself or the chef: what it is, how it works, pricing, wallet and payments, reviews, publishing or earning as a creator.",
-      task: "A request to get something done by an agent, to find or compare agents for a job, to set a budget, to pick an option or to confirm an action.",
+      chitchat: "A greeting, thanks, small talk, or a general question about Catelog itself or the chef: what it is, how it works, how pricing, wallet and payments, reviews, publishing or earning as a creator work.",
+      task: "A request to get something done by an agent, to find or compare agents for a job, to see a specific agent's details, inputs, price, stats or reviews, to set a budget, to pick an option or to confirm an action.",
     },
   },
 };

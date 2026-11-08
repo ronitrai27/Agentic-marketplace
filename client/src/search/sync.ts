@@ -20,6 +20,19 @@ const tagText = (tags: string[]) =>
     })
     .join(" ");
 
+/**
+ * What the chef's task search embeds: what the agent does, description first, then its tag labels. No name: a name
+ * says little about the job ("Henry"). Tag keyword lists are left out, they pull agents toward loosely related words.
+ */
+export const taskText = (r: Pick<IndexRow, "description" | "capabilities" | "tags">) =>
+  [
+    r.description.trim(),
+    r.capabilities.length ? `What it does: ${r.capabilities.join(". ")}` : "",
+    r.tags.length ? `Categories: ${r.tags.map((id) => tagById(id)?.label ?? id).join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
 /** Only a change in what is searched triggers a new embedding (ratings and run counts never do). */
 const hashOf = (r: IndexRow) =>
   createHash("sha1").update(`${r.slug}\n${r.name}\n${r.description}\n${r.capabilities.join("|")}\n${[...r.tags].sort().join(",")}`).digest("hex");
@@ -65,6 +78,16 @@ export async function ensureIndexed(convex: ConvexHttpClient): Promise<void> {
   void reconcileIndex(convex);
 }
 
+/** For the chef's task search: right after the task column is added, wait once for every agent to be embedded. */
+let taskReady = false;
+export async function ensureTaskIndexed(convex: ConvexHttpClient): Promise<void> {
+  await ensureIndexed(convex);
+  if (taskReady) return;
+  const { rows } = await searchPool().query("select count(*)::int as n from agent_search where task_embedding is null");
+  if (rows[0].n > 0) await reconcileIndex(convex, true); // checked again next time (another instance may hold the lock)
+  else taskReady = true;
+}
+
 async function run(convex: ConvexHttpClient) {
   await ensureSearchSchema();
   const started = Date.now();
@@ -92,17 +115,23 @@ async function run(convex: ConvexHttpClient) {
 
     for (let i = 0; i < changed.length; i += BATCH) {
       const batch = changed.slice(i, i + BATCH);
-      const vectors = await embedDocuments(batch.map((r) => `${r.description}. ${r.capabilities.join(". ")}. ${tagText(r.tags)}. ${r.name}`));
+      const [vectors, taskVectors] = await Promise.all([
+        embedDocuments(batch.map((r) => `${r.description}. ${r.capabilities.join(". ")}. ${tagText(r.tags)}. ${r.name}`)),
+        embedDocuments(batch.map(taskText)),
+      ]);
       for (let j = 0; j < batch.length; j++) {
         const r = batch[j];
         await client.query(
-          `insert into agent_search (agent_id, slug, name, name_norm, description, tag_text, tags, content_hash, embedding, capabilities, updated_at)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9::vector,$10, now())
+          `insert into agent_search (agent_id, slug, name, name_norm, description, tag_text, tags, content_hash, embedding, capabilities, task_embedding, updated_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9::vector,$10,$11::vector, now())
            on conflict (agent_id) do update set
              slug=excluded.slug, name=excluded.name, name_norm=excluded.name_norm, description=excluded.description,
              tag_text=excluded.tag_text, tags=excluded.tags, content_hash=excluded.content_hash,
-             embedding=excluded.embedding, capabilities=excluded.capabilities, updated_at=now()`,
-          [r.id, r.slug, r.name, normName(r.name), r.description, tagText(r.tags), r.tags, hashOf(r), toVector(vectors[j]), r.capabilities.join(". ")],
+             embedding=excluded.embedding, capabilities=excluded.capabilities, task_embedding=excluded.task_embedding, updated_at=now()`,
+          [
+            r.id, r.slug, r.name, normName(r.name), r.description, tagText(r.tags), r.tags, hashOf(r),
+            toVector(vectors[j]), r.capabilities.join(". "), toVector(taskVectors[j]),
+          ],
         );
       }
     }
