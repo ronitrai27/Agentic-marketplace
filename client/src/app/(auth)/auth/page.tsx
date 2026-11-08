@@ -7,15 +7,7 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { useConvex } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import {
-  User,
-  Mail,
-  Lock,
-  Loader2,
-  ArrowRight,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { User, Mail, Lock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -281,65 +273,61 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-background text-foreground px-4 py-12 transition-colors selection:bg-primary/10">
-      <div className="w-full max-w-[480px] flex flex-col items-center">
-        {/* Brand / Logo */}
-        <div className="w-full flex flex-col items-start mb-7 pl-1">
-          <div className="mb-5 flex items-center justify-center">
-            <Image
-              src="/logo.svg"
-              alt="Logo"
-              width={140}
-              height={44}
-              priority
-              className="dark:invert-0 brightness-100 object-contain"
-            />
+    <div className="h-screen w-full overflow-y-auto lg:overflow-hidden bg-background text-foreground grid lg:grid-cols-[1.08fr_0.92fr] selection:bg-primary/10">
+      {/* Left Column: Auth Form */}
+      <div className="flex flex-col justify-between min-h-screen lg:min-h-0 px-6 sm:px-12 py-8 lg:py-10">
+        {/* Top Spacer for vertical centering */}
+        <div className="hidden lg:block" />
+
+        {/* Main Form Container */}
+        <div className="w-full max-w-[360px] mx-auto my-auto flex flex-col">
+          {/* Brand Logo */}
+          <div className="mb-6">
+            <Link href="/" className="inline-flex items-center">
+              <Image
+                src="/logo.svg"
+                alt="Catelxg"
+                width={125}
+                height={38}
+                priority
+                className="dark:invert object-contain"
+              />
+            </Link>
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            {mode === "sign-up" ? (
-              <>
-                Create account{" "}
-                <span className="font-normal text-muted-foreground">
-                  to get started
-                </span>
-              </>
-            ) : (
-              <>
-                Welcome back{" "}
-                <span className="font-normal text-muted-foreground">
-                  to your space
-                </span>
-              </>
-            )}
-          </h1>
-        </div>
+          {/* Heading & Subtitle */}
+          <div className="mb-6">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
+              {mode === "sign-up" ? "Create an Account" : "Welcome Back"}
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+              {mode === "sign-up"
+                ? "Sign up to get started"
+                : "Sign in to your account to continue"}
+            </p>
+          </div>
 
-        {/* Linear Minimal Card */}
-        <div className="w-full rounded-lg border border-border bg-card p-7 shadow-xs hover:border-border transition-all">
           {/* Smart Google Account Hint Banner */}
           {googlePrompt && (
-            <div className="mb-5 rounded-lg bg-primary/10 border border-primary/30 p-3.5 text-xs text-foreground flex flex-col gap-2.5 animate-in fade-in duration-200">
-              <div className="flex items-start gap-2.5">
-                <div className="space-y-0.5">
-                  <p className="font-semibold">Existing Google Account Found</p>
-                  <p className="text-muted-foreground leading-relaxed">
-                    This email was registered using Google and has no password
-                    yet. Continue with Google below:
-                  </p>
-                </div>
+            <div className="mb-4 rounded-lg bg-primary/10 border border-primary/30 p-3 text-xs text-foreground flex flex-col gap-2.5 animate-in fade-in duration-200">
+              <div className="space-y-0.5">
+                <p className="font-semibold">Existing Google Account Found</p>
+                <p className="text-muted-foreground leading-relaxed">
+                  This email was registered using Google and has no password
+                  yet. Continue with Google below:
+                </p>
               </div>
 
               <Button
                 type="button"
                 onClick={() => handleSocialSignIn("google")}
-                className="w-full h-9 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs"
+                className="w-full h-9 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
               >
                 <Image
                   src="/search.png"
                   alt="Google"
-                  width={15}
-                  height={15}
+                  width={14}
+                  height={14}
                   className="object-contain"
                 />
                 <span>Continue with Google</span>
@@ -348,118 +336,20 @@ export default function AuthPage() {
           )}
 
           {error && (
-            <div className="mb-5 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
+            <div className="mb-4 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleFormSubmit} className="space-y-4">
-            {/* Full Name (Only in sign-up mode) */}
-            {mode === "sign-up" && (
-              <div className="space-y-1.5 animate-in fade-in duration-150">
-                <label
-                  htmlFor="name"
-                  className="block text-xs font-medium text-foreground tracking-tight"
-                >
-                  Full Name
-                </label>
-                <div className="relative flex items-center">
-                  <span className="absolute left-3.5 text-muted-foreground pointer-events-none">
-                    <User className="h-4 w-4" />
-                  </span>
-                  <input
-                    id="name"
-                    type="text"
-                    placeholder="John Doe"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full h-11 pl-10 pr-3.5 rounded-lg border border-border bg-input/30 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring transition-colors"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Email */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="email"
-                className="block text-xs font-medium text-foreground tracking-tight"
-              >
-                Email
-              </label>
-              <div className="relative flex items-center">
-                <span className="absolute left-3.5 text-muted-foreground pointer-events-none">
-                  <Mail className="h-4 w-4" />
-                </span>
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full h-11 pl-10 pr-3.5 rounded-lg border border-border bg-input/30 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring transition-colors"
-                />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="password"
-                className="block text-xs font-medium text-foreground tracking-tight"
-              >
-                Password
-              </label>
-              <div className="relative flex items-center">
-                <span className="absolute left-3.5 text-muted-foreground pointer-events-none">
-                  <Lock className="h-4 w-4" />
-                </span>
-                <input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-11 pl-10 pr-3.5 rounded-lg border border-border bg-input/30 text-sm text-foreground placeholder:text-muted-foreground/60 tracking-wider focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring transition-colors"
-                />
-              </div>
-            </div>
-
-            {/* Primary Action Button */}
-            <div className="pt-2">
-              <Button
-                type="submit"
-                disabled={isLoading !== null}
-                className="w-full h-11 rounded-lg bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center hover:opacity-90 active:scale-[0.99] transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isLoading === "form" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : mode === "sign-up" ? (
-                  "Create account"
-                ) : (
-                  "Sign in"
-                )}
-              </Button>
-            </div>
-          </form>
-
-          {/* Divider */}
-          <div className="relative my-6 flex items-center justify-center">
-            <div className="w-full border-t border-border/80" />
-            <span className="absolute bg-card px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Or continue with
-            </span>
-          </div>
-
-          {/* Social Signups & Guest Mode: Google, GitHub & Guest */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-            {/* Google */}
+          {/* Stacked Social & Guest Buttons */}
+          <div className="flex flex-col gap-2.5">
+            {/* Continue with Google */}
             <Button
               type="button"
               variant="outline"
               onClick={() => handleSocialSignIn("google")}
               disabled={isLoading !== null}
-              className="relative h-10 px-2 rounded-lg border border-border bg-card hover:bg-accent/40 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5 font-medium text-xs sm:text-sm text-foreground"
+              className="relative w-full h-10 rounded-lg border border-border bg-card/50 hover:bg-accent/50 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2.5 font-medium text-xs sm:text-sm text-foreground shadow-2xs"
             >
               {isLoading === "google" ? (
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -467,27 +357,27 @@ export default function AuthPage() {
                 <Image
                   src="/search.png"
                   alt="Google"
-                  width={16}
-                  height={16}
+                  width={15}
+                  height={15}
                   className="object-contain shrink-0"
                 />
               )}
-              <span className="truncate">Google</span>
+              <span>Continue with Google</span>
 
               {lastUsed === "google" && (
-                <span className="absolute -top-2 -right-1 text-[8px] sm:text-[9px] font-semibold uppercase tracking-wider px-1 sm:px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 border shadow-2xs">
+                <span className="absolute -top-2 right-2 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border shadow-2xs">
                   Last used
                 </span>
               )}
             </Button>
 
-            {/* GitHub */}
+            {/* Continue with GitHub */}
             <Button
               type="button"
               variant="outline"
               onClick={() => handleSocialSignIn("github")}
               disabled={isLoading !== null}
-              className="relative h-10 px-2 rounded-lg border border-border bg-card hover:bg-accent/40 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5 font-medium text-xs sm:text-sm text-foreground"
+              className="relative w-full h-10 rounded-lg border border-border bg-card/50 hover:bg-accent/50 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2.5 font-medium text-xs sm:text-sm text-foreground shadow-2xs"
             >
               {isLoading === "github" ? (
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -500,92 +390,229 @@ export default function AuthPage() {
                   className="rounded-full object-contain shrink-0"
                 />
               )}
-              <span className="truncate">Github</span>
+              <span>Continue with GitHub</span>
 
               {lastUsed === "github" && (
-                <span className="absolute -top-2 -right-1 text-[8px] sm:text-[9px] font-semibold uppercase tracking-wider px-1 sm:px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 border shadow-2xs">
+                <span className="absolute -top-2 right-2 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border shadow-2xs">
                   Last used
                 </span>
               )}
             </Button>
 
-            {/* Guest Mode */}
+            {/* Continue with Guest Mode */}
             <Button
               type="button"
               variant="outline"
               onClick={handleGuestMode}
               disabled={isLoading !== null}
-              className="relative h-10 px-2 rounded-lg border border-border bg-card hover:bg-accent/40 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5 font-medium text-xs sm:text-sm text-foreground"
+              className="relative w-full h-10 rounded-lg border border-border bg-card/50 hover:bg-accent/50 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2.5 font-medium text-xs sm:text-sm text-foreground shadow-2xs"
             >
               <User className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="truncate">
-                Guest<span className="hidden sm:inline"> Mode</span>
-              </span>
+              <span>Continue with Guest Mode</span>
 
               {lastUsed === "guest" && (
-                <span className="absolute -top-2 -right-1 text-[8px] sm:text-[9px] font-semibold uppercase tracking-wider px-1 sm:px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 border shadow-2xs">
+                <span className="absolute -top-2 right-2 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border shadow-2xs">
                   Last used
                 </span>
               )}
             </Button>
           </div>
+
+          {/* Divider */}
+          <div className="relative my-5 flex items-center justify-center">
+            <div className="w-full border-t border-border/80" />
+            <span className="absolute bg-background px-3 text-xs text-muted-foreground">
+              or
+            </span>
+          </div>
+
+          {/* Email & Password Form */}
+          <form onSubmit={handleFormSubmit} className="space-y-3.5">
+            {mode === "sign-up" && (
+              <div className="space-y-1.5 animate-in fade-in duration-150">
+                <label
+                  htmlFor="name"
+                  className="block text-xs font-medium text-foreground"
+                >
+                  Full Name
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 text-muted-foreground pointer-events-none">
+                    <User className="h-3.5 w-3.5" />
+                  </span>
+                  <input
+                    id="name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full h-10 pl-9 pr-3.5 rounded-lg border border-border bg-muted/40 dark:bg-muted/25 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring transition-colors"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="email"
+                className="block text-xs font-medium text-foreground"
+              >
+                Email
+              </label>
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-muted-foreground pointer-events-none">
+                  <Mail className="h-3.5 w-3.5" />
+                </span>
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full h-10 pl-9 pr-3.5 rounded-lg border border-border bg-muted/40 dark:bg-muted/25 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="password"
+                className="block text-xs font-medium text-foreground"
+              >
+                Password
+              </label>
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-muted-foreground pointer-events-none">
+                  <Lock className="h-3.5 w-3.5" />
+                </span>
+                <input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full h-10 pl-9 pr-3.5 rounded-lg border border-border bg-muted/40 dark:bg-muted/25 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="pt-1">
+              <Button
+                type="submit"
+                disabled={isLoading !== null}
+                className="w-full h-10 rounded-lg bg-neutral-800 text-white font-medium text-xs sm:text-sm flex items-center justify-center active:scale-[0.99] transition-all cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                {isLoading === "form" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : mode === "sign-up" ? (
+                  "Continue with Email"
+                ) : (
+                  "Sign in with Email"
+                )}
+              </Button>
+            </div>
+          </form>
+
+          {/* Switch Mode Link */}
+          <p className="mt-5 text-xs text-muted-foreground">
+            {mode === "sign-up" ? (
+              <>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("sign-in");
+                    setError(null);
+                    setGooglePrompt(false);
+                  }}
+                  className="font-medium text-black hover:underline transition-colors cursor-pointer"
+                >
+                  Sign in
+                </button>
+              </>
+            ) : (
+              <>
+                Don&apos;t have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("sign-up");
+                    setError(null);
+                    setGooglePrompt(false);
+                  }}
+                  className="font-medium text-black hover:underline transition-colors cursor-pointer"
+                >
+                  Create account
+                </button>
+              </>
+            )}
+          </p>
         </div>
 
-        {/* Footer / Switch between Sign In and Sign Up */}
-        <p className="mt-8 text-center text-xs text-muted-foreground">
-          {mode === "sign-up" ? (
-            <>
-              Already have an account?{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("sign-in");
-                  setError(null);
-                  setGooglePrompt(false);
-                }}
-                className="font-medium text-foreground hover:underline transition-colors ml-1 cursor-pointer"
-              >
-                Sign in
-              </button>
-            </>
-          ) : (
-            <>
-              Don't have an account?{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("sign-up");
-                  setError(null);
-                  setGooglePrompt(false);
-                }}
-                className="font-medium text-foreground hover:underline transition-colors ml-1 cursor-pointer"
-              >
-                Create account
-              </button>
-            </>
-          )}
-        </p>
-
-        {/* Bottom links */}
-        <div className="mt-6 flex items-center justify-center gap-6 text-[11px] text-muted-foreground">
-          <Link
-            href="#"
-            className="hover:text-muted-foreground transition-colors"
-          >
-            Terms
-          </Link>
-          <Link
-            href="#"
-            className="hover:text-muted-foreground transition-colors"
-          >
+        {/* Bottom Legal Links */}
+        <div className="w-full max-w-[360px] mx-auto pt-6 flex items-center gap-5 text-xs text-muted-foreground">
+          <Link href="#" className="hover:text-foreground transition-colors">
             Privacy
           </Link>
-          <Link
-            href="#"
-            className="hover:text-muted-foreground transition-colors"
-          >
+          <Link href="#" className="hover:text-foreground transition-colors">
+            Terms
+          </Link>
+          <Link href="#" className="hover:text-foreground transition-colors">
             Support
           </Link>
+        </div>
+      </div>
+
+      {/* Right Column: Nature Image Showcase Card */}
+      <div className="hidden lg:flex h-full p-4 pl-0">
+        <div className="relative w-full h-full rounded-2xl border border-border/60 dark:border-white/10 overflow-hidden bg-[#070709] flex flex-col justify-between select-none">
+          {/* Unsplash Nature Image (Night Mountain Horizon) */}
+          <img
+            src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1600&q=85"
+            alt="Nature landscape"
+            className="absolute inset-0 h-full w-full object-cover object-bottom opacity-75 scale-105"
+          />
+
+          {/* Deep Dark Top-Down Gradient Overlay + Horizon Atmospheric Glow */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#09090b] via-[#09090b]/92 via-55% to-black/35" />
+          <div
+            className="absolute inset-x-0 bottom-0 h-[48%] pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse 80% 55% at 50% 85%, rgba(56, 102, 220, 0.28) 0%, rgba(15, 23, 42, 0.15) 55%, transparent 100%)",
+            }}
+          />
+
+          {/* Top Spacer */}
+          <div />
+
+          {/* Center Quote & Founder Info */}
+          <div className="relative z-10 flex flex-col items-center text-center px-10 max-w-md mx-auto my-auto">
+            <p className="text-lg xl:text-xl font-medium leading-relaxed text-white/95 tracking-tight">
+              Your agent is Ready,
+              <br />
+              Now time to put it for work.
+            </p>
+
+            <div className="mt-6 flex flex-col items-center">
+              <div className="h-11 w-11 rounded-full overflow-hidden border border-white/20 shadow-md mb-2.5">
+                <Image
+                  src="/me.png"
+                  alt="ROX"
+                  width={44}
+                  height={44}
+                  className="h-full w-full rounded-full object-cover"
+                />
+              </div>
+              <span className="text-sm font-medium text-white">ROX</span>
+              <span className="text-[11px] text-white/55 mt-0.5">
+                Founder of Catelog
+              </span>
+            </div>
+          </div>
+
+          {/* Bottom Spacer */}
+          <div />
         </div>
       </div>
     </div>
