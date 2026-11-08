@@ -174,7 +174,7 @@ export function RunConfirmDialog({
     }
     setStep(0, { state: "ok" });
 
-    // 2. Agent server (the server side waits up to 120s)
+    // 2. Agent server (the server side waits up to 180s)
     setStep(1, { state: "active" });
     try {
       const health = await checkAgent({ slug: agentSlug });

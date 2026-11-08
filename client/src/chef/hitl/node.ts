@@ -7,8 +7,8 @@ export function hitlReply(d: HitlDecision, names: string[], credits: number): st
   const who = names.join(" and ");
   if (d.decision === "approved") {
     return (
-      `Approved. ${credits} credits are held for ${who} and ${names.length > 1 ? "they are" : "it is"} open in the side sheet: ` +
-      `give the input there and press Run. ${names.length > 1 ? "They run" : "It runs"} in the background, so keep asking me anything; ` +
+      `Approved. ${credits} credits are held for ${who}. Fill in the input above and press Run: I'll send it to the marketplace ` +
+      `and open the live run in the side sheet. ${names.length > 1 ? "They run" : "It runs"} in the background, so keep asking me anything; ` +
       "I'll post here as soon as the output is ready."
     );
   }
@@ -31,7 +31,7 @@ export const hitlNode: GraphNode<typeof ChefGraphState> = async (state) => {
 
   const toolText =
     d.decision === "approved"
-      ? `The user APPROVED. Credits held; run ids ${d.runIds.join(", ")}. The agent opened in the side sheet for its input and runs in the background. ` +
+      ? `The user APPROVED. Credits held; run ids ${d.runIds.join(", ")}. The user fills the agent's input in the chat card; pressing Run sends it to the marketplace, which runs it in the background. ` +
         "The chat is told automatically when it finishes; do not claim results you have not seen."
       : d.decision === "expired"
         ? "The approval expired unanswered. Nothing was held."

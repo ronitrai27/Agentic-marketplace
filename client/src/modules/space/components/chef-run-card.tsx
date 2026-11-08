@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
+import type { FunctionReturnType } from "convex/server";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Ban, Check, CircleAlert, Clock, ExternalLink, ShieldCheck } from "lucide-react";
+import { Ban, Check, CircleAlert, Clock, ExternalLink, Play, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
@@ -22,6 +23,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { AgentLogo } from "./agent-logo";
 import { openRun } from "./runs/run-store";
+import { SchemaForm, buildInput, fieldsFromSchema, initialValues, type FormValues } from "./agent-page/schema-form";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
@@ -113,10 +115,10 @@ export function RunProposalCard({
         await Promise.all(runIds.map((id) => cancelHold({ runId: id as Id<"runs"> }).catch(() => {})));
         throw new Error("The approval could not be saved. Nothing was charged.");
       }
-      toast.success(`Approved: ${credits(p.totalCredits)} held`, { id: t });
-      const first = p.agents[0];
-      toast(`Opening ${first.name} in the side sheet`, { description: "Give it its input and press Run." });
-      openRun(runIds[0]);
+      toast.success(`Approved: ${credits(p.totalCredits)} held`, {
+        id: t,
+        description: "Fill in the input below and press Run.",
+      });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Something went wrong.", { id: t });
     } finally {
@@ -277,6 +279,10 @@ export function RunLiveRow({ runId }: { runId: string }) {
   }
   if (run === null) return null;
 
+  if (run.status === "awaiting_input" && run.inputSchemaJson !== null) {
+    return <RunInputForm run={run} schemaJson={run.inputSchemaJson} />;
+  }
+
   const start = run.startedAt ?? run.createdAt;
   const elapsed = (run.finishedAt ?? now) - start;
   const pct = run.status === "succeeded" ? 100 : (run.progressPct ?? null);
@@ -353,6 +359,128 @@ export function RunLiveRow({ runId }: { runId: string }) {
           <ExternalLink className="size-3" />
         </Button>
       </ItemActions>
+    </Item>
+  );
+}
+
+type RunCardData = NonNullable<FunctionReturnType<typeof api.chatRuns.runCard>>;
+
+/**
+ * Input for a held run, right in the chat: fields from the agent's input schema. Run sends the input to the
+ * marketplace (temporal.start: queue + workflow on our worker and gateway), then the side sheet opens on the live
+ * console. The draft is shared with the side sheet's form (same key), so it survives a refresh either way.
+ */
+function RunInputForm({ run, schemaJson }: { run: RunCardData; schemaJson: string }) {
+  const start = useAction(api.temporal.start);
+  const cancelHold = useMutation(api.runs.cancelAwaiting);
+  const fields = React.useMemo(() => fieldsFromSchema(schemaJson), [schemaJson]);
+  const draftKey = `run-draft:${run.id}`;
+  const [values, setValues] = useState<FormValues>(() => {
+    let saved: FormValues | null = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(draftKey) ?? "null");
+    } catch {
+      /* no saved draft */
+    }
+    return { ...initialValues(fields), ...(saved ?? {}) };
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(values));
+    } catch {
+      /* storage unavailable: the draft just won't persist */
+    }
+  }, [values, draftKey]);
+
+  async function send() {
+    const built = buildInput(fields, values);
+    if (built.errors) {
+      setErrors(built.errors);
+      return;
+    }
+    setErrors({});
+    setSendError(null);
+    setSending(true);
+    const t = toast.loading(`Sending input to ${run.agent.name}…`);
+    try {
+      // Best effort: the trace records where the run came from, but never blocks it
+      const where: { ip?: string | null; region?: string | null } = await fetch("/api/client-info", { cache: "no-store" })
+        .then((r) => r.json())
+        .catch(() => ({}));
+      await start({
+        runId: run.id as Id<"runs">,
+        inputJson: JSON.stringify(built.input),
+        clientIp: where.ip ?? undefined,
+        clientRegion: where.region ?? undefined,
+      });
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        /* ignore */
+      }
+      toast.success(`${run.agent.name} is running`, { id: t, description: "Opening the live run in the side sheet." });
+      openRun(run.id);
+    } catch (e) {
+      const msg = errMessage(e, "Could not start the run. Please try again.");
+      setSendError(msg);
+      toast.error(msg, { id: t });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function cancel() {
+    setSending(true);
+    try {
+      await cancelHold({ runId: run.id as Id<"runs"> });
+      toast("Run cancelled. The held credits were released.");
+    } catch (e) {
+      toast.error(errMessage(e, "Could not cancel the run."));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Item variant="muted" size="sm" className="flex-col items-stretch gap-3">
+      <div className="flex items-center gap-2.5">
+        <AgentLogo name={run.agent.name} logoUrl={run.agent.logoUrl} className="size-9 text-sm" />
+        <ItemContent className="min-w-0">
+          <ItemTitle>
+            {run.agent.name}
+            <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              Waiting for your input
+            </span>
+          </ItemTitle>
+          <ItemDescription>
+            {run.holdCredits !== null ? `${credits(run.holdCredits)} held. ` : ""}Fill in the input and press Run.
+          </ItemDescription>
+        </ItemContent>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background p-3">
+        <SchemaForm
+          fields={fields}
+          values={values}
+          errors={errors}
+          disabled={sending}
+          onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+        />
+      </div>
+      {sendError && <p className="text-xs text-red-600">{sendError}</p>}
+
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" disabled={sending} onClick={cancel}>
+          Cancel &amp; release hold
+        </Button>
+        <Button size="sm" disabled={sending} onClick={send}>
+          {sending ? <Spinner className="size-3.5" /> : <Play className="size-3.5" />} Run
+        </Button>
+      </div>
     </Item>
   );
 }

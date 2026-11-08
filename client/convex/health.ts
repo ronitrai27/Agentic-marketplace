@@ -6,7 +6,7 @@ import { ConvexError, v } from "convex/values";
 import { assertPublicUrl } from "../src/lib/ssrf";
 
 /** How long the confirm dialog waits for an agent to answer before giving up. */
-const DEADLINE_MS = 120_000;
+const DEADLINE_MS = 180_000;
 const PROBE_TIMEOUT_MS = 5_000;
 const RETRY_EVERY_MS = 3_000;
 
@@ -31,7 +31,7 @@ async function probe(baseUrl: string): Promise<number | null> {
 
 /**
  * Step 2 of the confirm dialog. Pings the agent's /health from the server (the browser never sees the URL),
- * retrying for up to 120s. Failing that, it counts a strike against the agent; three strikes in a row pause it.
+ * retrying for up to 180s (sleeping servers get time to wake). Failing that, it counts a strike against the agent; three strikes in a row pause it.
  */
 export const checkAgent = action({
   args: { slug: v.string() },

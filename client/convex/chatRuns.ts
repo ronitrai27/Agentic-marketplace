@@ -185,6 +185,8 @@ export const runCard = query({
       chargedCredits: run.chargedCredits ?? null,
       error: run.error ?? null,
       agent: { name: agent?.name ?? "Agent", slug: agent?.slug ?? "", logoUrl: agent?.logoUrl ?? null },
+      /** Only while the input is still to be given: the chat renders the input form from it. */
+      inputSchemaJson: run.status === "awaiting_input" ? (agent?.inputSchemaJson ?? "{}") : null,
       last: last ? { type: last.type, dataJson: last.dataJson.slice(0, 600), at: last.at } : null,
     };
   },

@@ -29,7 +29,7 @@ export const proposeRunTool = tool(async (args) => (await proposeRun(args)).text
   description:
     "Ask the user to approve running 1 or 2 agents. It does NOT run anything: it shows an approval card with each agent's logo, " +
     "the credits that will be held (highest tier for tiered pricing) and the wallet balance, then waits for the user to approve or deny. " +
-    "On approval the credits are held and the agent opens in the side sheet, where the user gives its input and it runs in the background. " +
+    "On approval the credits are held and the card shows the agent's input form; Run sends it to the marketplace, which runs it in the background. " +
     "Call it when the user asks to run, use or start an agent they named or picked. Two agents run side by side, independently. " +
     "Never call it for an agent the user has not chosen. Do not describe the card in text.",
   schema: ProposeRunArgs,
