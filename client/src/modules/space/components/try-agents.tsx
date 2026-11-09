@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Star, Sparkles, Plus, FolderDownIcon } from "lucide-react";
+import { Star, Sparkles, Plus, FolderDownIcon, Brain } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
 import { tagById } from "@/lib/agent-tags";
 import { uniqueModelIcons } from "@/lib/agent-display";
@@ -68,8 +68,8 @@ export function TryAgents() {
   return (
     <div className="w-full mb-5 2xl:mb-7">
       <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
-        <span className="text-[10px] 2xl:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-          <FolderDownIcon className="size-3 2xl:size-3.5 text-muted-foreground" />
+        <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+          <Brain className="size-3 2xl:size-3.5 text-muted-foreground" />
           Try these Agents
         </span>
       </div>
@@ -79,7 +79,7 @@ export function TryAgents() {
           [0, 1, 2].map((i) => (
             <div
               key={i}
-              className="p-2.5 2xl:p-3.5 rounded-lg border border-border/70 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col justify-between gap-2.5"
+              className="p-2.5 2xl:p-3.5 rounded-lg border border-neutral-300 dark:border-neutral-800/80 bg-neutral-100 dark:bg-neutral-950/40 flex flex-col justify-between gap-2.5"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -97,89 +97,94 @@ export function TryAgents() {
               </div>
             </div>
           ))}
-        {!loading && cards.map((agent, idx) => {
-          const modelIcons = uniqueModelIcons(agent.models);
-          // If more model logos are present (>1), show only 1 tag to keep space for model logos
-          const maxTags = modelIcons.length > 1 ? 1 : 2;
-          const visibleTags = agent.tags.slice(0, maxTags);
-          const remainingTags = agent.tags.length - visibleTags.length;
+        {!loading &&
+          cards.map((agent, idx) => {
+            const modelIcons = uniqueModelIcons(agent.models);
+            // If more model logos are present (>1), show only 1 tag to keep space for model logos
+            const maxTags = modelIcons.length > 1 ? 1 : 2;
+            const visibleTags = agent.tags.slice(0, maxTags);
+            const remainingTags = agent.tags.length - visibleTags.length;
 
-          const cardClass =
-            "p-2.5 2xl:p-3.5 rounded-lg border border-border/70 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-neutral-950/40 flex flex-col justify-between gap-2.5";
-          const inner = (
-            <>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AgentLogo
-                    name={agent.name}
-                    logoUrl={agent.logoUrl}
-                    className="size-7 text-xs shrink-0"
-                  />
-                  <span className="text-xs 2xl:text-sm font-medium text-foreground tracking-tight truncate">
-                    {agent.name}
+            const cardClass =
+              "p-2.5 2xl:p-3.5 rounded-lg border border-neutral-300 dark:border-neutral-800/80 bg-neutral-50 dark:bg-neutral-950/40 flex flex-col justify-between gap-2.5";
+            const inner = (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AgentLogo
+                      name={agent.name}
+                      logoUrl={agent.logoUrl}
+                      className="size-7 text-xs shrink-0"
+                    />
+                    <span className="text-xs 2xl:text-sm font-medium text-foreground tracking-tight truncate">
+                      {agent.name}
+                    </span>
+                  </div>
+                  <span className="flex items-center gap-1 text-xs text-foreground tabular-nums shrink-0">
+                    <Star
+                      className="size-3.5 fill-amber-400 text-amber-400"
+                      strokeWidth={1.5}
+                    />
+                    {agent.rating.toFixed(1)}
                   </span>
                 </div>
-                <span className="flex items-center gap-1 text-xs text-foreground tabular-nums shrink-0">
-                  <Star
-                    className="size-3.5 fill-amber-400 text-amber-400"
-                    strokeWidth={1.5}
-                  />
-                  {agent.rating.toFixed(1)}
-                </span>
-              </div>
 
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-                  {visibleTags.map((id) => (
-                    <span
-                      key={id}
-                      className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground truncate max-w-[120px] shrink-0"
-                    >
-                      {tagById(id)?.label ?? id}
-                    </span>
-                  ))}
-                  {remainingTags > 0 && (
-                    <span
-                      className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0"
-                      title={agent.tags
-                        .slice(maxTags)
-                        .map((id) => tagById(id)?.label ?? id)
-                        .join(", ")}
-                    >
-                      <Plus className="size-2.5" />
-                      {remainingTags}
-                    </span>
-                  )}
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+                    {visibleTags.map((id) => (
+                      <span
+                        key={id}
+                        className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground truncate max-w-[120px] shrink-0"
+                      >
+                        {tagById(id)?.label ?? id}
+                      </span>
+                    ))}
+                    {remainingTags > 0 && (
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0"
+                        title={agent.tags
+                          .slice(maxTags)
+                          .map((id) => tagById(id)?.label ?? id)
+                          .join(", ")}
+                      >
+                        <Plus className="size-2.5" />
+                        {remainingTags}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-1.5 ml-auto">
+                    <ModelLogos models={agent.models} />
+                  </div>
                 </div>
+              </>
+            );
 
-                <div className="shrink-0 flex items-center gap-1.5 ml-auto">
-                  <ModelLogos models={agent.models} />
-                </div>
-              </div>
-            </>
-          );
+            const enter = {
+              initial: { opacity: 0, y: 8 },
+              animate: { opacity: 1, y: 0 },
+              transition: {
+                duration: 0.35,
+                ease: "easeOut" as const,
+                delay: idx * 0.07,
+              },
+            };
 
-          const enter = {
-            initial: { opacity: 0, y: 8 },
-            animate: { opacity: 1, y: 0 },
-            transition: { duration: 0.35, ease: "easeOut" as const, delay: idx * 0.07 },
-          };
-
-          return agent.slug ? (
-            <motion.div key={agent.key} {...enter} className="flex flex-col">
-              <Link
-                href={`/space/marketplace/${agent.slug}`}
-                className={`${cardClass} flex-1 hover:border-foreground/30 hover:bg-neutral-50 dark:hover:bg-neutral-950/70 transition-colors cursor-pointer`}
-              >
+            return agent.slug ? (
+              <motion.div key={agent.key} {...enter} className="flex flex-col">
+                <Link
+                  href={`/space/marketplace/${agent.slug}`}
+                  className={`${cardClass} flex-1 hover:border-foreground/30 hover:bg-neutral-50 dark:hover:bg-neutral-950/70 transition-colors cursor-pointer`}
+                >
+                  {inner}
+                </Link>
+              </motion.div>
+            ) : (
+              <motion.div key={agent.key} {...enter} className={cardClass}>
                 {inner}
-              </Link>
-            </motion.div>
-          ) : (
-            <motion.div key={agent.key} {...enter} className={cardClass}>
-              {inner}
-            </motion.div>
-          );
-        })}
+              </motion.div>
+            );
+          })}
       </div>
     </div>
   );

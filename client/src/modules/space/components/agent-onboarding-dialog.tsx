@@ -2,11 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Code2,
   Workflow,
   Check,
   ArrowRight,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -137,7 +139,9 @@ function PathCard({
             </span>
           )}
         </div>
-        <p className="text-[11px] text-muted-foreground">{footnote}</p>
+        {footnote && (
+          <p className="text-[11px] text-muted-foreground">{footnote}</p>
+        )}
       </div>
     </button>
   );
@@ -183,8 +187,8 @@ export function AgentOnboardingDialog({
             />
           ) : (
             <>
-              <div className="flex-1 overflow-y-auto p-8">
-                <div className="mx-auto max-w-2xl space-y-8">
+              <div className="flex flex-1 flex-col overflow-y-auto p-8">
+                <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col">
                   <div className="space-y-2 text-center">
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-[11px] font-medium text-muted-foreground">
                       Register an agent
@@ -192,37 +196,54 @@ export function AgentOnboardingDialog({
                     <DialogTitle className="text-2xl font-semibold tracking-tight text-foreground">
                       Welcome
                     </DialogTitle>
-                    <DialogDescription className="text-sm text-muted-foreground">
+                    <DialogDescription className="text-lg leading-tight">
                       Start putting your agent to work by selecting how
                       it&apos;s built.
                     </DialogDescription>
                   </div>
 
-                  <div
-                    role="radiogroup"
-                    className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-                  >
-                    <PathCard
-                      selected={path === "sdk"}
-                      onSelect={() => setPath("sdk")}
-                      icon={Code2}
-                      title="Catelog SDK"
-                      badge="Code-first"
-                      body="Your agent runs on your own server with the Catelog SDK. Full control over streaming, timeouts and execution modes."
-                      logos={SDK_LOGOS}
-                      moreText="More"
-                      // footnote="Python and TypeScript · works with 10+ frameworks"
-                    />
-                    <PathCard
-                      selected={path === "nocode"}
-                      onSelect={() => setPath("nocode")}
-                      icon={Workflow}
-                      title="No-Code / Workflow"
-                      badge="Webhooks"
-                      body="Already built a workflow in a visual builder? Connect its webhook and publish it, no code needed."
-                      logos={NOCODE_LOGOS}
-                      // footnote="n8n available now · Dify, Langflow and Flowise coming soon"
-                    />
+                  <div className="my-auto py-6">
+                    <div
+                      role="radiogroup"
+                      className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+                    >
+                      <PathCard
+                        selected={path === "sdk"}
+                        onSelect={() => setPath("sdk")}
+                        icon={Code2}
+                        title="Catelog SDK"
+                        badge="Code-first"
+                        body="Your agent runs on your own server with the Catelog SDK. Full control over streaming, timeouts and execution modes."
+                        logos={SDK_LOGOS}
+                        moreText="More"
+                        // footnote="Python and TypeScript · works with 10+ frameworks"
+                      />
+                      <PathCard
+                        selected={path === "nocode"}
+                        onSelect={() => setPath("nocode")}
+                        icon={Workflow}
+                        title="No-Code / Workflow"
+                        badge="Webhooks"
+                        body="Already built a workflow in a visual builder? Connect its webhook and publish it, no code needed."
+                        logos={NOCODE_LOGOS}
+                        // footnote="n8n available now · Dify, Langflow and Flowise coming soon"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2 text-center text-sm">
+                    <span>
+                      Don&apos;t know where to start or how to register an
+                      agent?
+                    </span>
+                    <Link
+                      href="/docs"
+                      onClick={() => onOpenChange(false)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition-colors hover:bg-muted cursor-pointer"
+                    >
+                      <BookOpen className="size-3.5" />
+                      Read docs
+                    </Link>
                   </div>
                 </div>
               </div>

@@ -421,7 +421,7 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
             {/* Try These Recipes: 4 Compact Gradient Boxes */}
             <div className="w-full mt-6 2xl:mt-7">
               <div className="flex items-center justify-between mb-2 2xl:mb-2.5 px-1">
-                <span className="text-[10px] 2xl:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-semibold uppercase tracking-wider ">
                   Try These Recipes
                 </span>
               </div>
@@ -445,7 +445,11 @@ export function SpaceChefMascot({ chatId }: { chatId?: string }) {
       {sent && (
         <ChefBottomInput
           onSubmit={sendMessage}
-          lockedReason={chat.openProposal ? "Confirm or deny the agent run above to continue" : undefined}
+          lockedReason={
+            chat.openProposal
+              ? "Confirm or deny the agent run above to continue"
+              : undefined
+          }
         />
       )}
     </div>

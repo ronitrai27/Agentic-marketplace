@@ -31,8 +31,10 @@ export function HeaderUserMenu() {
   const { theme, setTheme } = useTheme();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   React.useEffect(() => {
+    setMounted(true);
     const checkGuest = () => {
       try {
         setIsGuest(localStorage.getItem("catelxg_guest_mode") === "true");
@@ -49,7 +51,7 @@ export function HeaderUserMenu() {
     };
   }, []);
 
-  const user = session?.user;
+  const user = mounted ? session?.user : undefined;
   const isGuestActive = isGuest || !user;
   const name = isGuestActive
     ? "Guest"

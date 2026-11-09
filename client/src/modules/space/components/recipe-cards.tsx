@@ -224,7 +224,7 @@ export function RecipeCards({
           key={id}
           type="button"
           onClick={() => onSelect(prompt)}
-          className="group text-left rounded-xl border border-border/70 dark:border-neutral-800 bg-neutral-100/40 dark:bg-neutral-900/40 p-1.5 transition-all duration-200 hover:border-border hover:shadow-xs hover:-translate-y-0.5 active:translate-y-0 flex flex-col"
+          className="group text-left rounded-xl border border-neutral-300 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-900/40 p-1.5 transition-all duration-200 hover:border-border hover:shadow-xs hover:-translate-y-0.5 active:translate-y-0 flex flex-col"
         >
           <div className="h-28 2xl:h-32 rounded-lg border border-border dark:border-neutral-800 bg-white dark:bg-neutral-950/60 overflow-hidden">
             <Art />

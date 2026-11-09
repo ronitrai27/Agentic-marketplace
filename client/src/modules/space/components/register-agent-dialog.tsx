@@ -14,6 +14,7 @@ import {
   Globe,
   Settings2,
   Cpu,
+  BookOpen,
 } from "lucide-react";
 import {
   Dialog,
@@ -522,13 +523,15 @@ export function RegisterAgentDialog({
                   </h2>
                 </div>
 
-                <RainbowButton
+                <Button
                   type="button"
                   size="sm"
-                  className="h-8 shrink-0 rounded-md px-3 text-xs font-medium cursor-pointer"
+                  onClick={() => setAiPromptOpen(true)}
+                  className="h-8 shrink-0 gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white hover:bg-black/90 dark:bg-foreground dark:text-background dark:hover:bg-foreground/90 cursor-pointer"
                 >
-                  Register with AI
-                </RainbowButton>
+                  <BookOpen className="size-3.5" />
+                  Get Help
+                </Button>
               </div>
               {/* Description first: it is what buyers and the chef match tasks on, and the tags are suggested from it */}
               <DescriptionField value={description} onChange={setDescription} />
@@ -619,14 +622,15 @@ export function RegisterAgentDialog({
               </DialogHeader>
 
               <div className="shrink-0">
-                <RainbowButton
+                <Button
                   type="button"
                   size="sm"
                   onClick={() => setAiPromptOpen(true)}
-                  className="h-8 rounded-md px-3 text-xs font-medium cursor-pointer"
+                  className="h-8 gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white hover:bg-black/90 dark:bg-foreground dark:text-background dark:hover:bg-foreground/90 cursor-pointer"
                 >
-                  Register with AI
-                </RainbowButton>
+                  <BookOpen className="size-3.5" />
+                  Get Help
+                </Button>
               </div>
             </div>
 

@@ -24,6 +24,7 @@ import {
   KeyRound,
   Loader2,
   FileText,
+  BookOpen,
   Info,
   Play,
   SlidersHorizontal,
@@ -1008,14 +1009,15 @@ export function DryRunStep({
         </div>
 
         <div className="shrink-0">
-          <RainbowButton
+          <Button
             type="button"
             size="sm"
             onClick={() => setAiPromptOpen(true)}
-            className="h-8 rounded-md px-3 text-xs font-medium cursor-pointer"
+            className="h-8 gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white hover:bg-black/90 dark:bg-foreground dark:text-background dark:hover:bg-foreground/90 cursor-pointer"
           >
-            Register with AI
-          </RainbowButton>
+            <BookOpen className="size-3.5" />
+            Get Help
+          </Button>
         </div>
       </div>
 

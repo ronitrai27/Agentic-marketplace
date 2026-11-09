@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -54,8 +54,13 @@ export function CreatorSidebar({
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  const user = session?.user;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const user = mounted ? session?.user : undefined;
   const name = user?.name || user?.email?.split("@")[0] || "User";
   const email = user?.email || "";
   const avatarImage = user?.image || undefined;
