@@ -24,7 +24,7 @@ export function SectionHeading({
             {title}
           </h3>
           {children && (
-            <p className="text-sm text-muted-foreground leading-relaxed">
+            <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
               {children}
             </p>
           )}

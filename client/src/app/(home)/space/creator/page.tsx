@@ -166,6 +166,40 @@ const frameworks = [
   },
 ];
 
+const lowCodePlatforms: {
+  name: string;
+  href: string;
+  src: string;
+  className?: string;
+  comingSoon?: boolean;
+}[] = [
+  { name: "n8n", href: "https://n8n.io", src: "/n8n-color.svg" },
+  {
+    name: "Dify",
+    href: "https://dify.ai",
+    src: "/dify-color.png",
+    comingSoon: true,
+  },
+  {
+    name: "Flowise",
+    href: "https://flowiseai.com",
+    src: "/flowise-seeklogo.svg",
+    comingSoon: true,
+  },
+  {
+    name: "Relevance AI",
+    href: "https://relevanceai.com",
+    src: "/relevance-ai-color-logo.svg",
+    comingSoon: true,
+  },
+  {
+    name: "Langflow",
+    href: "https://www.langflow.org",
+    src: "/langflow.png",
+    comingSoon: true,
+  },
+];
+
 const steps = [
   {
     icon: Download,
@@ -531,7 +565,7 @@ export default function CreatorPage() {
   const [promptOpen, setPromptOpen] = useState(false);
 
   return (
-    <div className="flex-1 h-full overflow-y-auto scrollbar-thin px-6 py-8 lg:px-10 space-y-12 bg-background">
+    <div className="flex-1 h-full overflow-y-auto scrollbar-thin px-6 py-8 lg:px-10 space-y-8 bg-background">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="max-w-xl">
@@ -540,10 +574,6 @@ export default function CreatorPage() {
           </h1>
           <p className="text-sm sm:text-base font-medium text-foreground mt-1.5">
             Build. Publish. Monetize your AI agents.
-          </p>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-            Use our SDK to register your agent, manage metadata, set pricing and
-            publish it to the Catelog marketplace.
           </p>
         </div>
 
@@ -607,6 +637,50 @@ export default function CreatorPage() {
               </div>
               <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors text-center truncate w-full">
                 {fw.name}
+              </span>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      {/* Low/No code platforms */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">
+            Bring your Agents from Low/No code platforms
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Already built an agent in a visual builder? Publish it as is.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-px rounded-xl border border-border bg-border overflow-hidden">
+          {lowCodePlatforms.map((p) => (
+            <a
+              key={p.name}
+              href={p.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`${p.name} official website`}
+              className="group relative flex flex-col items-center justify-center gap-3 px-3 py-6 bg-card hover:bg-muted/50 transition-colors cursor-pointer"
+            >
+              {p.comingSoon && (
+                <span className="absolute top-2.5 left-2.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-border bg-muted text-muted-foreground">
+                  Coming soon
+                </span>
+              )}
+              <ArrowUpRight className="absolute top-2.5 right-2.5 size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="h-8 flex items-center justify-center">
+                <Image
+                  src={p.src}
+                  alt={p.name}
+                  width={40}
+                  height={40}
+                  className={`h-8 w-auto max-w-[110px] ${p.className ?? ""}`}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors text-center truncate w-full">
+                {p.name}
               </span>
             </a>
           ))}

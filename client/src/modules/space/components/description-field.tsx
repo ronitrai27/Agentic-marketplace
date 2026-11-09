@@ -41,7 +41,7 @@ export function DescriptionField({
     ? "text-emerald-600"
     : tooLong
       ? "text-destructive"
-      : "text-muted-foreground";
+      : "text-zinc-800 dark:text-zinc-200";
   const bar = ok
     ? "bg-emerald-500"
     : tooLong
@@ -49,7 +49,7 @@ export function DescriptionField({
       : "bg-foreground/40";
 
   return (
-    <section className="space-y-4 border-b border-border pb-8">
+    <section className="space-y-4 border-b border-border pb-8 font-sans">
       <SectionHeading icon={FileText} title="What does your agent do?">
         Buyers read this, and the marketplace uses it to match tasks to your
         agent. A clear description means more matches and more revenue.
@@ -63,7 +63,7 @@ export function DescriptionField({
           onChange={(e) => onChange(e.target.value)}
           placeholder="What does your agent do?"
           aria-describedby="description-help"
-          className="resize-none border-0 bg-transparent px-3.5 pt-3 text-sm leading-relaxed shadow-none focus-visible:ring-0"
+          className="resize-none border-0 bg-transparent px-3.5 pt-3 text-sm font-sans leading-relaxed shadow-none placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus-visible:ring-0"
         />
 
         <div className="px-3.5 pb-3 pt-1">
@@ -89,14 +89,14 @@ export function DescriptionField({
               {ok && <Check className="size-3.5" />}
               {status}
             </span>
-            <span className="tabular-nums text-muted-foreground">
+            <span className="font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
               {words} / {MAX_DESCRIPTION_WORDS} words
             </span>
           </div>
         </div>
       </div>
 
-      <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+      <p className="flex items-start gap-2 text-xs leading-relaxed text-zinc-700 dark:text-zinc-300">
         <Lightbulb className="mt-px size-3.5 shrink-0" />
         <span>
           Cover three things:{" "}

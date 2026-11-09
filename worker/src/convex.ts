@@ -7,6 +7,9 @@ export interface RunFailure {
 }
 
 export interface RunContext {
+  /** "n8n" = a webhook the marketplace POSTs directly with the creator's X-Marketplace-Key. */
+  platform: string | null;
+  authKey: string | null;
   status: string;
   baseUrl: string;
   agentName: string;

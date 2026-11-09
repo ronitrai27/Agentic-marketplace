@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { Key, BookAlert, Plus } from "lucide-react";
 import { Loupe } from "@lucasmarkes/hairline/react";
-import { RegisterAgentDialog } from "@/modules/space/components/register-agent-dialog";
+import { AgentOnboardingDialog } from "@/modules/space/components/agent-onboarding-dialog";
 import { AgentCard, type AgentWithPricing } from "@/modules/space/components/agent-card";
 import { AgentDetailSheet } from "@/modules/space/components/agent-detail-sheet";
 import { DeleteAgentDialog } from "@/modules/space/components/delete-agent-dialog";
@@ -132,7 +132,10 @@ export default function MyAgentsPage() {
 
                 <TabsContent value="active" className="mt-0">
                   {activeAgents.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-border py-12 text-center">
+                    <div className="rounded-xl border border-dashed border-border py-10 flex flex-col items-center justify-center gap-2 text-center">
+                      <div className="w-56">
+                        <Loupe />
+                      </div>
                       <p className="text-sm text-muted-foreground">No active agents</p>
                     </div>
                   ) : (
@@ -151,7 +154,10 @@ export default function MyAgentsPage() {
 
                 <TabsContent value="inactive" className="mt-0">
                   {inactiveAgents.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-border py-12 text-center">
+                    <div className="rounded-xl border border-dashed border-border py-10 flex flex-col items-center justify-center gap-2 text-center">
+                      <div className="w-56">
+                        <Loupe />
+                      </div>
                       <p className="text-sm text-muted-foreground">No un-active agents</p>
                     </div>
                   ) : (
@@ -242,7 +248,7 @@ export default function MyAgentsPage() {
         }}
       />
       <DeleteAgentDialog agent={toDelete} onOpenChange={(o) => !o && setDeleteId(null)} />
-      <RegisterAgentDialog open={open} onOpenChange={setOpen} />
+      <AgentOnboardingDialog open={open} onOpenChange={setOpen} />
     </div>
   );
 }

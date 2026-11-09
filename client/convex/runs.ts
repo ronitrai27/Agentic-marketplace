@@ -100,6 +100,13 @@ async function latestPlan(ctx: QueryCtx | MutationCtx, agentId: Id<"agents">): P
  * The creator's secret keys the worker may sign with, newest first, the one this agent last worked with in front.
  * Sealed copies only: Convex cannot read them. The agent's own `CATELOG_SECRET_KEY` is one of these.
  */
+/** The creator's X-Marketplace-Key for low/no-code agents, or null when missing or expired. */
+async function liveAuthKey(ctx: QueryCtx, ownerId: string): Promise<string | null> {
+  const row = await ctx.db.query("creator_auth_keys").withIndex("by_userId", (q) => q.eq("userId", ownerId)).first();
+  if (!row || (row.expiresAt && row.expiresAt <= Date.now())) return null;
+  return row.rawKey;
+}
+
 async function signingKeysFor(ctx: QueryCtx, agent: Doc<"agents">): Promise<Array<{ keyId: string; sealed: string }>> {
   const keys = await ctx.db
     .query("creator_api_keys")
@@ -624,7 +631,10 @@ export const contextForWorker = internalQuery({
     const agent = await ctx.db.get(run.agentId);
     if (!agent) return null;
     const keys = await signingKeysFor(ctx, agent);
+    const authKey = agent.platform === "n8n" ? await liveAuthKey(ctx, agent.ownerId) : null;
     return {
+      platform: agent.platform ?? null,
+      authKey,
       status: run.status,
       baseUrl: agent.baseUrl,
       agentName: agent.name,
@@ -661,8 +671,11 @@ export const agentTarget = internalQuery({
       .withIndex("by_slug", (q) => q.eq("slug", slug))
       .first();
     if (!agent || agent.status === "archived" || agent.status === "suspended") return null;
-    const hasKey = (await signingKeysFor(ctx, agent)).length > 0;
-    return { agentId: agent._id, baseUrl: agent.baseUrl, status: agent.status, hasKey };
+    const hasKey =
+      agent.platform === "n8n"
+        ? !!(await liveAuthKey(ctx, agent.ownerId))
+        : (await signingKeysFor(ctx, agent)).length > 0;
+    return { agentId: agent._id, baseUrl: agent.baseUrl, status: agent.status, hasKey, platform: agent.platform ?? null };
   },
 });
 

@@ -46,6 +46,9 @@ export const checkAgent = action({
       return { ok: false, code: "NO_SIGNING_KEY", message: "This agent is not set up for marketplace runs yet." };
     }
 
+    // n8n webhooks have no /health. Reachability is checked when the creator tests the webhook.
+    if (target.platform === "n8n") return { ok: true, latencyMs: 0 };
+
     try {
       await assertPublicUrl(target.baseUrl);
     } catch {

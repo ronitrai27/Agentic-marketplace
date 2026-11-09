@@ -3,7 +3,7 @@
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { constants, createPublicKey, publicEncrypt } from "node:crypto";
+import { constants, createPublicKey, publicEncrypt, randomBytes } from "node:crypto";
 
 /**
  * Seals a raw key to the run worker's RSA public key (RUN_SECRET_PUBLIC_KEY). The result can be stored but not read
@@ -21,6 +21,63 @@ function seal(rawKey: string): string {
     Buffer.from(rawKey, "utf8"),
   ).toString("base64");
 }
+
+function newAuthKey() {
+  const suffix = randomBytes(32).toString("hex");
+  return {
+    rawKey: `mak_live_${suffix}`,
+    previewKey: `mak_live_••••••••${suffix.slice(-4)}`,
+  };
+}
+
+/** Create the creator's one X-Marketplace-Key, with an optional expiry (epoch ms). */
+export const createAuthKey = action({
+  args: { expiresAt: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ previewKey: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const { rawKey, previewKey } = newAuthKey();
+    await ctx.runMutation(internal.apiKeys._upsertAuthKey, {
+      userId: identity.subject,
+      rawKey,
+      previewKey,
+      expiresAt: args.expiresAt,
+      rotate: false,
+    });
+    return { previewKey };
+  },
+});
+
+/** Replace the key in place. The old value stops working as soon as the creator updates it in their platform. */
+export const rotateAuthKey = action({
+  args: {},
+  handler: async (ctx): Promise<{ previewKey: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const { rawKey, previewKey } = newAuthKey();
+    await ctx.runMutation(internal.apiKeys._upsertAuthKey, {
+      userId: identity.subject,
+      rawKey,
+      previewKey,
+      rotate: true,
+    });
+    return { previewKey };
+  },
+});
+
+/** Returns the full key to its owner (eye icon / copy button). */
+export const revealAuthKey = action({
+  args: {},
+  handler: async (ctx): Promise<{ rawKey: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const row = await ctx.runQuery(internal.apiKeys._getAuthKeyRow, {
+      userId: identity.subject,
+    });
+    if (!row) throw new Error("No auth key yet");
+    return { rawKey: row.rawKey };
+  },
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Node.js actions — require "use node" because they use node:crypto.

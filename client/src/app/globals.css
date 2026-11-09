@@ -37,7 +37,7 @@
   --sidebar-accent-foreground: oklch(0 0 0);
   --sidebar-border: transparent;
   --sidebar-ring: oklch(0 0 0);
-  --font-sans: Geist, sans-serif;
+  --font-sans: var(--font-inter), Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Geist Mono, monospace;
   --radius: 0.5rem;
@@ -102,7 +102,7 @@
   --sidebar-accent-foreground: oklch(1 0 0);
   --sidebar-border: transparent;
   --sidebar-ring: oklch(0.72 0 0);
-  --font-sans: Geist, sans-serif;
+  --font-sans: var(--font-inter), Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Geist Mono, monospace;
   --radius: 0.5rem;

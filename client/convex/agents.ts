@@ -146,6 +146,7 @@ export const register = mutation({
     baseUrl: v.string(),
     version: v.string(),
     manifestAgentId: v.optional(v.string()),
+    platform: v.optional(v.literal("n8n")),
     capabilities: v.optional(
       v.object({
         streaming: v.optional(v.boolean()),
@@ -207,6 +208,7 @@ export const register = mutation({
       baseUrl,
       version: args.version,
       manifestAgentId: args.manifestAgentId,
+      platform: args.platform,
       status: "active",
       tags: args.tags,
       models: args.models.map((m) => ({ id: m.id, provider: m.provider })),

@@ -22,6 +22,19 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_publicKey", ["publicKey"]),
 
+  // ─── X-Marketplace-Key (exactly one per creator) ──────────────
+  // Sent by the marketplace in the X-Marketplace-Key header when it calls the creator's
+  // low/no-code agent (e.g. an n8n webhook). Shown to the creator again on request.
+  creator_auth_keys: defineTable({
+    userId: v.string(),
+    rawKey: v.string(),
+    /** Display form, e.g. "mak_live_••••••••4b12" */
+    previewKey: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.optional(v.number()),
+    rotatedAt: v.optional(v.number()),
+  }).index("by_userId", ["userId"]),
+
   // ─── Secret API Keys (many per creator) ────────────────────────────
   creator_api_keys: defineTable({
     userId: v.string(), // BetterAuth subject ID
@@ -74,6 +87,8 @@ export default defineSchema({
     baseUrl: v.string(), // unique, normalised (no trailing slash)
     version: v.string(),
     manifestAgentId: v.optional(v.string()),
+    /** Set for agents built in a low/no-code platform: the marketplace POSTs the webhook directly with X-Marketplace-Key. */
+    platform: v.optional(v.literal("n8n")),
     status: v.union(
       v.literal("active"),
       v.literal("paused"),

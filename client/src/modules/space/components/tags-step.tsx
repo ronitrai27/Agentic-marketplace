@@ -182,7 +182,7 @@ export function TagsStep({
   const ok = selected.length >= MIN_TAGS;
 
   return (
-    <section className="space-y-5 border-b border-border pb-8">
+    <section className="space-y-5 border-b border-border pb-8 font-sans">
       <SectionHeading
         icon={TagIcon}
         title="Tags"
@@ -191,7 +191,7 @@ export function TagsStep({
             className={`rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${
               ok
                 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                : "bg-muted text-muted-foreground"
+                : "bg-muted text-zinc-800 dark:text-zinc-200"
             }`}
           >
             {selected.length} / {MAX_TAGS} picked
@@ -218,7 +218,7 @@ export function TagsStep({
         {Array.from({ length: MAX_TAGS - selected.length }, (_, i) => (
           <span
             key={`slot-${i}`}
-            className="inline-flex h-7 w-24 items-center justify-center rounded-full border border-dashed border-border text-[11px] text-muted-foreground"
+            className="inline-flex h-7 w-24 items-center justify-center rounded-full border border-dashed border-zinc-400 dark:border-zinc-600 text-[11px] font-medium text-zinc-700 dark:text-zinc-300"
           >
             {i < MIN_TAGS - selected.length ? "required" : "optional"}
           </span>
@@ -246,7 +246,7 @@ export function TagsStep({
               <button
                 type="button"
                 onClick={retry}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                className="inline-flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300 hover:text-foreground cursor-pointer"
                 aria-label="Suggest tags again"
               >
                 <RefreshCw className="size-3" />
@@ -256,7 +256,7 @@ export function TagsStep({
           </div>
         </div>
         {!enough ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-zinc-700 dark:text-zinc-300">
             Write at least {MIN_DESCRIPTION_WORDS} words above and AI will
             suggest {MAX_TAGS} tags that match it.
           </p>
@@ -276,7 +276,7 @@ export function TagsStep({
         ) : suggest.state === "error" ? (
           <p className="text-xs text-destructive">{suggest.message}</p>
         ) : suggested.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-zinc-700 dark:text-zinc-300">
             No tag fits this description well. Browse below.
           </p>
         ) : (
@@ -289,18 +289,18 @@ export function TagsStep({
       {/* 3. Browse: search and the full list in one box */}
       <div className="overflow-hidden rounded-xl border border-border">
         <div className="relative border-b border-border">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-600 dark:text-zinc-400" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search all tags, e.g. plagiarism, cold email, invoice"
-            className={`h-10 rounded-none border-0 pl-9 ${FIELD_FILL} focus-visible:ring-0`}
+            className={`h-10 rounded-none border-0 pl-9 ${FIELD_FILL} placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus-visible:ring-0`}
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-600 dark:text-zinc-400 hover:text-foreground cursor-pointer"
               aria-label="Clear search"
             >
               <X className="size-3.5" />
@@ -312,7 +312,7 @@ export function TagsStep({
         <div className="max-h-56 overflow-y-auto p-3.5 space-y-4">
           {searching ? (
             matches.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-zinc-700 dark:text-zinc-300">
                 No tag matches &quot;{query}&quot;. Try a broader word, like
                 &quot;research&quot; or &quot;writing&quot;.
               </p>
@@ -324,7 +324,7 @@ export function TagsStep({
           ) : (
             groups.map((g) => (
               <div key={g} className="space-y-2">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
                   {TAG_GROUP_LABEL[g]}
                 </p>
                 <div className="flex flex-wrap gap-2">

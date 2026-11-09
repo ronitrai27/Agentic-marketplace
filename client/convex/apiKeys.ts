@@ -78,6 +78,91 @@ export const getApiKeys = query({
   },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  X-Marketplace-Key (one per creator). The key itself is never returned
+//  here; the creator reveals it through the revealAuthKey action.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getAuthKey = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const row = await ctx.db
+      .query("creator_auth_keys")
+      .withIndex("by_userId", (q) => q.eq("userId", identity.subject))
+      .first();
+    if (!row) return null;
+    return {
+      previewKey: row.previewKey,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt ?? null,
+      rotatedAt: row.rotatedAt ?? null,
+    };
+  },
+});
+
+export const setAuthKeyExpiry = mutation({
+  args: { expiresAt: v.union(v.number(), v.null()) },
+  handler: async (ctx, { expiresAt }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const row = await ctx.db
+      .query("creator_auth_keys")
+      .withIndex("by_userId", (q) => q.eq("userId", identity.subject))
+      .first();
+    if (!row) throw new Error("No key to update");
+    await ctx.db.patch(row._id, { expiresAt: expiresAt ?? undefined });
+    return { success: true };
+  },
+});
+
+export const _getAuthKeyRow = internalQuery({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("creator_auth_keys")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+  },
+});
+
+export const _upsertAuthKey = internalMutation({
+  args: {
+    userId: v.string(),
+    rawKey: v.string(),
+    previewKey: v.string(),
+    expiresAt: v.optional(v.number()),
+    rotate: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("creator_auth_keys")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!existing) {
+      if (args.rotate) throw new Error("No key to rotate");
+      await ctx.db.insert("creator_auth_keys", {
+        userId: args.userId,
+        rawKey: args.rawKey,
+        previewKey: args.previewKey,
+        createdAt: Date.now(),
+        expiresAt: args.expiresAt,
+      });
+      return;
+    }
+
+    // One key per creator: creating again is refused, rotating replaces it in place.
+    if (!args.rotate) throw new Error("You already have an auth key");
+    await ctx.db.patch(existing._id, {
+      rawKey: args.rawKey,
+      previewKey: args.previewKey,
+      rotatedAt: Date.now(),
+    });
+  },
+});
+
 // getOrCreatePublicKey, generateSecretKey, rotateSecretKey
 // have been moved to apiKeysActions.ts ("use node" file)
 // because they require node:crypto.

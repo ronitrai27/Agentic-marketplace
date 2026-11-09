@@ -59,20 +59,6 @@ export function CreatorStats({ agents }: { agents: AgentWithPricing[] }) {
         <Pair left={["Total", agents.length]} right={["Active", active]} />
       </Box>
 
-      <Box icon={BookOpen} label="Docs">
-        <div className="w-full flex flex-col gap-3">
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            How to register an agent, and the key points to keep in mind to earn revenue.
-          </p>
-          <Link href="/docs" className="self-start">
-            <Button size="sm" variant="outline" className="text-xs gap-1.5 cursor-pointer">
-              <BookOpen className="size-3.5" />
-              View docs
-            </Button>
-          </Link>
-        </div>
-      </Box>
-
       <Box icon={Trophy} label="Top agents by rating">
         {top.length === 0 ? (
           <p className="text-xs text-muted-foreground">No rated agents yet.</p>
@@ -90,6 +76,20 @@ export function CreatorStats({ agents }: { agents: AgentWithPricing[] }) {
             ))}
           </ol>
         )}
+      </Box>
+
+      <Box icon={BookOpen} label="Docs">
+        <div className="w-full flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            How to register an agent, and the key points to keep in mind to earn revenue.
+          </p>
+          <Link href="/docs" className="self-start">
+            <Button size="sm" variant="outline" className="text-xs gap-1.5 cursor-pointer">
+              <BookOpen className="size-3.5" />
+              View docs
+            </Button>
+          </Link>
+        </div>
       </Box>
     </div>
   );

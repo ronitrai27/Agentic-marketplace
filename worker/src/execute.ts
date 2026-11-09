@@ -173,6 +173,24 @@ async function callAgent(
   return failureFrom(json, res.status);
 }
 
+/** n8n agents: one JSON POST to the webhook with the creator's X-Marketplace-Key. The answer is the JSON it responds with. */
+async function callN8n(ctx: RunContext, input: unknown, authKey: string, signal: AbortSignal): Promise<Outcome> {
+  const res = await fetch(ctx.baseUrl, {
+    method: "POST",
+    redirect: "manual",
+    signal,
+    body: JSON.stringify(input),
+    headers: { "Content-Type": "application/json", Accept: "application/json", "X-Marketplace-Key": authKey },
+  });
+  const json = await res.json().catch(() => null);
+  if (res.status === 401 || res.status === 403) {
+    return { kind: "failed", code: "AGENT_AUTH_FAILED", message: "n8n did not accept the marketplace key. Nothing was charged." };
+  }
+  if (!res.ok) return failureFrom(json, res.status);
+  if (json === null) return { kind: "failed", code: "BAD_RESPONSE", message: "The workflow did not answer with JSON. Nothing was charged." };
+  return { kind: "completed", output: json };
+}
+
 /**
  * The activity that actually runs an agent: signs the request, streams its events into Convex, pings /health
  * while it works, and checks the output against the agent's schema. It reports its own terminal state; any
@@ -189,6 +207,51 @@ export async function executeAgent(runId: string): Promise<void> {
   try {
     const ctx = await getRunContext(runId);
     if (ctx.status !== "queued" && ctx.status !== "running") return await feed.close();
+
+    if (ctx.platform === "n8n") {
+      if (!ctx.authKey) return await fail("NO_AUTH_KEY", "The creator's X-Marketplace-Key is missing or expired. Nothing was charged.");
+      try {
+        await assertPublicUrl(ctx.baseUrl);
+      } catch {
+        return await fail("AGENT_UNREACHABLE", "Agent server is not reachable. Nothing was charged.");
+      }
+      const text = ctx.inputUrl ? await (await fetch(ctx.inputUrl, { signal: AbortSignal.timeout(60_000) })).text() : ctx.inputJson;
+      const n8nInput: unknown = JSON.parse(text);
+      const badInput = checkAgainstSchema(ctx.inputSchemaJson, n8nInput);
+      if (badInput) return await fail("INVALID_INPUT", `Your input doesn't match what the agent expects: ${badInput}`);
+
+      feed.push("run.note", { message: `Calling ${ctx.agentName}` });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new Error("TIMEOUT")), (ctx.timeoutSeconds + 15) * 1000);
+      const heartbeat = setInterval(() => Context.current().heartbeat(), 10_000);
+      const onCancel = () => controller.abort(new Error("CANCELLED"));
+      Context.current().cancellationSignal.addEventListener("abort", onCancel);
+      let result: Outcome;
+      try {
+        result = await callN8n(ctx, n8nInput, ctx.authKey, controller.signal);
+      } catch (err) {
+        const reason = (controller.signal.reason as Error | undefined)?.message ?? (err as Error).message;
+        if (reason === "CANCELLED") {
+          await feed.close();
+          await reportStatus(runId, "cancelled");
+          return;
+        }
+        result =
+          reason === "TIMEOUT"
+            ? { kind: "failed", code: "AGENT_TIMEOUT", message: "The agent ran out of time. Nothing was charged." }
+            : { kind: "failed", code: "AGENT_UNREACHABLE", message: "Lost contact with the agent server. Nothing was charged." };
+      } finally {
+        clearTimeout(timer);
+        clearInterval(heartbeat);
+        Context.current().cancellationSignal.removeEventListener("abort", onCancel);
+      }
+      if (result.kind === "failed") return await fail(result.code, result.message);
+      const badOutput = checkAgainstSchema(ctx.outputSchemaJson, result.output);
+      feed.push("schema.check", badOutput ? { valid: false, problem: badOutput } : { valid: true });
+      if (badOutput) return await fail("OUTPUT_SCHEMA_VIOLATION", "The agent's answer didn't match its declared output format. Nothing was charged.");
+      await feed.close();
+      return await reportComplete(runId, result.output);
+    }
 
     if (ctx.signingKeys.length === 0) return await fail("NO_SIGNING_KEY", "This agent is not set up for marketplace runs yet. Nothing was charged.");
     const secrets: Array<{ keyId: string; secret: string }> = [];
