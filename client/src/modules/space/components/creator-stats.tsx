@@ -1,15 +1,11 @@
 "use client";
 
 import React from "react";
-import { Brain, Star, Trophy, Workflow } from "lucide-react";
+import Link from "next/link";
+import { BookOpen, Brain, Star, Trophy } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { normaliseRating } from "./agent-rating";
 import type { AgentWithPricing } from "./agent-card";
-
-// DEMO DATA: replace with real run aggregates once those tables exist.
-const DEMO = {
-  totalRuns: 12480,
-  successfulRuns: 12107,
-};
 
 function Box({
   icon: Icon,
@@ -63,11 +59,18 @@ export function CreatorStats({ agents }: { agents: AgentWithPricing[] }) {
         <Pair left={["Total", agents.length]} right={["Active", active]} />
       </Box>
 
-      <Box icon={Workflow} label="Runs">
-        <Pair
-          left={["Total runs", DEMO.totalRuns.toLocaleString()]}
-          right={["Successful", DEMO.successfulRuns.toLocaleString()]}
-        />
+      <Box icon={BookOpen} label="Docs">
+        <div className="w-full flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            How to register an agent, and the key points to keep in mind to earn revenue.
+          </p>
+          <Link href="/docs" className="self-start">
+            <Button size="sm" variant="outline" className="text-xs gap-1.5 cursor-pointer">
+              <BookOpen className="size-3.5" />
+              View docs
+            </Button>
+          </Link>
+        </div>
       </Box>
 
       <Box icon={Trophy} label="Top agents by rating">

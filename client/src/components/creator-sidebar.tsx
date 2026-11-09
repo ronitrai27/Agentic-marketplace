@@ -23,10 +23,30 @@ import {
   Bot,
   Brain,
   BookOpen,
+  BarChart3,
+  CircleDollarSign,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 import { usePathname } from "next/navigation";
+
+const NAV = [
+  {
+    href: "/space/creator",
+    label: "Overview",
+    icon: LayoutDashboard,
+    exact: true,
+  },
+  { href: "/space/creator/credentials", label: "Credentials", icon: Key },
+  { href: "/space/creator/my-agents", label: "My agents", icon: Brain },
+  { href: "/space/creator/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/space/creator/revenue", label: "Revenue", icon: CircleDollarSign },
+] as {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  exact?: boolean;
+}[];
 
 export function CreatorSidebar({
   ...props
@@ -84,59 +104,30 @@ export function CreatorSidebar({
 
           <SidebarGroup className="p-0">
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  render={<Link href="/space/creator" />}
-                  isActive={pathname === "/space/creator"}
-                  tooltip="Overview"
-                  className={
-                    pathname === "/space/creator"
-                      ? "bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
-                      : "text-muted-foreground hover:text-foreground py-2 px-3 rounded-lg"
-                  }
-                >
-                  <LayoutDashboard className="size-4 shrink-0" />
-                  <span className="truncate group-data-[collapsible=icon]:hidden">
-                    Overview
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem className="mt-3">
-                <SidebarMenuButton
-                  render={<Link href="/space/creator/credentials" />}
-                  isActive={pathname.startsWith("/space/creator/credentials")}
-                  tooltip="Credentials"
-                  className={
-                    pathname.startsWith("/space/creator/credentials")
-                      ? "bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
-                      : "text-muted-foreground hover:text-foreground py-2 px-3 rounded-lg"
-                  }
-                >
-                  <Key className="size-4 shrink-0" />
-                  <span className="truncate group-data-[collapsible=icon]:hidden">
-                    Credentials
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem className="mt-3">
-                <SidebarMenuButton
-                  render={<Link href="/space/creator/my-agents" />}
-                  isActive={pathname.startsWith("/space/creator/my-agents")}
-                  tooltip="My agents"
-                  className={
-                    pathname.startsWith("/space/creator/my-agents")
-                      ? "bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
-                      : "text-muted-foreground hover:text-foreground py-2 px-3 rounded-lg"
-                  }
-                >
-                  <Brain className="size-4 shrink-0" />
-                  <span className="truncate group-data-[collapsible=icon]:hidden">
-                    My agents
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {NAV.map(({ href, label, icon: Icon, exact }) => {
+                const active = exact
+                  ? pathname === href
+                  : pathname.startsWith(href);
+                return (
+                  <SidebarMenuItem key={href} className="mt-3 first:mt-0">
+                    <SidebarMenuButton
+                      render={<Link href={href} />}
+                      isActive={active}
+                      tooltip={label}
+                      className={
+                        active
+                          ? "bg-white dark:bg-neutral-800 text-foreground font-medium shadow-xs py-2 px-3 rounded-lg"
+                          : "text-foreground hover:text-foreground py-2 px-3 rounded-lg"
+                      }
+                    >
+                      <Icon className="size-4 shrink-0 text-neutral-600 " />
+                      <span className="truncate text-black dark:text-white font-medium text-sm! group-data-[collapsible=icon]:hidden">
+                        {label}
+                      </span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>

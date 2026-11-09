@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { toast } from "sonner";
 import { Key, BookAlert, Plus } from "lucide-react";
 import { Loupe } from "@lucasmarkes/hairline/react";
 import { RegisterAgentDialog } from "@/modules/space/components/register-agent-dialog";
@@ -21,6 +22,16 @@ export default function MyAgentsPage() {
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const markActive = useMutation(api.agents.markActive);
+  const reactivate = (id: AgentWithPricing["_id"]) =>
+    toast.promise(markActive({ agentId: id }), {
+      loading: "Bringing your agent back…",
+      success: "Agent is active again",
+      error: (e) =>
+        (e instanceof Error ? e.message.replace(/^[\s\S]*Uncaught Error:\s*/, "").split("\n")[0] : "") ||
+        "Could not mark the agent active.",
+    });
 
   const agents = useQuery(api.agents.listMine) as AgentWithPricing[] | undefined;
   const loading = agents === undefined;
@@ -151,6 +162,7 @@ export default function MyAgentsPage() {
                           agent={a}
                           onOpen={() => setSelectedId(a._id)}
                           onDelete={() => setDeleteId(a._id)}
+                          onMarkActive={() => reactivate(a._id)}
                         />
                       ))}
                     </div>

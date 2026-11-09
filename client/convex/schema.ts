@@ -66,6 +66,8 @@ export default defineSchema({
     ownerId: v.string(), // BetterAuth subject ID
     slug: v.string(), // unique, derived from name
     name: v.string(),
+    /** Lowercased, whitespace-collapsed name: agent names are unique marketplace-wide. Missing on older rows. */
+    nameKey: v.optional(v.string()),
     description: v.string(),
     /** Public R2 URL of the 256x256 logo; the UI falls back to the name's first letter. */
     logoUrl: v.optional(v.string()),
@@ -120,7 +122,10 @@ export default defineSchema({
     .index("by_owner", ["ownerId"])
     .index("by_slug", ["slug"])
     .index("by_baseUrl", ["baseUrl"])
-    .index("by_status", ["status", "createdAt"]),
+    .index("by_nameKey", ["nameKey"])
+    .index("by_status", ["status", "createdAt"])
+    // Daily archive cleanup: archived agents older than the grace period
+    .index("by_status_updated", ["status", "updatedAt"]),
 
   // Join table so the marketplace can filter by tag (Convex cannot index arrays)
   agent_tags: defineTable({
@@ -339,6 +344,154 @@ export default defineSchema({
     dataJson: v.string(), // clipped, see MAX_EVENT_CHARS
     at: v.number(),
   }).index("by_run_seq", ["runId", "seq"]),
+
+  // ─── Creator analytics ─────────────────────────────────────────────
+  // NEVER stores run input or output (buyer data is confidential): only who/where/how long/how much.
+  // One immutable row per finished run. Source of truth for run-level tables and for rebuilding the rollups below.
+  run_metrics: defineTable({
+    runId: v.id("runs"),
+    agentId: v.id("agents"),
+    /** Agent owner, denormalised so a creator's whole portfolio is one index read. */
+    ownerId: v.string(),
+    callerId: v.string(),
+    callerName: v.optional(v.string()),
+    source: v.union(v.literal("key"), v.literal("session")),
+    keyId: v.optional(v.id("creator_api_keys")),
+    outcome: v.union(v.literal("succeeded"), v.literal("failed"), v.literal("cancelled")),
+    /** Gateway error code on failure (e.g. "timeout", "schema_mismatch"); never the message body. */
+    errorCode: v.optional(v.string()),
+    /** Region/country as reported by the edge, and the raw caller IP for abuse review. */
+    region: v.optional(v.string()),
+    country: v.optional(v.string()),
+    clientIp: v.optional(v.string()),
+    /** Time spent waiting before the agent started, and the agent's own execution time. */
+    queueMs: v.optional(v.number()),
+    durationMs: v.number(),
+    /** Charged to the buyer, in credits (100 = $1) and integer micro-USD. 0 for failed or cancelled runs. */
+    costCredits: v.number(),
+    costMicros: v.number(),
+    pricingId: v.optional(v.id("agent_pricing")),
+    agentVersion: v.optional(v.string()),
+    day: v.string(), // UTC "2026-11-09"
+    createdAt: v.number(),
+    finishedAt: v.number(),
+  })
+    .index("by_run", ["runId"])
+    .index("by_agent_finished", ["agentId", "finishedAt"])
+    .index("by_owner_finished", ["ownerId", "finishedAt"])
+    .index("by_agent_caller", ["agentId", "callerId", "finishedAt"])
+    .index("by_agent_outcome", ["agentId", "outcome", "finishedAt"]),
+
+  // Rollup: runs per agent, per day, per region. Feeds the "where are calls coming from" map.
+  agent_regions_daily: defineTable({
+    agentId: v.id("agents"),
+    ownerId: v.string(),
+    day: v.string(),
+    region: v.string(), // "unknown" when the edge sent nothing
+    totalRuns: v.number(),
+    successRuns: v.number(),
+    failedRuns: v.number(),
+    totalLatencyMs: v.number(),
+  })
+    .index("by_agent_day_region", ["agentId", "day", "region"])
+    .index("by_owner_day", ["ownerId", "day"]),
+
+  // Rollup: latency distribution per agent per day, for p50/p95/p99 without scanning run_metrics.
+  // Fixed bucket upper bounds (ms): 250, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, +inf.
+  agent_latency_daily: defineTable({
+    agentId: v.id("agents"),
+    day: v.string(),
+    buckets: v.array(v.number()), // counts, same order as the bounds above
+    maxLatencyMs: v.number(),
+    totalQueueMs: v.number(),
+    queuedRuns: v.number(),
+  }).index("by_agent_day", ["agentId", "day"]),
+
+  // Rollup: error codes per agent per day, so failures can be explained, not only counted.
+  agent_errors_daily: defineTable({
+    agentId: v.id("agents"),
+    day: v.string(),
+    errorCode: v.string(),
+    count: v.number(),
+  }).index("by_agent_day_code", ["agentId", "day", "errorCode"]),
+
+  // ─── Creator revenue ───────────────────────────────────────────────
+  // Append-only ledger: one row per settled run. Fee rates are SNAPSHOTTED on the row (basis points,
+  // 100 bps = 1%) so a later rate change never rewrites history. All money is integer micro-USD.
+  //   grossMicros      what the buyer was charged for the run
+  //   commissionMicros marketplace commission (12% = 1200 bps) taken from gross
+  //   platformFeeMicros extra 1% (100 bps) marketplace platform fee taken from gross
+  //   creatorNetMicros grossMicros - commissionMicros - platformFeeMicros
+  revenue_ledger: defineTable({
+    runId: v.id("runs"),
+    agentId: v.id("agents"),
+    creatorId: v.string(),
+    buyerId: v.string(),
+    pricingId: v.optional(v.id("agent_pricing")),
+    grossMicros: v.number(),
+    commissionBps: v.number(),
+    commissionMicros: v.number(),
+    platformFeeBps: v.number(),
+    platformFeeMicros: v.number(),
+    creatorNetMicros: v.number(),
+    /** pending: inside the dispute/clearing window. available: payable. paid: included in a payout. reversed: refunded. */
+    status: v.union(
+      v.literal("pending"),
+      v.literal("available"),
+      v.literal("paid"),
+      v.literal("reversed"),
+    ),
+    /** When a pending row becomes available. */
+    availableAt: v.number(),
+    payoutId: v.optional(v.id("creator_payouts")),
+    /** Set when status = reversed (refund or chargeback). */
+    reversedAt: v.optional(v.number()),
+    reversalReason: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_run", ["runId"])
+    .index("by_creator_created", ["creatorId", "createdAt"])
+    .index("by_agent_created", ["agentId", "createdAt"])
+    .index("by_creator_status", ["creatorId", "status", "createdAt"])
+    .index("by_status_available", ["status", "availableAt"])
+    .index("by_payout", ["payoutId"]),
+
+  // Rollup: a creator's earnings per agent per day, so the Revenue page never scans the ledger.
+  creator_revenue_daily: defineTable({
+    creatorId: v.string(),
+    agentId: v.id("agents"),
+    day: v.string(),
+    settledRuns: v.number(),
+    grossMicros: v.number(),
+    commissionMicros: v.number(),
+    platformFeeMicros: v.number(),
+    creatorNetMicros: v.number(),
+    reversedMicros: v.number(),
+  })
+    .index("by_creator_day", ["creatorId", "day"])
+    .index("by_agent_day", ["agentId", "day"]),
+
+  // Money paid out to the creator. A payout groups ledger rows (revenue_ledger.payoutId).
+  creator_payouts: defineTable({
+    creatorId: v.string(),
+    amountMicros: v.number(),
+    currency: v.literal("USD"),
+    status: v.union(
+      v.literal("requested"),
+      v.literal("processing"),
+      v.literal("paid"),
+      v.literal("failed"),
+    ),
+    /** Payment provider's reference (transfer id); no bank details are stored here. */
+    providerRef: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    periodStart: v.number(),
+    periodEnd: v.number(),
+    requestedAt: v.number(),
+    paidAt: v.optional(v.number()),
+  })
+    .index("by_creator_requested", ["creatorId", "requestedAt"])
+    .index("by_status", ["status", "requestedAt"]),
 
   // ─── Rate Limit Sliding Window ──────────────────────────────────────
   // One document per (keyId, windowMinute). TTL-cleaned by a scheduled job.

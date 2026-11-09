@@ -238,7 +238,7 @@ export default function CreatorCredentialsPage() {
             <h3 className="text-sm font-semibold dark:text-white">
               Test tokens
             </h3>
-            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
+            <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
               TESTING ONLY
             </span>
           </div>
@@ -247,7 +247,7 @@ export default function CreatorCredentialsPage() {
             tools like curl and Postman. They can&apos;t process buyer requests,
             can&apos;t move money, and expire after the time you choose.
           </p>
-          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 p-5">
+          <div className="rounded-lg border border-neutral-300 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 p-5">
             <TestTokenPanel />
           </div>
         </div>
@@ -259,7 +259,7 @@ export default function CreatorCredentialsPage() {
               <h3 className="text-sm font-semibold dark:text-white">
                 Publishable key
               </h3>
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
                 PUBLIC
               </span>
             </div>
@@ -269,7 +269,7 @@ export default function CreatorCredentialsPage() {
             identify your creator space.
           </p>
 
-          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 overflow-hidden">
+          <div className="rounded-lg border border-neutral-300 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 overflow-hidden">
             <div className="grid grid-cols-12 px-5 py-2.5 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-mono uppercase tracking-wide dark:text-neutral-500">
               <div className="col-span-8 sm:col-span-9">KEY</div>
               <div className="col-span-4 sm:col-span-3 text-right">ACTION</div>
@@ -309,7 +309,7 @@ export default function CreatorCredentialsPage() {
               <h3 className="text-sm font-semibold dark:text-white">
                 Secret keys
               </h3>
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60 font-semibold tracking-wider">
                 PRODUCTION
               </span>
             </div>
@@ -333,7 +333,7 @@ export default function CreatorCredentialsPage() {
           </p>
 
           {/* Table Container */}
-          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 overflow-hidden">
+          <div className="rounded-lg border border-neutral-300 dark:border-neutral-800 bg-white dark:bg-neutral-900/30 overflow-hidden">
             {/* Table Header */}
             <div className="grid grid-cols-12 px-5 py-2.5 border-b border-neutral-200 dark:border-neutral-800 text-[11px] font-mono uppercase tracking-wide font-semibold dark:text-neutral-500">
               <div className="col-span-3">KEY</div>
@@ -440,9 +440,9 @@ export default function CreatorCredentialsPage() {
             key again.
           </p>
 
-          <div className="flex items-start gap-3 mt-10 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/40 p-3.5 text-xs text-neutral-600 dark:text-neutral-400">
+          <div className="flex items-start gap-3 mt-10 rounded-lg border border-neutral-400 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-900/40 p-3.5 text-xs text-black! dark:text-neutral-400">
             <ShieldCheck className="size-4 text-neutral-700 dark:text-neutral-300 shrink-0 mt-0.5" />
-            <p className="text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+            <p className="text-[11px] leading-relaxed text-neutral-900 dark:text-neutral-400">
               <span className="font-medium text-neutral-900 dark:text-neutral-200">
                 Security Note:
               </span>{" "}

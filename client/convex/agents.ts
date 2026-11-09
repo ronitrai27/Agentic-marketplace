@@ -1,4 +1,4 @@
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { validateTags } from "../src/lib/agent-tags";
@@ -62,6 +62,21 @@ async function uniqueSlug(ctx: MutationCtx, name: string, selfId?: Id<"agents">)
     if (!taken || taken._id === selfId) return candidate;
   }
   return `${base}-${Date.now().toString(36)}`;
+}
+
+/** Names are unique marketplace-wide, ignoring case and extra spaces. */
+const nameKeyOf = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * Throws when another agent already uses this name. Checks the stored key and the base slug, so agents saved
+ * before `nameKey` existed are covered too. Archived agents keep their name until the daily cleanup removes them.
+ */
+async function assertNameFree(ctx: MutationCtx, name: string, selfId?: Id<"agents">) {
+  const key = nameKeyOf(name);
+  const byKey = await ctx.db.query("agents").withIndex("by_nameKey", (q) => q.eq("nameKey", key)).first();
+  const bySlug = await ctx.db.query("agents").withIndex("by_slug", (q) => q.eq("slug", slugify(name))).first();
+  const clash = [byKey, bySlug].find((a) => a && a._id !== selfId && nameKeyOf(a.name) === key);
+  if (clash) throw new Error("This agent name is already taken. Choose another name.");
 }
 
 function normaliseUrl(raw: string): string {
@@ -176,7 +191,8 @@ export const register = mutation({
       .query("agents")
       .withIndex("by_baseUrl", (q) => q.eq("baseUrl", baseUrl))
       .first();
-    if (dupe) throw new Error("An agent with this URL is already registered.");
+    if (dupe) throw new Error("Not allowed: this agent URL is already taken. Choose another.");
+    await assertNameFree(ctx, name);
 
     const now = Date.now();
     const slug = await uniqueSlug(ctx, name);
@@ -185,6 +201,7 @@ export const register = mutation({
       ownerId,
       slug,
       name,
+      nameKey: nameKeyOf(name),
       description: args.description.trim(),
       logoUrl: cleanLogoUrl(args.logoUrl),
       baseUrl,
@@ -293,12 +310,13 @@ export const updateDetails = mutation({
       if (!descCheck.ok) throw new Error(descCheck.message ?? "Invalid description.");
     }
 
-    let rename: { name: string; slug: string } | undefined;
+    let rename: { name: string; slug: string; nameKey: string } | undefined;
     if (name !== undefined && name.trim() !== agent.name) {
       const clean = name.trim().replace(/\s+/g, " ");
       if (clean.length < 2) throw new Error("Agent name must be at least 2 characters.");
       if (clean.length > 60) throw new Error("Agent name must be 60 characters or fewer.");
-      rename = { name: clean, slug: await uniqueSlug(ctx, clean, agentId) };
+      await assertNameFree(ctx, clean, agentId);
+      rename = { name: clean, slug: await uniqueSlug(ctx, clean, agentId), nameKey: nameKeyOf(clean) };
     }
 
     await ctx.db.patch(agentId, {
@@ -312,7 +330,7 @@ export const updateDetails = mutation({
   },
 });
 
-/** Agents are never hard-deleted (policy): archiving takes them off the marketplace. */
+/** Archiving takes an agent off the marketplace. A daily job removes it for good (see purgeArchived). */
 export const archive = mutation({
   args: { agentId: v.id("agents") },
   handler: async (ctx, { agentId }) => {
@@ -403,5 +421,70 @@ export const listFeatured = query({
         models: a.models,
         ratingAvg: a.ratingAvg ?? 0,
       }));
+  },
+});
+
+/** Owner-only: bring an archived agent back (it returns active) before the daily cleanup removes it. */
+export const markActive = mutation({
+  args: { agentId: v.id("agents") },
+  handler: async (ctx, { agentId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Please sign in.");
+
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.ownerId !== identity.subject) throw new Error("Agent not found.");
+    if (agent.status === "active") return { agentId };
+    if (agent.status !== "archived") throw new Error(`This agent is ${agent.status}; only archived agents can be marked active.`);
+
+    await ctx.db.patch(agentId, { status: "active", updatedAt: Date.now() });
+    return { agentId };
+  },
+});
+
+const ARCHIVE_GRACE_MS = 24 * 60 * 60 * 1000;
+const PURGE_BATCH = 25;
+
+/**
+ * Daily cron: permanently remove agents archived for over 24 hours, so creators get a day to mark them active.
+ * Run history, metrics and the revenue ledger are kept (financial / audit records); lists show them as "Deleted agent".
+ * An agent that still has a run in flight is skipped until the next pass.
+ */
+export const purgeArchived = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - ARCHIVE_GRACE_MS;
+    const stale = await ctx.db
+      .query("agents")
+      .withIndex("by_status_updated", (q) => q.eq("status", "archived").lt("updatedAt", cutoff))
+      .take(PURGE_BATCH);
+
+    let removed = 0;
+    for (const agent of stale) {
+      let busy = false;
+      for (const status of ["awaiting_input", "queued", "running"] as const) {
+        const live = await ctx.db
+          .query("runs")
+          .withIndex("by_agent_status", (q) => q.eq("agentId", agent._id).eq("status", status))
+          .first();
+        if (live) busy = true;
+      }
+      if (busy) continue;
+
+      const children = await Promise.all([
+        ctx.db.query("agent_pricing").withIndex("by_agent_created", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_tags").withIndex("by_agent", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_stats").withIndex("by_agent", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_stats_daily").withIndex("by_agent_day", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_callers_daily").withIndex("by_agent_day", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_reviews").withIndex("by_agent_created", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_regions_daily").withIndex("by_agent_day_region", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_latency_daily").withIndex("by_agent_day", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_errors_daily").withIndex("by_agent_day_code", (q) => q.eq("agentId", agent._id)).collect(),
+      ]);
+      for (const row of children.flat()) await ctx.db.delete(row._id);
+      await ctx.db.delete(agent._id);
+      removed++;
+    }
+    return { removed, skipped: stale.length - removed };
   },
 });

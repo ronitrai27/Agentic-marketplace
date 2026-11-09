@@ -121,9 +121,7 @@ function Row({
 
 function Heading({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">
-      {children}
-    </p>
+    <p className="px-3 pb-1 pt-3 text-xs font-medium text-black">{children}</p>
   );
 }
 
@@ -443,7 +441,7 @@ export function AgentSearch() {
                         setQ(c);
                         input.current?.focus();
                       }}
-                      className="cursor-pointer rounded-full border border-border bg-white dark:bg-card px-3.5 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
+                      className="cursor-pointer rounded-full border border-border bg-white dark:bg-card px-3.5 py-1.5 text-[10px] text-foreground transition-colors hover:bg-muted"
                     >
                       {c}
                     </button>

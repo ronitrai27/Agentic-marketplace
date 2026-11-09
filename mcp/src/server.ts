@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { fetchWallet } from "./wallet.js";
+import { registerAgentTools } from "./tools/agents.js";
 
 /** Must return a fresh instance on every call (the handler builds one per request). */
 export function createServer(): McpServer {
@@ -32,6 +33,8 @@ export function createServer(): McpServer {
       }
     },
   );
+
+  registerAgentTools(server);
 
   return server;
 }

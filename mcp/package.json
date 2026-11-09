@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/index.ts",
-    "start": "node build/index.js",
+    "dev": "tsx watch --env-file=.env.local src/index.ts",
+    "start": "node --env-file=.env.local build/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

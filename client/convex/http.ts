@@ -112,6 +112,47 @@ http.route({
   }),
 });
 
+// ── MCP server: agent discovery + schemas ───────────────────────────────────
+//   POST /mcp/discover-agents  { query?, tag?, limit? }
+//   POST /mcp/agent-schemas    { slugs: string[] }
+// Same Bearer <MCP_BACKEND_SECRET> guard as the wallet route. Public marketplace data only.
+const mcpRoute = (path: string, handle: (ctx: any, body: any) => Promise<unknown>) =>
+  http.route({
+    path,
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+      const secret = process.env.MCP_BACKEND_SECRET;
+      const token = (request.headers.get("Authorization") ?? "").replace(/^Bearer /, "");
+      if (!secret || !safeEqual(token, secret)) return json({ error: "unauthorized" }, 401);
+      let body: any;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid_body" }, 400);
+      }
+      try {
+        return json(await handle(ctx, body ?? {}));
+      } catch (err) {
+        console.error(path, err);
+        return json({ error: "server_error" }, 500);
+      }
+    }),
+  });
+
+mcpRoute("/mcp/discover-agents", async (ctx, b) =>
+  ctx.runQuery(internal.mcpAgents.discover, {
+    query: typeof b.query === "string" ? b.query.slice(0, 200) : undefined,
+    tag: typeof b.tag === "string" ? b.tag.slice(0, 50) : undefined,
+    limit: typeof b.limit === "number" ? b.limit : undefined,
+  }),
+);
+
+mcpRoute("/mcp/agent-schemas", async (ctx, b) =>
+  ctx.runQuery(internal.mcpAgents.schemasBySlugs, {
+    slugs: Array.isArray(b.slugs) ? b.slugs.filter((s: unknown) => typeof s === "string").slice(0, 10) : [],
+  }),
+);
+
 // ── MCP server: access-token introspection ──────────────────────────────────
 // The MCP server forwards the user's OAuth access token here to learn who owns it.
 //   POST /mcp/introspect   Authorization: Bearer <MCP_BACKEND_SECRET>   { "token": "..." }

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import "./src/env";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  allowedDevOrigins: ["*.trycloudflare.com"],
   experimental: {
     agentFeedback: true,
     agentUpgrade: "security",

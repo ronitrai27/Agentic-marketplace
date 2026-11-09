@@ -72,10 +72,13 @@ export function AgentCard({
   agent,
   onOpen,
   onDelete,
+  onMarkActive,
 }: {
   agent: AgentWithPricing;
   onOpen: () => void;
   onDelete: () => void;
+  /** Shown instead of View on archived agents, to bring them back before the daily cleanup. */
+  onMarkActive?: () => void;
 }) {
   const setLogo = useMutation(api.agents.setLogo);
   const plan = agent.pricing?.plan as PlanMicros | undefined;
@@ -156,10 +159,10 @@ export function AgentCard({
         <Button
           type="button"
           size="sm"
-          onClick={onOpen}
+          onClick={agent.status === "archived" && onMarkActive ? onMarkActive : onOpen}
           className="cursor-pointer"
         >
-          View
+          {agent.status === "archived" && onMarkActive ? "Mark Active" : "View"}
         </Button>
         <Button
           type="button"
