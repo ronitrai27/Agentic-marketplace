@@ -23,6 +23,7 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as mcpAgents from "../mcpAgents.js";
 import type * as n8nAgents from "../n8nAgents.js";
+import type * as revenue from "../revenue.js";
 import type * as reviews from "../reviews.js";
 import type * as runs from "../runs.js";
 import type * as temporal from "../temporal.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   mcpAgents: typeof mcpAgents;
   n8nAgents: typeof n8nAgents;
+  revenue: typeof revenue;
   reviews: typeof reviews;
   runs: typeof runs;
   temporal: typeof temporal;

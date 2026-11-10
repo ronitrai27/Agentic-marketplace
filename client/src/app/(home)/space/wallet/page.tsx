@@ -21,6 +21,16 @@ import { api } from "../../../../../convex/_generated/api";
 
 const PRESETS = [5, 10, 25, 50];
 
+/** "in 5h 20m, Nov 12, 3:40 PM" for the next time held earnings become withdrawable. */
+function releaseIn(at: number) {
+  const ms = Math.max(0, at - Date.now());
+  const mins = Math.ceil(ms / 60_000);
+  const h = Math.floor(mins / 60);
+  const left = h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : h > 0 ? `${h}h ${mins % 60}m` : `${mins}m`;
+  const when = new Date(at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return { left, when };
+}
+
 export default function WalletPage() {
   const wallet = useQuery(api.wallet.getWallet);
   const [clientId, setClientId] = useState<string | null>(null);
@@ -130,6 +140,12 @@ export default function WalletPage() {
   const withdrawableCredits = wallet?.withdrawableCredits ?? 0;
   const escrowUsd = wallet?.escrowUsd ?? "0.00";
   const escrowCredits = wallet?.escrow ?? 0;
+  // Creator earnings inside their 48 hour hold
+  const pendingCredits = wallet?.pendingCredits ?? 0;
+  const nextReleaseAt = wallet?.nextReleaseAt ?? null;
+  const heldUsd = ((escrowCredits + pendingCredits) / 100).toFixed(2);
+  const pendingUsd = (pendingCredits / 100).toFixed(2);
+  const releaseText = nextReleaseAt ? releaseIn(nextReleaseAt) : null;
 
   return (
     <div className="flex-1 w-full h-full overflow-y-auto thin-scrollbar px-6 py-6 sm:px-8 sm:py-7 space-y-5">
@@ -194,17 +210,22 @@ export default function WalletPage() {
         <div className="relative overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800 bg-linear-to-br from-white to-gray-100 dark:from-neutral-950 dark:to-neutral-950 p-4">
           <div className="relative z-10">
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-              In Escrow / Hold
+              On Hold
             </span>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-2xl font-semibold text-foreground tracking-tight">
-                ${escrowUsd}
+                ${heldUsd}
               </span>
               <span className="text-xs text-muted-foreground">USD</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {escrowCredits.toLocaleString()} credits held for active tasks
             </p>
+            {pendingCredits > 0 && releaseText && (
+              <p className="text-xs text-foreground mt-0.5">
+                ${pendingUsd} earnings clear in {releaseText.left} ({releaseText.when})
+              </p>
+            )}
           </div>
           <Lock
             className="absolute right-3.5 bottom-3.5 h-12 w-12 text-muted-foreground/15 pointer-events-none select-none"
@@ -408,6 +429,16 @@ export default function WalletPage() {
               Max Withdrawable: ${withdrawableUsd} USD
             </span>
           </div>
+
+          {pendingCredits > 0 && releaseText && (
+            <div className="flex items-start gap-2 rounded-md border border-neutral-300 dark:border-neutral-700 p-3 text-xs text-foreground">
+              <Lock className="size-3.5 mt-0.5 shrink-0" />
+              <p>
+                ${pendingUsd} of your earnings are on hold for 48 hours after each run. The next amount becomes
+                withdrawable in {releaseText.left} ({releaseText.when}).
+              </p>
+            </div>
+          )}
 
           <form onSubmit={handleWithdraw} className="space-y-4 max-w-lg">
             <div className="space-y-1.5">

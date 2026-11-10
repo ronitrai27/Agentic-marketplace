@@ -6,6 +6,7 @@ import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { escrowCredits, getCredits, setCredits } from "./escrow";
 import { announceRunEnd } from "./chatRuns";
+import { recordEarning } from "./revenue";
 import { chargeMicrosFor, microsToCredits, runQuote, type PlanMicros } from "../src/lib/agent-display";
 
 const DEFAULT_TIMEOUT_S = 600;
@@ -563,6 +564,7 @@ export const complete = internalMutation({
       const balance = await getCredits(ctx, run.userId);
       await setCredits(ctx, run.userId, Math.max(0, balance - charged));
       await ctx.db.patch(runId, { holdStatus: "settled", chargedCredits: charged });
+      await recordEarning(ctx, run, charged, Date.now());
     }
     await dropStoredInput(ctx, run);
     const now = Date.now();

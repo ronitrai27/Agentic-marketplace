@@ -2,6 +2,10 @@ import { query, mutation, internalQuery } from "./_generated/server";
 import { components } from "./_generated/api";
 import { escrowCredits } from "./escrow";
 import { v } from "convex/values";
+import { MICROS_PER_CREDIT } from "../src/lib/agent-display";
+
+/** Smallest cash-out: $10. */
+const MIN_WITHDRAW_CREDITS = 1000;
 
 export const getWallet = query({
   args: {},
@@ -29,6 +33,14 @@ export const getWallet = query({
 
       const credits = Number(user?.credits ?? 0);
       const escrow = await escrowCredits(ctx, identity.subject); // credits held for runs in progress
+      // Creator earnings still inside their 48 hour hold: not in the balance yet
+      const pendingRows = await ctx.db
+        .query("revenue_ledger")
+        .withIndex("by_creator_status", (q) => q.eq("creatorId", identity.subject).eq("status", "pending"))
+        .collect();
+      const pendingCredits =
+        Math.round((pendingRows.reduce((s, r) => s + r.creatorNetMicros, 0) / MICROS_PER_CREDIT) * 100) / 100;
+      const nextReleaseAt = pendingRows.length ? Math.min(...pendingRows.map((r) => r.availableAt)) : null;
 
       // Platform rule: User must maintain at least 500 credits ($5.00) reserve.
       // Funds in escrow cannot be withdrawn.
@@ -38,6 +50,9 @@ export const getWallet = query({
         credits,
         escrow,
         withdrawableCredits,
+        pendingCredits,
+        nextReleaseAt,
+        minWithdrawCredits: MIN_WITHDRAW_CREDITS,
         withdrawableUsd: (withdrawableCredits / 100).toFixed(2),
         totalUsd: (credits / 100).toFixed(2),
         escrowUsd: (escrow / 100).toFixed(2),
@@ -125,6 +140,11 @@ export const deductCreditsForWithdrawal = mutation({
     const escrow = await escrowCredits(ctx, identity.subject);
     const maxWithdrawable = Math.max(0, currentCredits - 500 - escrow);
 
+    if (args.amountCredits < MIN_WITHDRAW_CREDITS) {
+      throw new Error(
+        `The minimum withdrawal is ${MIN_WITHDRAW_CREDITS} credits ($${(MIN_WITHDRAW_CREDITS / 100).toFixed(2)}).`,
+      );
+    }
     if (args.amountCredits > maxWithdrawable) {
       throw new Error(
         `Cannot withdraw ${args.amountCredits} credits. Maximum withdrawable is ${maxWithdrawable} credits ($${(maxWithdrawable / 100).toFixed(2)}) due to the $5 platform reserve floor.`,
