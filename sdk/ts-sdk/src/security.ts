@@ -40,6 +40,9 @@ const CATELOG_TEST_KEYS: Record<string, string> = {
   k1: `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAAqBmhtzqR7yK6bs6gBVFcTxJ4BfOzAy44eL5bnkr2mY=
 -----END PUBLIC KEY-----`,
+  k2: `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAadt7RamI1So/DxtYtzPvxl4GJ8ccYrP1Y4Mg3wDXfEs=
+-----END PUBLIC KEY-----`,
 };
 
 const TEST_TOKEN_PREFIX = "cat_test_";

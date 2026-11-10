@@ -17,6 +17,8 @@
 The official TypeScript SDK for the **Catelog Agent Marketplace**.  
 Wrap any AI agent (Claude Agent SDK, LangGraph, OpenAI, Vercel AI SDK, CrewAI, or plain TypeScript) into a protocol-compliant marketplace microservice in under 20 lines of code.
 
+> **Version 1.3.0:** test tokens are now signed with a new marketplace key (`k2`). Upgrade to keep dry runs working. See [What changed in 1.3.0](#what-changed-in-130).
+>
 > **Version 1.2.1:** `createAgent` no longer takes a `description`. Give your agent a `name`; you write its description (20 to 100 words) in the dashboard when you register it. See [What changed in 1.2.1](#what-changed-in-121).
 
 ---
@@ -244,6 +246,14 @@ npx catelog --help
 | `/schema` | `GET` | Agent manifest: id, name, version, limits and input/output JSON Schemas |
 | `/execute` | `POST` | Authenticated execution: SSE streaming or JSON batch |
 | `/tasks/:id` | `GET` | Poll async job status *(async mode only)* |
+
+---
+
+## What changed in 1.3.0
+
+- **New:** the SDK verifies test tokens signed with the marketplace key `k2`. The old key `k1` is still accepted.
+- **Upgrading:** update the package and redeploy. Without it, dry runs fail with `Unrecognized test token key`. Live buyer runs are not affected.
+- **Can’t upgrade yet?** Set `CATELOG_TEST_KID=k2` and `CATELOG_TEST_PUBLIC_KEY` (the `k2` PEM) in your agent’s environment.
 
 ---
 

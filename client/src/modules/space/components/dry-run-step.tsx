@@ -1153,7 +1153,7 @@ export function DryRunStep({
                   </p>
                   {failed.error.code?.startsWith("AUTH") && (
                     <p className="text-foreground mt-1">
-                      Make sure your agent runs SDK 1.1.3 or newer and has
+                      Make sure your agent runs SDK 1.3.0 or newer and has
                       CATELOG_PUBLIC_KEY set, then generate a fresh token.
                     </p>
                   )}

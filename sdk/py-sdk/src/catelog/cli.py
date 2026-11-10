@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 GUIDES: Dict[str, Dict[str, str]] = {
     "py": {"label": "Python", "file": "Catelog-PY.md"},
