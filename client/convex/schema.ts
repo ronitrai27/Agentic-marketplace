@@ -142,6 +142,22 @@ export default defineSchema({
     // Daily archive cleanup: archived agents older than the grace period
     .index("by_status_updated", ["status", "updatedAt"]),
 
+  // Version history: one row per published version (the newest row is the current version).
+  // Written by agents.reRegister; older agents get their first row backfilled on their first re-register.
+  agent_versions: defineTable({
+    agentId: v.id("agents"),
+    version: v.string(),
+    /** Schema snapshot taken when this version was published. */
+    inputSchemaJson: v.string(),
+    outputSchemaJson: v.string(),
+    capabilities: v.optional(v.any()),
+    /** Optional release note. */
+    changelog: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_agent_created", ["agentId", "createdAt"])
+    .index("by_agent_version", ["agentId", "version"]),
+
   // Join table so the marketplace can filter by tag (Convex cannot index arrays)
   agent_tags: defineTable({
     agentId: v.id("agents"),

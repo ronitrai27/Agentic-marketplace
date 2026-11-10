@@ -104,7 +104,7 @@ export const list = query({
   },
 });
 
-/** Creates the caller's review. One review per user per agent: a new one replaces the previous. */
+/** Creates the caller's review. Appends a review; a user may leave several. */
 export const create = mutation({
   args: { slug: v.string(), rating: v.number(), comment: v.string() },
   handler: async (ctx, { slug, rating, comment }) => {
@@ -128,43 +128,32 @@ export const create = mutation({
     const now = Date.now();
     const userName = identity.name || identity.email?.split("@")[0] || "User";
     const userAvatar = identity.pictureUrl || (await userImage(ctx, userId)) || undefined;
-    const existing = await ctx.db
-      .query("agent_reviews")
-      .withIndex("by_agent_user", (q) => q.eq("agentId", agent._id).eq("userId", userId))
-      .first();
-
-    // a new review replaces the caller's previous one, so each user counts once in the average
-    if (existing) await ctx.db.delete(existing._id);
-    {
-      await ctx.db.insert("agent_reviews", {
-        agentId: agent._id,
-        userId,
-        userName,
-        userAvatar,
-        rating,
-        comment: text,
-        likes: 0,
-        createdAt: now,
-      });
-      await applyRating(ctx, agent, { add: rating, remove: existing?.rating });
-    }
+    // every review is appended; a user can post several and each counts in the average
+    await ctx.db.insert("agent_reviews", {
+      agentId: agent._id,
+      userId,
+      userName,
+      userAvatar,
+      rating,
+      comment: text,
+      likes: 0,
+      createdAt: now,
+    });
+    await applyRating(ctx, agent, { add: rating });
     return { slug };
   },
 });
 
-/** Deletes the caller's own review only. */
+/** Deletes one of the caller's own reviews. */
 export const remove = mutation({
-  args: { slug: v.string() },
-  handler: async (ctx, { slug }) => {
+  args: { slug: v.string(), reviewId: v.id("agent_reviews") },
+  handler: async (ctx, { slug, reviewId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Please sign in." });
     const agent = await agentBySlug(ctx, slug);
     if (!agent) throw new ConvexError({ code: "NOT_FOUND", message: "Agent not found." });
-    const mine = await ctx.db
-      .query("agent_reviews")
-      .withIndex("by_agent_user", (q) => q.eq("agentId", agent._id).eq("userId", identity.subject))
-      .first();
-    if (!mine) throw new ConvexError({ code: "NOT_FOUND", message: "You have no review to delete." });
+    const mine = await ctx.db.get(reviewId);
+    if (!mine || mine.agentId !== agent._id || mine.userId !== identity.subject) throw new ConvexError({ code: "NOT_FOUND", message: "You have no review to delete." });
     await ctx.db.delete(mine._id);
     await applyRating(ctx, agent, { remove: mine.rating });
     return { slug };

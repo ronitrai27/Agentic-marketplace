@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { validateTags } from "../src/lib/agent-tags";
 import { priceSummary, type PlanMicros } from "../src/lib/agent-display";
+import { sameVersion, SAME_VERSION_MESSAGE } from "../src/lib/agent-version";
 import { cleanCapabilities } from "../src/lib/agent-capabilities";
 import { validateDescription } from "../src/lib/agent-description";
 import {
@@ -237,6 +238,120 @@ export const register = mutation({
     );
 
     return { agentId, slug, name };
+  },
+});
+
+/**
+ * Owner-only re-register after the creator changed their agent code. The browser has already called the agent's
+ * /health and /schema (via /api/agents/inspect) and passes what it read. An unchanged version is refused;
+ * a new version replaces the live record and is added to the version history.
+ */
+export const reRegister = mutation({
+  args: {
+    agentId: v.id("agents"),
+    baseUrl: v.string(),
+    version: v.string(),
+    manifestAgentId: v.optional(v.string()),
+    capabilities: v.optional(
+      v.object({
+        streaming: v.optional(v.boolean()),
+        delta_stream: v.optional(v.boolean()),
+        max_timeout_seconds: v.optional(v.number()),
+        execution_modes: v.optional(v.array(v.string())),
+      }),
+    ),
+    inputSchemaJson: v.string(),
+    outputSchemaJson: v.string(),
+    changelog: v.optional(v.string()),
+    latencyMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Please sign in.");
+
+    const agent = await ctx.db.get(args.agentId);
+    if (!agent || agent.ownerId !== identity.subject) throw new Error("Agent not found.");
+    if (agent.status === "archived" || agent.status === "suspended") {
+      throw new Error(`This agent is ${agent.status}; it cannot be re-registered.`);
+    }
+
+    const version = args.version.trim();
+    if (!version || version.length > 40) throw new Error("The agent did not report a valid version.");
+    if (sameVersion(version, agent.version)) throw new Error(SAME_VERSION_MESSAGE);
+
+    const seen = await ctx.db
+      .query("agent_versions")
+      .withIndex("by_agent_version", (q) => q.eq("agentId", agent._id).eq("version", version))
+      .first();
+    if (seen) throw new Error(`Version ${version} was already published. Use a new version number.`);
+
+    const baseUrl = normaliseUrl(args.baseUrl);
+    if (baseUrl !== agent.baseUrl) {
+      const dupe = await ctx.db.query("agents").withIndex("by_baseUrl", (q) => q.eq("baseUrl", baseUrl)).first();
+      if (dupe && dupe._id !== agent._id) throw new Error("Not allowed: this agent URL is already taken.");
+    }
+
+    const inputSchema = parseSchema(args.inputSchemaJson, "Input schema");
+    const outputSchema = parseSchema(args.outputSchemaJson, "Output schema");
+
+    // The live price must still fit the new schema, or billing would break
+    const price = await ctx.db
+      .query("agent_pricing")
+      .withIndex("by_agent_created", (q) => q.eq("agentId", agent._id))
+      .order("desc")
+      .first();
+    if (price) {
+      const options = resolvePricing(inputSchema, outputSchema, agent.tags);
+      const plan = price.plan;
+      const fits =
+        options.available.includes(plan.shape) &&
+        (plan.shape !== "per_unit" ||
+          (options.unit?.countKey === plan.countKey && options.unit?.outputKey === plan.outputKey)) &&
+        (plan.shape !== "tiered" ||
+          (options.tier?.values ?? []).every((val) => plan.tiers.some((t) => t.value === val)));
+      if (!fits) {
+        throw new Error("The new schema no longer fits this agent's current price. Keep the fields the price depends on.");
+      }
+    }
+
+    const now = Date.now();
+    // Agents registered before history existed: keep their old version as the first row
+    const hasHistory = await ctx.db
+      .query("agent_versions")
+      .withIndex("by_agent_created", (q) => q.eq("agentId", agent._id))
+      .first();
+    if (!hasHistory) {
+      await ctx.db.insert("agent_versions", {
+        agentId: agent._id,
+        version: agent.version,
+        inputSchemaJson: agent.inputSchemaJson,
+        outputSchemaJson: agent.outputSchemaJson,
+        capabilities: agent.capabilities,
+        createdAt: agent.createdAt,
+      });
+    }
+    await ctx.db.insert("agent_versions", {
+      agentId: agent._id,
+      version,
+      inputSchemaJson: args.inputSchemaJson,
+      outputSchemaJson: args.outputSchemaJson,
+      capabilities: args.capabilities,
+      changelog: args.changelog?.trim().slice(0, 1000) || undefined,
+      createdAt: now,
+    });
+
+    await ctx.db.patch(agent._id, {
+      baseUrl,
+      version,
+      manifestAgentId: args.manifestAgentId ?? agent.manifestAgentId,
+      capabilities: args.capabilities ? { ...agent.capabilities, ...args.capabilities } : agent.capabilities,
+      inputSchemaJson: args.inputSchemaJson,
+      outputSchemaJson: args.outputSchemaJson,
+      verification: { verifiedAt: now, latencyMs: args.latencyMs },
+      healthFailures: 0,
+      updatedAt: now,
+    });
+    return { agentId: agent._id, slug: agent.slug, name: agent.name, version, previousVersion: agent.version };
   },
 });
 
@@ -482,6 +597,7 @@ export const purgeArchived = internalMutation({
         ctx.db.query("agent_regions_daily").withIndex("by_agent_day_region", (q) => q.eq("agentId", agent._id)).collect(),
         ctx.db.query("agent_latency_daily").withIndex("by_agent_day", (q) => q.eq("agentId", agent._id)).collect(),
         ctx.db.query("agent_errors_daily").withIndex("by_agent_day_code", (q) => q.eq("agentId", agent._id)).collect(),
+        ctx.db.query("agent_versions").withIndex("by_agent_created", (q) => q.eq("agentId", agent._id)).collect(),
       ]);
       for (const row of children.flat()) await ctx.db.delete(row._id);
       await ctx.db.delete(agent._id);

@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { ChefHat, LayoutGrid, Play } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChefHat, LayoutGrid, Pencil, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RunConfirmDialog } from "./run-confirm-dialog";
 import { useQuery } from "convex/react";
@@ -41,10 +42,22 @@ export function RunAgentButton({
   pricing: PlanMicros | null;
 }) {
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const router = useRouter();
   const recent = useQuery(api.runs.myRecent);
+  // The page itself is cached and public, so ownership is read live here
+  const status = useQuery(api.reviews.status, { slug: agentSlug });
   // A run of this agent that is still going: the button turns into a way back to it
   const active = recent?.find((r) => r.agentSlug === agentSlug && ACTIVE_STATUSES.includes(r.status));
   const trigger = () => (active ? openRun(active.id) : setConfirmOpen(true));
+
+  if (status?.isOwner) {
+    return (
+      <Button size="lg" className="gap-2" onClick={() => router.push("/space/creator/my-agents")}>
+        Edit
+        <Pencil className="size-4" />
+      </Button>
+    );
+  }
 
   return (
     <div className="group relative">

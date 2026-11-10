@@ -22,7 +22,7 @@ const QUERY_TIMEOUT_MS = 1800;
  * Embedding of a search query. Cached (people retype and backspace), and bounded in time: when OpenAI is slow or
  * down this returns null and search carries on with keywords and typo matching alone.
  */
-export async function embedQuery(q: string): Promise<number[] | null> {
+export async function embedQuery(q: string, timeoutMs = QUERY_TIMEOUT_MS): Promise<number[] | null> {
   const key = q.trim().toLowerCase();
   const hit = cache.get(key);
   if (hit) {
@@ -33,9 +33,12 @@ export async function embedQuery(q: string): Promise<number[] | null> {
   try {
     const v = await Promise.race<number[] | null>([
       embeddings().embedQuery(key),
-      new Promise<null>((r) => setTimeout(() => r(null), QUERY_TIMEOUT_MS)),
+      new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
     ]);
-    if (!v) return null;
+    if (!v) {
+      console.error(`[search] query embedding timed out after ${timeoutMs}ms`);
+      return null;
+    }
     cache.set(key, v);
     if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
     return v;

@@ -27,7 +27,7 @@ type ReviewItem = {
 
 const LIKED_KEY = "catelog:liked-reviews";
 const MAX_COMMENT = 1000;
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 8;
 
 function readLiked(): Set<string> {
   try {
@@ -286,7 +286,7 @@ function ReviewRow({
 
 /**
  * Reviews for the agent page. Rating and the first page come from the Redis-cached page; the list itself loads live,
- * 10 at a time, inside a scroll box. Saving or deleting a review drops the cached page so the average catches up.
+ * latest 8 only. Saving or deleting a review drops the cached page so the average catches up.
  */
 export function AgentReviews({
   slug,
@@ -299,7 +299,6 @@ export function AgentReviews({
   const {
     results,
     status: pageStatus,
-    loadMore,
   } = usePaginatedQuery(
     api.reviews.list,
     { slug },
@@ -311,7 +310,8 @@ export function AgentReviews({
   React.useEffect(() => setLiked(readLiked()), []);
 
   const live = pageStatus !== "LoadingFirstPage";
-  const items: ReviewItem[] = live ? (results as ReviewItem[]) : initial;
+  // Only the latest 8 are shown
+  const items: ReviewItem[] = (live ? (results as ReviewItem[]) : initial).slice(0, PAGE_SIZE);
 
   async function onLike(r: ReviewItem) {
     const wasLiked = liked.has(r.id);
@@ -329,9 +329,9 @@ export function AgentReviews({
     }
   }
 
-  async function onDelete() {
+  async function onDelete(r: ReviewItem) {
     try {
-      await removeReview({ slug });
+      await removeReview({ slug, reviewId: r.id as never });
       await refreshAgentPage(slug);
       toast.success("Review deleted");
     } catch (e) {
@@ -387,26 +387,10 @@ export function AgentReviews({
                 r={r}
                 liked={liked.has(r.id)}
                 onLike={() => onLike(r)}
-                onDelete={onDelete}
+                onDelete={() => onDelete(r)}
               />
             ))}
           </ul>
-          {live && pageStatus === "CanLoadMore" && (
-            <div className="pt-4 text-center">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => loadMore(PAGE_SIZE)}
-              >
-                Load more reviews
-              </Button>
-            </div>
-          )}
-          {pageStatus === "LoadingMore" && (
-            <p className="pt-4 text-center text-xs text-muted-foreground">
-              Loading…
-            </p>
-          )}
         </div>
       )}
     </div>

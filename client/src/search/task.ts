@@ -73,8 +73,13 @@ export function taskOnly(q: string): string {
 /** Null when the query could not be embedded (OpenAI slow or down); the caller then says search is unavailable. */
 export async function searchTask(q: string, limit = 6): Promise<TaskHit[] | null> {
   await ensureSearchSchema();
-  const vec = await embedQuery(taskOnly(q));
-  if (!vec) return null;
+  // The chef can wait longer than the search bar: a cold OpenAI connection often misses the bar's 1.8 s budget
+  const text = taskOnly(q);
+  const vec = (await embedQuery(text, 8000)) ?? (await embedQuery(text, 8000));
+  if (!vec) {
+    console.error(`[search] task search unavailable: could not embed "${text}" (check OPENAI key/quota and network)`);
+    return null;
+  }
 
   const { rows } = await searchPool().query(
     `select agent_id, tags, task_embedding <=> $1::vector as d

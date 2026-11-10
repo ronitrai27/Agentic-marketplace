@@ -4,7 +4,9 @@ import { v } from "convex/values";
 
 const CHART_DAYS = 90;
 /** First page of reviews baked into the cached page; the rest load live. */
-const REVIEW_LIMIT = 10;
+const REVIEW_LIMIT = 8;
+/** Versions shown in the hover list on the page header. */
+const VERSION_LIMIT = 6;
 
 /** Live stats and the daily series for the agent page (the page itself is cached, so it reads this separately). */
 export const activity = query({
@@ -104,6 +106,14 @@ export const getBySlug = query({
       .withIndex("by_agent_day", (q) => q.eq("agentId", agent._id).gte("day", start))
       .collect();
 
+    // Recent versions for the hover list; the newest row is the current one
+    const versionRows = await ctx.db
+      .query("agent_versions")
+      .withIndex("by_agent_created", (q) => q.eq("agentId", agent._id))
+      .order("desc")
+      .take(VERSION_LIMIT);
+    const versions = versionRows.map((r) => ({ version: r.version, createdAt: r.createdAt }));
+
     const reviews = await ctx.db
       .query("agent_reviews")
       .withIndex("by_agent_created", (q) => q.eq("agentId", agent._id))
@@ -125,6 +135,9 @@ export const getBySlug = query({
       ratingAvg: agent.ratingAvg ?? 0,
       ratingCount: agent.ratingCount ?? 0,
       createdAt: agent.createdAt,
+      // Date of the newest version; equals createdAt until the creator re-registers with a new version
+      updatedAt: versions[0]?.createdAt ?? agent.createdAt,
+      versions,
       owner: { name: (owner?.name as string | undefined) ?? "Unknown creator", image: (owner?.image as string | null | undefined) ?? null },
       pricing,
       stats: {

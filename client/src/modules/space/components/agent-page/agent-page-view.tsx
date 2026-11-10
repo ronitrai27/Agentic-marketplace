@@ -35,6 +35,7 @@ import {
 import { AgentRating } from "../agent-rating";
 import { RunAgentButton } from "./run-agent-button";
 import { AgentBanner } from "./agent-banner";
+import { AgentVersionInfo } from "./agent-version-info";
 import { AgentHistoryGate } from "./agent-history";
 import { AgentActivity } from "./agent-activity";
 import { AgentReviews } from "./agent-reviews";
@@ -203,9 +204,12 @@ export function AgentPageView({ agent }: { agent: AgentPageData }) {
               {agent.owner.name}
             </span>
             <span>·</span>
-            <span>v{agent.version}</span>
-            <span>·</span>
-            <span>Listed {fmtDate(agent.createdAt)}</span>
+            <AgentVersionInfo
+              version={agent.version}
+              listedAt={agent.createdAt}
+              updatedAt={agent.updatedAt ?? agent.createdAt} /* older cached pages lack these */
+              versions={agent.versions ?? []}
+            />
             {modelIcons.length > 0 && (
               <>
                 <span>·</span>
