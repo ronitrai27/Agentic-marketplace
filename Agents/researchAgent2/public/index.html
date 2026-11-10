@@ -732,7 +732,7 @@
           ⚡ Fast (gpt-6-luna)
         </button>
         <button id="modeBtnDeep" class="mode-btn deep" onclick="selectMode('deep')">
-          🧠 High Efficiency (gpt-5.4-mini)
+          🧠 Deep (luna → 4.1-mini → luna, ~3 min)
         </button>
       </div>
 
@@ -752,7 +752,7 @@
         <div class="hero" id="heroSection">
           <div class="hero-badge">OpenAI Responses API • 2 Modes</div>
           <h1>What would you like to research?</h1>
-          <p>Dual-mode intelligence powered by OpenAI: instant answers via <strong>gpt-6-luna</strong> or deep reasoning via <strong>gpt-5.4-mini</strong> with background polling.</p>
+          <p>Dual-mode intelligence powered by OpenAI: instant answers via <strong>gpt-6-luna</strong> or a deep ~3 min pipeline: <strong>gpt-6-luna</strong> search → <strong>gpt-4.1-mini</strong> verification → <strong>gpt-6-luna</strong> formatted report.</p>
 
           <div class="suggestions-grid">
             <div class="suggestion-card" onclick="useSuggestion('Analyze latest breakthroughs in solid-state batteries in 2026')">
@@ -920,7 +920,7 @@
       assistantRow.className = "message-row";
       const isDeep = currentMode === "deep";
       const avatarClass = isDeep ? "avatar deep" : "avatar fast";
-      const modelLabel = isDeep ? "gpt-5.4-mini (Deep Background)" : "gpt-6-luna (Fast Search)";
+      const modelLabel = isDeep ? "Deep Research Pipeline" : "gpt-6-luna (Fast Search)";
 
       assistantRow.innerHTML = `
         <div class="assistant-card">
@@ -1001,30 +1001,13 @@
             let data = {};
             try { data = JSON.parse(matchData[1]); } catch (e) { continue; }
 
-            if (eventType === "temporal") {
-              if (data.status === "running") {
-                progressStatusText.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#8b5cf6; box-shadow:0 0 8px #8b5cf6;"></span> Temporal Workflow Running</span>`;
-                progressSubtext.textContent = `Workflow: ${data.workflowId} • Queue: ${data.taskQueue || 'research-agent-queue'}`;
-              } else if (data.status === "completed") {
-                progressStatusText.innerHTML = `<span style="color:#10a37f; font-weight:600;">✓ Temporal Workflow Completed</span>`;
-                progressSubtext.textContent = `Durable execution finished in ${data.durationSeconds || ''}s [${data.workflowId}]`;
-              }
+            if (eventType === "status") {
+              if (data.message) progressStatusText.textContent = data.message;
+              progressSubtext.textContent =
+                data.percent !== undefined ? `Progress: ${data.percent}%` : "Querying live sources via OpenAI Responses API";
               scrollToBottom();
-            } else if (eventType === "status") {
-              if (data.phase === "searching") {
-                progressStatusText.textContent = "Web searching & synthesizing...";
-                progressSubtext.textContent = "Querying live sources via OpenAI Responses API";
-              } else if (data.phase === "dispatching") {
-                progressStatusText.textContent = "Dispatching background reasoning task...";
-                progressSubtext.textContent = data.message || "Model: gpt-5.4-mini (reasoning effort: medium)";
-              } else if (data.phase === "temporal_running") {
-                progressStatusText.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#8b5cf6; box-shadow:0 0 8px #8b5cf6;"></span> Temporal Workflow Running</span>`;
-                progressSubtext.textContent = `Cloud Queue: ${data.workflowId} • Durable background execution`;
-              } else if (data.phase === "dispatched" || data.phase === "polling") {
-                progressStatusText.textContent = `Deep reasoning (${data.status})...`;
-                progressSubtext.textContent = `Task ID: ${data.taskId || 'resp_active'} • Background Polling`;
-              }
-              scrollToBottom();
+            } else if (eventType === "activity") {
+              if (data.query) progressSubtext.textContent = `🔎 Searched: ${data.query}`;
             } else if (eventType === "done") {
               clearInterval(timerInterval);
               const durationSec = (data.durationMs / 1000).toFixed(1);
@@ -1038,7 +1021,7 @@
 
               const timeTag = assistantRow.querySelector(".time-tag");
               if (timeTag) {
-                const badge = data.temporal ? `⚡ Temporal Cloud • ${durationSec}s` : `${durationSec}s`;
+                const badge = `${durationSec}s`;
                 timeTag.textContent = badge;
               }
               scrollToBottom();

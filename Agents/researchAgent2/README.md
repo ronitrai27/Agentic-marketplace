@@ -1,41 +1,25 @@
-# Research Agent 2 (Simple OpenAI SDK)
+# Research Agent 2 (Nova Research)
 
-A clean, dual-mode research agent powered directly by the official OpenAI Responses API with built-in web grounding (`tools: [{ type: "web_search" }]`).
+Dual-mode research agent on the OpenAI Responses API, served through the Catelog marketplace protocol (`catelog@^1.3.0`).
 
-## Features
+## Modes
 
-- **Mode 1: Fast Answers**
-  - **Model**: `gpt-6-luna`
-  - **Configuration**: Synchronous OpenAI Responses API with native `web_search`.
-  - **Best for**: Fast fact checking and real-time summaries.
+- **Fast** — `gpt-6-luna` with OpenAI's built-in `web_search` tool. Returns a structured Markdown report (summary, findings, conclusion) with a **Citations** section last.
+- **Deep** (~3 min) — paced progress is streamed over SSE (progress %, stage messages) while the real pipeline runs, and the result is held until 3 minutes have elapsed:
+  1. **Search** — `gpt-6-luna` + `web_search` gathers raw notes and sources.
+  2. **Verify** — `gpt-4.1-mini` checks every claim against the sources (verified / unsupported / questionable).
+  3. **Format** — `gpt-6-luna` writes the final report: cover page → index → content → citations.
 
-- **Mode 2: High Efficiency Deep Research**
-  - **Model**: `gpt-5.4-mini`
-  - **Configuration**: `background: true`, `reasoning: { effort: "medium" }`, and native `web_search`.
-  - **Lifecycle**: Asynchronous background dispatch with a real-time status polling loop until completion.
-  - **Best for**: Complex synthesis, in-depth research, and thorough reasoning.
+The deep progress events are cosmetic (the 3 min floor is intentional); the models, verification and report are real.
 
-## How to Run
+## Run
 
-### Interactive Mode:
 ```bash
-pnpm start
-```
-You will be prompted to enter your question and select either Mode `1` (Fast) or Mode `2` (High Efficiency).
-
-### Command Line Arguments:
-```bash
-# Fast mode
-pnpm start "What are the latest updates in quantum computing?" 1
-
-# High efficiency deep mode
-pnpm start "Analyze recent market trends in agentic AI frameworks" 2
+pnpm ui                                  # web UI + marketplace endpoints on :3001
+pnpm start "your question" 1             # CLI, fast
+pnpm start "your question" 2             # CLI, deep (~3 min)
 ```
 
-### Web UI (ChatGPT Style):
-```bash
-pnpm ui
-```
-Opens a ChatGPT-style interface at `http://localhost:3001` with real-time SSE progress tracking, model toggles, and Markdown rendering.
+Marketplace endpoints: `/health`, `/schema`, `/execute`. Env vars: see `.env.example`.
 
-
+Code: `src/research.ts` (pipelines) · `src/server.ts` (catelog agent + web UI SSE) · `src/index.ts` (CLI).

@@ -5,13 +5,8 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import { z } from "zod";
-import { createMarketplaceAgent, pipeOpenAiResponsesStream } from "catelog";
-import {
-  createTemporalClient,
-  TEMPORAL_CONFIG,
-} from "./temporal/connection.js";
-import { deepResearchWorkflow } from "./temporal/workflows/deep-research.workflow.js";
-import { runWorker } from "./temporal/worker.js";
+import { createMarketplaceAgent } from "catelog";
+import { runFast, runDeep, type ResearchEvent } from "./research.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,7 +38,7 @@ const InputSchema = z.object({
     .enum(["fast", "deep"])
     .default("fast")
     .describe(
-      "Research mode: 'fast' (realtime web search) or 'deep' (background reasoning)",
+      "Research mode: 'fast' (single web-search report) or 'deep' (search → verify → formatted report, ~3 min)",
     ),
 });
 
@@ -72,18 +67,16 @@ type AgentOutput = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
-  name: "Nova Research ",
-  version: "2.1.0",
-  description:
-    "Dual-mode research agent using OpenAI Responses API + live Web Search (fast & deep reasoning). For your any Next patent or Project , Research will be gurantted Plagrism free and well Cited.",
+  name: "Nova Research",
+  version: "3.0.0",
 
   // Keys are read automatically from CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY env vars.
   // Explicit overrides kept as fallback for local development without .env.
   secretKey: process.env.CATELOG_SECRET_KEY,
   publicKey: process.env.CATELOG_PUBLIC_KEY,
 
-  // Hard per-run ceiling (deep mode can take minutes).
-  maxTimeoutMinute: 5,
+  // Hard per-run ceiling (deep mode takes >= 3 min by design).
+  maxTimeoutMinute: 8,
   limits: {
     maxConcurrent: 10,
     maxBodyBytes: 64_000,
@@ -99,160 +92,48 @@ export const agent = createMarketplaceAgent<AgentInput, AgentOutput>({
 
   async execute({ input, stream, signal, log, metric, usage }) {
     const startTime = Date.now();
+    const isDeep = input.mode === "deep";
 
-    // ── Fast Mode: synchronous web-search response ──
-    if (input.mode === "fast" || !input.mode) {
-      stream.step("Running web search with gpt-6-luna...");
+    const emit = (e: ResearchEvent) => {
+      if (e.percent !== undefined) stream.progress(e.percent, e.message);
+      else stream.step(e.message);
+      if (e.phase === "web_search") stream.activity("web_search", e.data);
+    };
 
-      const response: any = await client.responses.create(
-        {
-          model: "gpt-6-luna",
-          input: input.prompt,
-          tools: [{ type: "web_search" }],
+    const result = isDeep
+      ? await runDeep(client, input.prompt, emit, signal)
+      : await runFast(client, input.prompt, emit, signal);
+
+    const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(1));
+    log.info("research completed", { mode: input.mode, models: result.models });
+    metric.timing(isDeep ? "deep_ms" : "fast_ms", Date.now() - startTime);
+    usage.record({
+      model: result.model,
+      provider: "openai",
+      tokens: {
+        prompt: result.usage.prompt,
+        completion: result.usage.completion,
+      },
+    });
+
+    stream.delta(result.answer);
+
+    return {
+      output: {
+        answer: result.answer,
+        model: result.models.join(" → "),
+        mode: isDeep ? "deep" : "fast",
+        duration_seconds: durationSeconds,
+      },
+      telemetry: {
+        llm_tokens: {
+          prompt: result.usage.prompt,
+          completion: result.usage.completion,
         },
-        { signal },
-      );
-      log.info("fast research completed", { model: "gpt-6-luna" });
-      metric.timing("openai_fast_ms", Date.now() - startTime);
-
-      // Pipe response → SSE activity events + telemetry via the new adapter
-      const adapterResult = await pipeOpenAiResponsesStream(response, stream);
-      const durationSeconds = Number(
-        ((Date.now() - startTime) / 1000).toFixed(1),
-      );
-      const answer = response.output_text || "No response generated.";
-
-      return {
-        output: {
-          answer,
-          model: "gpt-6-luna",
-          mode: "fast",
-          duration_seconds: durationSeconds,
-        },
-        telemetry: {
-          ...adapterResult.telemetry,
-          duration_ms: Date.now() - startTime,
-        },
-      };
-    }
-
-    // ── Deep Mode: durable execution via Temporal Cloud ──
-    stream.step(
-      "Dispatching durable deep reasoning workflow to Temporal Cloud (gpt-5.4-mini)...",
-    );
-
-    try {
-      const temporalClient = await createTemporalClient();
-      const workflowId = `deep-research-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-      stream.activity("temporal_workflow_dispatched", {
-        workflowId,
-        namespace: TEMPORAL_CONFIG.namespace,
-        taskQueue: TEMPORAL_CONFIG.taskQueue,
-      });
-
-      const handle = await temporalClient.workflow.start(deepResearchWorkflow, {
-        taskQueue: TEMPORAL_CONFIG.taskQueue,
-        workflowId,
-        args: [{ prompt: input.prompt }],
-      });
-
-      stream.step(
-        `Temporal Workflow [${workflowId}] actively running on cloud queue...`,
-      );
-
-      const workflowResult = await handle.result();
-      const durationSeconds = Number(
-        ((Date.now() - startTime) / 1000).toFixed(1),
-      );
-
-      stream.delta(workflowResult.answer);
-      log.info("temporal workflow completed", { workflowId });
-      metric.timing("temporal_workflow_ms", Date.now() - startTime);
-      // Temporal hides the OpenAI call from the adapter, so record usage explicitly.
-      const wfTokens = workflowResult.tokens;
-      if (wfTokens) {
-        usage.record({
-          model: workflowResult.model,
-          provider: "openai",
-          tokens: {
-            prompt: wfTokens.prompt_tokens,
-            completion: wfTokens.completion_tokens,
-          },
-        });
-      }
-
-      return {
-        output: {
-          answer: workflowResult.answer,
-          model: workflowResult.model,
-          mode: "deep",
-          duration_seconds: durationSeconds,
-        },
-        telemetry: {
-          workflow_id: workflowId,
-          temporal_task_queue: TEMPORAL_CONFIG.taskQueue,
-          duration_ms: Date.now() - startTime,
-        },
-      };
-    } catch (temporalErr: any) {
-      log.warn("temporal workflow failed, falling back to local runner", {
-        error: temporalErr?.message,
-      });
-      stream.step(
-        "Temporal fallback: executing local OpenAI background reasoning...",
-      );
-
-      let response: any = await client.responses.create(
-        {
-          model: "gpt-5.4-mini",
-          input: input.prompt,
-          background: true,
-          reasoning: { effort: "medium" },
-          tools: [{ type: "web_search" }],
-        },
-        { signal },
-      );
-
-      stream.activity("background_task", {
-        taskId: response.id,
-        status: response.status,
-        model: "gpt-5.4-mini",
-      });
-
-      while (
-        response.status === "queued" ||
-        response.status === "in_progress"
-      ) {
-        if (signal.aborted) throw new Error("EXECUTION_TIMEOUT");
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        stream.activity("polling", {
-          taskId: response.id,
-          status: response.status,
-          elapsed_seconds: elapsed,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        response = (await client.responses.retrieve(response.id)) as any;
-      }
-
-      const adapterResult = await pipeOpenAiResponsesStream(response, stream);
-      const durationSeconds = Number(
-        ((Date.now() - startTime) / 1000).toFixed(1),
-      );
-
-      return {
-        output: {
-          answer: response.output_text || "",
-          model: "gpt-5.4-mini",
-          mode: "deep",
-          duration_seconds: durationSeconds,
-        },
-        telemetry: {
-          ...adapterResult.telemetry,
-          duration_ms: Date.now() - startTime,
-        },
-      };
-    }
+        sources: result.sources.length,
+        duration_ms: Date.now() - startTime,
+      },
+    };
   },
 });
 
@@ -335,209 +216,47 @@ const server = http.createServer(async (req, res) => {
 
       const startTime = Date.now();
 
+      const ac = new AbortController();
+      res.on("close", () => ac.abort());
+
       try {
-        if (mode === "fast") {
-          sendEvent("status", {
-            phase: "searching",
-            model: "gpt-6-luna",
-            message: "Running web search with gpt-6-luna...",
-          });
-
-          const response = (await client.responses.create({
-            model: "gpt-6-luna",
-            input: prompt,
-            tools: [{ type: "web_search" }],
-          })) as any;
-
-          // Emit web_search activity if present in output items
-          for (const item of response?.output ?? []) {
-            if (item?.type === "web_search_call" || item?.type === "search") {
-              sendEvent("activity", {
-                type: "web_search",
-                query: item?.action?.query ?? item?.query,
-                status: item?.status ?? "completed",
-              });
-            }
-          }
-
-          const durationMs = Date.now() - startTime;
-          sendEvent("done", {
-            output: response.output_text,
-            model: "gpt-6-luna",
-            mode: "fast",
-            durationMs,
-            telemetry: {
-              llm_tokens: {
-                prompt: response.usage?.input_tokens,
-                completion: response.usage?.output_tokens,
-                total: response.usage?.total_tokens,
-              },
-            },
-          });
-          res.end();
-        } else {
-          sendEvent("status", {
-            phase: "dispatching",
-            model: "gpt-5.4-mini",
-            message:
-              "Dispatching deep reasoning to Temporal Cloud Task Queue...",
-          });
-
-          let workflowId = `deep-research-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          let resultText = "";
-          let finalTaskId = "";
-          let temporalExecuted = false;
-
-          try {
-            const temporalClient = await createTemporalClient();
-            sendEvent("temporal", {
-              status: "running",
-              workflowId,
-              taskQueue: TEMPORAL_CONFIG.taskQueue,
-              namespace: TEMPORAL_CONFIG.namespace,
-              message: `Temporal durable workflow started on queue: ${TEMPORAL_CONFIG.taskQueue}`,
-            });
-
-            sendEvent("status", {
-              phase: "temporal_running",
-              workflowId,
-              model: "gpt-5.4-mini",
-              message: `Temporal Workflow [${workflowId}] actively running on cloud queue...`,
-            });
-
-            const handle = await temporalClient.workflow.start(
-              deepResearchWorkflow,
-              {
-                taskQueue: TEMPORAL_CONFIG.taskQueue,
-                workflowId,
-                args: [{ prompt }],
-              },
-            );
-
-            const workflowResult = await handle.result();
-            resultText = workflowResult.answer;
-            finalTaskId = workflowResult.taskId || workflowId;
-            temporalExecuted = true;
-
-            sendEvent("temporal", {
-              status: "completed",
-              workflowId,
-              durationSeconds: workflowResult.duration_seconds,
-              message: `Temporal durable workflow [${workflowId}] completed successfully!`,
-            });
-
-            const durationMs = Date.now() - startTime;
-            sendEvent("done", {
-              output: resultText,
-              model: "gpt-5.4-mini",
-              mode: "deep",
-              taskId: finalTaskId,
-              workflowId,
-              temporal: true,
-              durationMs,
-            });
-            res.end();
-            return;
-          } catch (temporalErr: any) {
-            console.warn(
-              "⚠️ Temporal execution fallback:",
-              temporalErr?.message,
-            );
-            sendEvent("status", {
-              phase: "dispatching",
-              model: "gpt-5.4-mini",
-              message:
-                "Temporal fallback: executing local OpenAI background reasoning...",
-            });
-          }
-
-          let response = (await client.responses.create({
-            model: "gpt-5.4-mini",
-            input: prompt,
-            background: true,
-            reasoning: { effort: "medium" },
-            tools: [{ type: "web_search" }],
-          })) as any;
-
-          sendEvent("status", {
-            phase: "dispatched",
-            taskId: response.id,
-            workflowId,
-            status: response.status,
-            model: "gpt-5.4-mini",
-            message: `Deep task running [OpenAI ID: ${response.id} | Temporal: ${workflowId}]`,
-          });
-
-          while (
-            response.status === "queued" ||
-            response.status === "in_progress"
-          ) {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            sendEvent("status", {
-              phase: "polling",
-              taskId: response.id,
-              status: response.status,
-              elapsedSeconds: elapsed,
-              message: `Deep reasoning & searching in background... (${elapsed}s, status: ${response.status})`,
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            response = (await client.responses.retrieve(response.id)) as any;
-          }
-
-          const durationMs = Date.now() - startTime;
-
-          if (response.status === "completed") {
-            // Emit activity events for search/reasoning steps
-            for (const item of response?.output ?? []) {
-              if (item?.type === "web_search_call" || item?.type === "search") {
-                sendEvent("activity", {
-                  type: "web_search",
-                  query: item?.action?.query ?? item?.query,
-                  status: item?.status ?? "completed",
-                });
-              }
-              if (item?.type === "reasoning") {
-                const summary =
-                  item?.summary?.map((s: any) => s?.text).join(" ") ?? "";
-                if (summary) {
-                  sendEvent("activity", {
-                    type: "reasoning",
-                    summary: summary.slice(0, 300),
-                  });
-                }
-              }
-            }
-
-            sendEvent("done", {
-              output: response.output_text,
-              model: "gpt-5.4-mini",
-              mode: "deep",
-              taskId: response.id,
-              durationMs,
-              telemetry: {
-                llm_tokens: {
-                  prompt: response.usage?.input_tokens,
-                  completion: response.usage?.output_tokens,
-                  total: response.usage?.total_tokens,
-                },
-              },
-            });
+        const emit = (e: ResearchEvent) => {
+          if (e.phase === "web_search") {
+            sendEvent("activity", { type: "web_search", query: e.data?.query, status: "completed" });
           } else {
-            sendEvent("error", {
-              message: `Background response ended with unexpected status: ${response.status}`,
-              status: response.status,
-              taskId: response.id,
-            });
+            sendEvent("status", { ...e, mode });
           }
-          res.end();
-        }
-      } catch (err: any) {
-        sendEvent("error", {
-          message:
-            err?.message || "An unexpected error occurred during research.",
+        };
+
+        const result =
+          mode === "fast"
+            ? await runFast(client, prompt, emit, ac.signal)
+            : await runDeep(client, prompt, emit, ac.signal);
+
+        sendEvent("done", {
+          output: result.answer,
+          model: result.models.join(" → "),
+          models: result.models,
+          mode,
+          sources: result.sources,
+          durationMs: Date.now() - startTime,
+          telemetry: {
+            llm_tokens: {
+              prompt: result.usage.prompt,
+              completion: result.usage.completion,
+              total: result.usage.prompt + result.usage.completion,
+            },
+          },
         });
         res.end();
+      } catch (err: any) {
+        if (!res.writableEnded) {
+          sendEvent("error", {
+            message:
+              err?.message || "An unexpected error occurred during research.",
+          });
+          res.end();
+        }
       }
     });
     return;
@@ -575,16 +294,13 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, async () => {
+server.listen(PORT, () => {
   const keyMode = process.env.CATELOG_SECRET_KEY
     ? "🔐 Authenticated"
     : "⚠️  Dev mode (no key)";
   console.log(`\n======================================================`);
   console.log(`🚀 Research Agent 2 running at: http://localhost:${PORT}`);
   console.log(`🔑 Auth mode: ${keyMode}`);
-  console.log(
-    `⚡ Temporal Cloud Queue: ${TEMPORAL_CONFIG.taskQueue} (${TEMPORAL_CONFIG.namespace})`,
-  );
   console.log(`📡 Marketplace Protocol:`);
   console.log(`   - Liveness:  http://localhost:${PORT}/health`);
   console.log(`   - Schema:    http://localhost:${PORT}/schema`);
@@ -593,15 +309,6 @@ server.listen(PORT, async () => {
   );
   console.log(`💬 Web UI:      http://localhost:${PORT}`);
   console.log(`======================================================\n`);
-
-  // Start embedded Temporal worker to process deep research background jobs
-  try {
-    runWorker().catch((err) => {
-      console.warn("⚠️ [Temporal Worker Note]:", err.message);
-    });
-  } catch (err: any) {
-    console.warn("⚠️ Could not start background Temporal worker:", err.message);
-  }
 });
 
 // Graceful shutdown (Render/Fly/Railway send SIGTERM on deploy)

@@ -3,6 +3,16 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import * as readline from "readline";
+import {
+  runFast,
+  runDeep,
+  FAST_MODEL,
+  SEARCH_MODEL,
+  VERIFY_MODEL,
+  FORMAT_MODEL,
+  type ResearchEvent,
+  type ResearchResult,
+} from "./research.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,59 +42,37 @@ function askQuestion(query: string): Promise<string> {
   });
 }
 
-async function runFastMode(query: string) {
-  console.log(`\n⚡ [Fast Mode] Model: gpt-6-luna | Web Search enabled`);
-  console.log(`🔎 Searching and generating answer...\n`);
-
-  const startTime = Date.now();
-  const response = await client.responses.create({
-    model: "gpt-6-luna",
-    input: query,
-    tools: [{ type: "web_search" }],
-  });
-
-  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`\n================== RESEARCH RESULT (${duration}s) ==================\n`);
-  console.log(response.output_text);
-  console.log(`\n===================================================================\n`);
+function printEvent(e: ResearchEvent) {
+  const pct = e.percent !== undefined ? ` [${e.percent}%]` : "";
+  console.log(`  • ${e.message}${pct}`);
 }
 
-async function runHighEfficiencyMode(query: string) {
-  console.log(`\n🧠 [High Efficiency Deep Mode] Model: gpt-5.4-mini | reasoning: { effort: 'medium' } | background: true | Web Search enabled`);
-  console.log(`🚀 Dispatching background research task...\n`);
+function printResult(r: ResearchResult, secs: string) {
+  console.log(`
+================== RESEARCH RESULT (${secs}s) ==================
+`);
+  console.log(r.answer);
+  console.log(`
+===================================================================
+`);
+}
 
-  const startTime = Date.now();
-  let response = await client.responses.create({
-    model: "gpt-5.4-mini",
-    input: query,
-    background: true,
-    reasoning: { effort: "medium" },
-    tools: [{ type: "web_search" }],
-  });
+async function runFastMode(query: string) {
+  console.log(`
+⚡ [Fast Mode] ${FAST_MODEL} | OpenAI web_search
+`);
+  const t = Date.now();
+  const r = await runFast(client, query, printEvent);
+  printResult(r, ((Date.now() - t) / 1000).toFixed(1));
+}
 
-  console.log(`📋 Task ID: ${response.id} | Initial Status: ${response.status}`);
-
-  // Polling loop as documented in OpenAI Background mode guide
-  let dots = 0;
-  while (response.status === "queued" || response.status === "in_progress") {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    const indicator = ".".repeat((dots % 3) + 1);
-    process.stdout.write(`\r⏳ Status: [${response.status}] ${elapsed}s elapsed ${indicator}   `);
-    dots++;
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    response = await client.responses.retrieve(response.id);
-  }
-
-  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-  process.stdout.write(`\r✅ Final Status: [${response.status}] completed in ${duration}s                  \n\n`);
-
-  if (response.status === "completed") {
-    console.log(`================== RESEARCH RESULT (${duration}s) ==================\n`);
-    console.log(response.output_text);
-    console.log(`\n===================================================================\n`);
-  } else {
-    console.error(`❌ Background request ended with status: ${response.status}`);
-  }
+async function runDeepMode(query: string) {
+  console.log(`
+🧠 [Deep Mode] ${SEARCH_MODEL} search → ${VERIFY_MODEL} verify → ${FORMAT_MODEL} report (~3 min)
+`);
+  const t = Date.now();
+  const r = await runDeep(client, query, printEvent);
+  printResult(r, ((Date.now() - t) / 1000).toFixed(1));
 }
 
 async function main() {
@@ -114,7 +102,7 @@ async function main() {
   if (!mode) {
     console.log("\nSelect Mode:");
     console.log("  [1] Fast Mode        -> gpt-6-luna (immediate web search response)");
-    console.log("  [2] High Efficiency  -> gpt-5.4-mini (background=true, reasoning effort: medium)");
+    console.log("  [2] Deep             -> gpt-6-luna search → gpt-4.1-mini verify → gpt-6-luna report (~3 min)");
     mode = await askQuestion("\nChoose mode (1 or 2, default is 1): ");
     if (mode !== "2") mode = "1";
   }
@@ -123,7 +111,7 @@ async function main() {
     if (mode === "1") {
       await runFastMode(query);
     } else {
-      await runHighEfficiencyMode(query);
+      await runDeepMode(query);
     }
   } catch (err: any) {
     console.error("\n❌ Error running research agent:", err?.message || err);
