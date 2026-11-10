@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: website-ux-tester
+    runtime: python
+    rootDir: Agents/WebsiteUxTester
+    buildCommand: pip install . && python -m playwright install chromium
+    startCommand: python server.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: BROWSERBASE_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false

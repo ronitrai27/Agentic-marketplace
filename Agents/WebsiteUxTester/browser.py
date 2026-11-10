@@ -19,9 +19,6 @@ from models import (
     UxRecommendation,
 )
 
-DEFAULT_BROWSERBASE_API_KEY = "bb_live_HLAfLb8kAT7RhcdUlLobVBQCEiQ"
-
-
 class BrowserbasePlaywrightEngine:
     """
     Drives browser automation using Browserbase Cloud Sessions (with Stagehand patterns)
@@ -29,7 +26,8 @@ class BrowserbasePlaywrightEngine:
     """
 
     def __init__(self, api_key: Optional[str] = None, artifacts_dir: Optional[Path] = None):
-        self.api_key = api_key or os.getenv("BROWSERBASE_API_KEY", DEFAULT_BROWSERBASE_API_KEY)
+        # Credentials must come from deployment secrets or an explicit caller value.
+        self.api_key = api_key or os.getenv("BROWSERBASE_API_KEY") or ""
         self.artifacts_dir = artifacts_dir or Path(__file__).parent / "artifacts"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.bb: Optional[Browserbase] = None

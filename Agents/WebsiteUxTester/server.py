@@ -104,11 +104,16 @@ def get_agent_manifest() -> Dict[str, Any]:
 
 async def health_endpoint(request) -> JSONResponse:
     """MAPS Liveness & Protocol probe."""
+    missing = [
+        key for key in ("BROWSERBASE_API_KEY", "GOOGLE_API_KEY")
+        if not os.getenv(key)
+    ]
     return JSONResponse({
-        "status": "ready",
+        "status": "ready" if not missing else "degraded",
         "protocol_version": "1.0.0",
         "uptime_seconds": round(time.time() - START_TIME, 1),
-        "environment_ready": True,
+        "environment_ready": not missing,
+        "missing_environment": missing,
         "framework": "Google ADK (google.adk) + Browserbase + Playwright",
         "active_tasks": len(TASKS_STORE)
     })
