@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: catelog-contradictor
+    runtime: node
+    plan: free
+    branch: feat/web-search-agents
+    rootDir: Agents/WebSearchAgents
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: AGENT_KIND
+        value: contradictor
+  - type: web
+    name: catelog-alternative-finder
+    runtime: node
+    plan: free
+    branch: feat/web-search-agents
+    rootDir: Agents/WebSearchAgents
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: AGENT_KIND
+        value: alternative-finder
