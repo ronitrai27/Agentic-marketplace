@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { admitHeldRun } from "./runs";
+import { escrowCredits, getCredits } from "./escrow";
 import { runQuote, microsToCredits, type PlanMicros } from "../src/lib/agent-display";
 
 /** How long a human has to approve an MCP run request. */
@@ -82,6 +83,16 @@ export const requestRun = internalMutation({
     const holdMicros = runQuote((price?.plan as PlanMicros | undefined) ?? null).holdMicros;
     if (!holdMicros) return { ok: false as const, code: "NO_PRICE", message: "This agent has no price set" };
     const holdCredits = microsToCredits(holdMicros);
+
+    // Fail fast: don't ask the human to approve a run their wallet can't cover.
+    const available = (await getCredits(ctx, args.userId)) - (await escrowCredits(ctx, args.userId));
+    if (available < holdCredits) {
+      return {
+        ok: false as const,
+        code: "INSUFFICIENT_FUNDS",
+        message: `Not enough credits: this run can cost up to ${holdCredits} and ${Math.max(0, Math.round(available * 100) / 100)} are available. Ask the user to top up their Catelog wallet.`,
+      };
+    }
 
     const settings = await ctx.db
       .query("mcp_settings")
@@ -243,8 +254,13 @@ export const myPending = query({
 
 /** Approve (hold the money and start the run) or deny. Failures are recorded on the request and returned, not thrown. */
 export const decide = mutation({
-  args: { requestId: v.id("mcp_run_requests"), approve: v.boolean() },
-  handler: async (ctx, { requestId, approve }): Promise<{ ok: boolean; message?: string }> => {
+  args: {
+    requestId: v.id("mcp_run_requests"),
+    approve: v.boolean(),
+    /** "Approve and allow up to X": also sets the auto-approve limit (credits per run) for future MCP runs. */
+    alwaysAllowCredits: v.optional(v.number()),
+  },
+  handler: async (ctx, { requestId, approve, alwaysAllowCredits }): Promise<{ ok: boolean; message?: string }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Sign in first." });
     const row = await ctx.db.get(requestId);
@@ -271,6 +287,9 @@ export const decide = mutation({
       return { ok: false, message: res.message };
     }
     await ctx.db.patch(requestId, { status: "approved", decidedAt: now, runId: res.runId });
+    if (alwaysAllowCredits !== undefined) {
+      await saveAutoApprove(ctx, identity.subject, alwaysAllowCredits);
+    }
     return { ok: true };
   },
 });
@@ -293,16 +312,21 @@ export const setAutoApprove = mutation({
   handler: async (ctx, { credits }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Sign in first." });
-    if (!Number.isFinite(credits) || credits < 0 || credits > MAX_AUTO_APPROVE) {
-      throw new ConvexError({ code: "INVALID", message: `Enter 0 to ${MAX_AUTO_APPROVE} credits.` });
-    }
-    const value = Math.round(credits * 100) / 100;
-    const row = await ctx.db
-      .query("mcp_settings")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
-      .first();
-    if (row) await ctx.db.patch(row._id, { autoApproveCredits: value, updatedAt: Date.now() });
-    else await ctx.db.insert("mcp_settings", { userId: identity.subject, autoApproveCredits: value, updatedAt: Date.now() });
-    return { autoApproveCredits: value };
+    return await saveAutoApprove(ctx, identity.subject, credits);
   },
 });
+
+/** Validates and stores the per-run auto-approve limit. Applies to MCP (external agent) runs only. */
+async function saveAutoApprove(ctx: MutationCtx, userId: string, credits: number) {
+  if (!Number.isFinite(credits) || credits < 0 || credits > MAX_AUTO_APPROVE) {
+    throw new ConvexError({ code: "INVALID", message: `Enter 0 to ${MAX_AUTO_APPROVE} credits.` });
+  }
+  const value = Math.round(credits * 100) / 100;
+  const row = await ctx.db
+    .query("mcp_settings")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first();
+  if (row) await ctx.db.patch(row._id, { autoApproveCredits: value, updatedAt: Date.now() });
+  else await ctx.db.insert("mcp_settings", { userId, autoApproveCredits: value, updatedAt: Date.now() });
+  return { autoApproveCredits: value };
+}
