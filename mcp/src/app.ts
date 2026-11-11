@@ -9,7 +9,9 @@ const metadataUrl = getOAuthProtectedResourceMetadataUrl(resource);
 const handler = createMcpHandler(createServer);
 const gate = requireBearerAuth({
   verifier: createVerifier(),
-  requiredScopes: ["wallet:read"],
+  // Every scope the server offers: the sign-in challenge tells clients exactly which scopes to request, and a
+  // token missing one (e.g. an old wallet:read-only connection) is rejected so the client re-authorizes.
+  requiredScopes: [...SCOPES],
   resourceMetadataUrl: metadataUrl,
 });
 
