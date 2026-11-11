@@ -3,7 +3,17 @@
 import React from "react";
 import Link from "next/link";
 import { usePaginatedQuery } from "convex/react";
-import { ChevronRight, Search } from "lucide-react";
+import {
+  Ban,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleDashed,
+  List,
+  Search,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react";
 import { Loupe } from "@lucasmarkes/hairline/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,18 +27,21 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  STRIPED_ROWS,
 } from "@/components/ui/table";
 import { api } from "../../../../../convex/_generated/api";
 import { openRun } from "./run-store";
 
 type Filter = "all" | "succeeded" | "failed" | "active" | "cancelled";
 
-const TABS: Array<{ value: Filter; label: string }> = [
-  { value: "all", label: "All runs" },
-  { value: "succeeded", label: "Succeeded" },
-  { value: "failed", label: "Failed" },
-  { value: "active", label: "In progress" },
-  { value: "cancelled", label: "Cancelled" },
+const PAGE_SIZE = 10;
+
+const TABS: Array<{ value: Filter; label: string; icon: LucideIcon }> = [
+  { value: "all", label: "All runs", icon: List },
+  { value: "succeeded", label: "Succeeded", icon: CheckCircle2 },
+  { value: "failed", label: "Failed", icon: XCircle },
+  { value: "active", label: "In progress", icon: CircleDashed },
+  { value: "cancelled", label: "Cancelled", icon: Ban },
 ];
 
 const STATUS: Record<string, { label: string; tone: string; bar: string }> = {
@@ -108,14 +121,29 @@ export function RunsTable() {
   const { results, status, loadMore } = usePaginatedQuery(
     api.runs.myAll,
     { filter },
-    { initialNumItems: 15 },
+    { initialNumItems: PAGE_SIZE * 2 },
   );
+  const [page, setPage] = React.useState(0);
 
   const q = search.trim().toLowerCase();
   const rows = q
     ? results.filter((r) => r.agentName.toLowerCase().includes(q))
     : results;
   const loading = status === "LoadingFirstPage";
+
+  const start = page * PAGE_SIZE;
+  const pageRows = rows.slice(start, start + PAGE_SIZE);
+  const hasNext = rows.length > start + PAGE_SIZE || status === "CanLoadMore";
+
+  // Go back to page 1 whenever the filter or search changes.
+  React.useEffect(() => setPage(0), [filter, q]);
+
+  // Keep one page of look-ahead loaded so "Next" knows whether more rows exist.
+  React.useEffect(() => {
+    if (status === "CanLoadMore" && rows.length < start + PAGE_SIZE * 2) {
+      loadMore(PAGE_SIZE * 2);
+    }
+  }, [status, rows.length, start, loadMore]);
 
   return (
     <div className="flex-1 h-full overflow-y-auto scrollbar-thin bg-background px-6 py-8 sm:px-10">
@@ -132,9 +160,15 @@ export function RunsTable() {
         <div className="overflow-hidden rounded-lg border border-border">
           <div className="flex flex-wrap items-center justify-between gap-5 border-b border-border px-4 pt-3 pb-3">
             <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-              <TabsList>
+              <TabsList className="bg-neutral-200/70 dark:bg-neutral-800">
                 {TABS.map((t) => (
-                  <TabsTrigger key={t.value} value={t.value}>
+                  <TabsTrigger
+                    key={t.value}
+                    value={t.value}
+                    title={t.label}
+                    className="gap-1.5 text-neutral-700 hover:text-neutral-950 data-active:bg-white data-active:text-neutral-950 dark:text-neutral-300 dark:hover:text-white dark:data-active:bg-neutral-950 dark:data-active:text-white"
+                  >
+                    <t.icon className="size-3.5 shrink-0" />
                     {t.label}
                   </TabsTrigger>
                 ))}
@@ -146,14 +180,14 @@ export function RunsTable() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by agent"
-                className="pl-8"
+                className="bg-white pl-8 dark:bg-input/30"
               />
             </div>
           </div>
 
           <Table>
-            <TableHeader>
-              <TableRow>
+            <TableHeader className="bg-neutral-100 dark:bg-neutral-900">
+              <TableRow className="hover:bg-transparent">
                 <TableHead className="text-xs">Agent</TableHead>
                 <TableHead className="text-xs">Started</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
@@ -163,7 +197,7 @@ export function RunsTable() {
                 <TableHead className="text-xs text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className={STRIPED_ROWS}>
               {loading &&
                 Array.from({ length: 6 }).map((_, i) => (
                   <TableRow key={i}>
@@ -174,7 +208,7 @@ export function RunsTable() {
                 ))}
 
               {!loading &&
-                rows.map((r) => {
+                pageRows.map((r) => {
                   const s = STATUS[r.status] ?? STATUS.cancelled;
                   const finished =
                     r.status === "succeeded" ||
@@ -281,14 +315,33 @@ export function RunsTable() {
 
           <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
             <span>
-              {rows.length} run{rows.length === 1 ? "" : "s"} shown
+              {rows.length === 0
+                ? "0 runs"
+                : `${start + 1}–${start + pageRows.length}${hasNext ? "" : ` of ${rows.length}`}`}
             </span>
-            {status === "CanLoadMore" && (
-              <Button variant="outline" size="sm" onClick={() => loadMore(15)}>
-                Load more
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Previous page"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                <ChevronLeft className="size-4" />
               </Button>
-            )}
-            {status === "LoadingMore" && <span>Loading…</span>}
+              <span className="min-w-14 text-center tabular-nums">
+                Page {page + 1}
+              </span>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Next page"
+                disabled={!hasNext || status === "LoadingMore"}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>

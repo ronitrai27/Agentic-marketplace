@@ -21,6 +21,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  STRIPED_ROWS,
 } from "@/components/ui/table";
 import { api } from "../../../../../convex/_generated/api";
 
@@ -223,7 +224,7 @@ export function TransactionsTable() {
                     setPage(1);
                   }}
                   placeholder="Search"
-                  className="pl-8"
+                  className="bg-white pl-8 dark:bg-input/30"
                 />
               </div>
               <Tabs
@@ -233,9 +234,13 @@ export function TransactionsTable() {
                   setPage(1);
                 }}
               >
-                <TabsList>
+                <TabsList className="bg-neutral-200/70 dark:bg-neutral-800">
                   {RANGES.map((r) => (
-                    <TabsTrigger key={r.value} value={r.value}>
+                    <TabsTrigger
+                      key={r.value}
+                      value={r.value}
+                      className="text-neutral-700 hover:text-neutral-950 data-active:bg-white data-active:text-neutral-950 dark:text-neutral-300 dark:hover:text-white dark:data-active:bg-neutral-950 dark:data-active:text-white"
+                    >
                       {r.label}
                     </TabsTrigger>
                   ))}
@@ -244,7 +249,7 @@ export function TransactionsTable() {
             </div>
           </div>
 
-          <div className="flex-1"><Table className="[&_th]:border-r [&_td]:border-r [&_th]:border-neutral-300 [&_td]:border-neutral-300 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0 [&_th]:bg-neutral-50 [&_tr]:border-neutral-300 dark:[&_th]:border-neutral-700 dark:[&_td]:border-neutral-700 dark:[&_tr]:border-neutral-700 dark:[&_th]:bg-neutral-900">
+          <div className="flex-1"><Table className="[&_th]:border-r [&_td]:border-r [&_th]:border-neutral-300 [&_td]:border-neutral-300 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0 [&_th]:bg-neutral-100 [&_tr]:border-neutral-300 dark:[&_th]:border-neutral-700 dark:[&_td]:border-neutral-700 dark:[&_tr]:border-neutral-700 dark:[&_th]:bg-neutral-900">
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Description</TableHead>
@@ -256,7 +261,7 @@ export function TransactionsTable() {
                 <TableHead className="text-xs text-right">Balance</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className={`${STRIPED_ROWS} [&_tr:last-child]:border-b!`}>
               {loading &&
                 Array.from({ length: 6 }).map((_, i) => (
                   <TableRow key={i}>

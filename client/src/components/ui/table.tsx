@@ -113,3 +113,7 @@ export {
   TableCell,
   TableCaption,
 }
+
+/** Zebra rows for a TableBody: background / white in light mode, black / neutral-900 in dark. Hover still works. */
+export const STRIPED_ROWS =
+  "[&_tr:nth-child(even):not(:hover)]:bg-white dark:[&_tr:nth-child(odd):not(:hover)]:bg-black dark:[&_tr:nth-child(even):not(:hover)]:bg-neutral-900"

@@ -36,7 +36,9 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  STRIPED_ROWS,
+} from "@/components/ui/table";
 import { tagById } from "@/lib/agent-tags";
 import { api } from "../../../../../convex/_generated/api";
 import { AgentLogo } from "../agent-logo";
@@ -318,7 +320,7 @@ export function MarketplaceTable() {
             </table.Subscribe>
           </TableHeader>
 
-          <TableBody>
+          <TableBody className={STRIPED_ROWS}>
             <table.Subscribe selector={(s) => ({ a: s.sorting, b: s.columnFilters, d: s.pagination })}>
               {() => {
                 if (loading) {
