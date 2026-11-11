@@ -146,7 +146,8 @@ export function RunsTable() {
   }, [status, rows.length, start, loadMore]);
 
   return (
-    <div className="flex-1 h-full overflow-y-auto scrollbar-thin bg-background px-6 py-8 sm:px-10">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-8 sm:px-10">
       <div className="mx-auto w-full max-w-7xl space-y-5">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
@@ -313,35 +314,38 @@ export function RunsTable() {
             </div>
           )}
 
-          <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
-            <span>
-              {rows.length === 0
-                ? "0 runs"
-                : `${start + 1}–${start + pageRows.length}${hasNext ? "" : ` of ${rows.length}`}`}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Previous page"
-                disabled={page === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <span className="min-w-14 text-center tabular-nums">
-                Page {page + 1}
-              </span>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Next page"
-                disabled={!hasNext || status === "LoadingMore"}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
+        </div>
+      </div>
+      </div>
+
+      {/* Pinned to the bottom: the table scrolls above, this bar never moves. */}
+      <div className="shrink-0 border-t border-border bg-background px-6 py-3 sm:px-10">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {rows.length === 0
+              ? "0 runs"
+              : `${start + 1}–${start + pageRows.length}${hasNext ? "" : ` of ${rows.length}`}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Previous page"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <span className="min-w-14 text-center tabular-nums">Page {page + 1}</span>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Next page"
+              disabled={!hasNext || status === "LoadingMore"}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
           </div>
         </div>
       </div>

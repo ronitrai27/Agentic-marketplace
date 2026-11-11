@@ -1,6 +1,6 @@
 import { httpRouter, HttpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { authComponent, createAuth } from "./betterAuth/auth";
 
@@ -178,11 +178,25 @@ mcpRoute("/mcp/run-agent", async (ctx, b) => {
   if (b.input === null || typeof b.input !== "object" || Array.isArray(b.input)) {
     return { ok: false, code: "INVALID_INPUT", message: "`input` must be a JSON object" };
   }
+  // The MCP server sends the OAuth client id. Resolve it to the registered app name ("Claude", "Cursor"...).
+  let clientName: string | undefined;
+  if (typeof b.clientName === "string" && b.clientName) {
+    clientName = b.clientName.slice(0, 80);
+    try {
+      const app = await (ctx as any).runQuery(components.betterAuth.adapter.findOne, {
+        model: "oauthApplication",
+        where: [{ field: "clientId", value: b.clientName }],
+      });
+      if (app && typeof app.name === "string" && app.name.trim()) clientName = app.name.trim().slice(0, 80);
+    } catch (err) {
+      console.error("resolve MCP client name failed", err);
+    }
+  }
   return ctx.runMutation(internal.mcpRuns.requestRun, {
     userId: b.userId,
     slug: b.slug,
     inputJson: JSON.stringify(b.input),
-    clientName: typeof b.clientName === "string" ? b.clientName : undefined,
+    clientName,
   });
 });
 

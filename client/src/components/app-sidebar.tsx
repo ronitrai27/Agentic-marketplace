@@ -42,6 +42,7 @@ import { ApprovalToaster, usePendingApprovalCount } from "@/modules/space/compon
 
 /** Collapsed by default under "More". */
 const MORE_LINKS = [
+  { label: "Wallet", href: "/space/wallet", icon: Wallet },
   { label: "Creator space", href: "/space/creator", icon: Rocket },
   { label: "Agents approval", href: "/space/approvals", icon: ShieldCheck },
 ];
@@ -66,7 +67,6 @@ const NAV_LINKS = [
   { label: "Marketplace", href: "/space/marketplace", icon: Store },
   { label: "Recent Runs", href: "/space/runs", icon: History },
   { label: "Transactions", href: "/space/transactions", icon: Receipt },
-  { label: "Wallet", href: "/space/wallet", icon: Wallet },
 ];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
