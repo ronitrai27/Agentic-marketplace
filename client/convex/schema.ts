@@ -361,6 +361,43 @@ export default defineSchema({
     .index("by_user_hold", ["userId", "holdStatus"])
     .index("by_status_created", ["status", "createdAt"]),
 
+  // ─── MCP run requests (human-in-the-loop) ──────────────────────────
+  // An MCP client (Claude, Codex, Hermes...) asks to run an agent. Nothing is held or run until the owner approves
+  // in the web app (or the request is under their auto-approve limit). Input is kept so the human can review it.
+  mcp_run_requests: defineTable({
+    userId: v.string(),
+    agentId: v.id("agents"),
+    slug: v.string(),
+    agentName: v.string(),
+    inputJson: v.string(),
+    /** Most this run can cost (credits). Shown on the approval card. */
+    holdCredits: v.number(),
+    /** Which MCP client asked (OAuth client id / name), for the approval card. */
+    clientName: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("denied"),
+      v.literal("expired"),
+      v.literal("failed"),
+    ),
+    runId: v.optional(v.id("runs")),
+    reason: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    decidedAt: v.optional(v.number()),
+  })
+    .index("by_user_status", ["userId", "status"])
+    .index("by_user_created", ["userId", "createdAt"]),
+
+  // Per-user MCP approval policy. No row (or 0) means every MCP run needs a human click.
+  mcp_settings: defineTable({
+    userId: v.string(),
+    /** Runs whose maximum cost is at or under this many credits start without asking. */
+    autoApproveCredits: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   // What the agent returned, kept apart from `runs` so lists of runs never load large outputs.
   run_outputs: defineTable({
     runId: v.id("runs"),
@@ -523,6 +560,40 @@ export default defineSchema({
   })
     .index("by_creator_requested", ["creatorId", "requestedAt"])
     .index("by_status", ["status", "requestedAt"]),
+
+  // ─── Wallet transactions ───────────────────────────────────────────
+  // Append-only statement of every change to a user's credit balance (100 credits = $1).
+  // Written in the same transaction that moves the balance. Agent name/logo are snapshotted so the
+  // history never changes when an agent is renamed. Escrow holds are not rows: only the final charge is.
+  wallet_transactions: defineTable({
+    userId: v.string(),
+    type: v.union(
+      v.literal("topup"), // PayPal deposit, credit
+      v.literal("withdrawal"), // PayPal payout, debit
+      v.literal("run_charge"), // buyer charged for a run, debit
+      v.literal("run_earning"), // creator's share of a run once the 48h hold clears, credit
+      v.literal("earning_reversal"), // earning taken back after a refund/dispute, debit
+    ),
+    direction: v.union(v.literal("credit"), v.literal("debit")),
+    /** Always positive; `direction` gives the sign. */
+    credits: v.number(),
+    /** Wallet balance right after this row. Missing while an earning is still pending. */
+    balanceAfter: v.optional(v.number()),
+    status: v.union(v.literal("success"), v.literal("pending"), v.literal("failed")),
+    runId: v.optional(v.id("runs")),
+    agentId: v.optional(v.id("agents")),
+    agentName: v.optional(v.string()),
+    agentLogoUrl: v.optional(v.string()),
+    /** Set when an MCP client (Claude Code, Codex, Hermes...) ran the agent on the user's behalf, e.g. "Claude Code". */
+    via: v.optional(v.string()),
+    /** PayPal order id (topup) or payout batch id (withdrawal). */
+    ref: v.optional(v.string()),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_user_created", ["userId", "createdAt"])
+    .index("by_run", ["runId"])
+    .index("by_ref", ["ref"]),
 
   // ─── Rate Limit Sliding Window ──────────────────────────────────────
   // One document per (keyId, windowMinute). TTL-cleaned by a scheduled job.

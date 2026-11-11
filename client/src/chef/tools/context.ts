@@ -22,6 +22,8 @@ export type ChefRequest = {
   chatId?: string;
   /** What the human actually typed this turn. Tools trust this over anything the model passes in. */
   lastUserText: string;
+  /** Sends a live event to the user's browser (e.g. a "notice" toast) while the tool is still working. */
+  notify?: (event: string, data: unknown) => void;
 };
 
 export const chefRequest = new AsyncLocalStorage<ChefRequest>();

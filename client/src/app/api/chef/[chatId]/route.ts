@@ -119,7 +119,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ chatId:
     async start(controller) {
       const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(sse(event, data)));
       // tools read the user's Convex client and what they typed from here, never from the model
-      chefRequest.enterWith({ convex, chatId, lastUserText: text, gate: createGuardGate() });
+      chefRequest.enterWith({
+        convex,
+        chatId,
+        lastUserText: text,
+        gate: createGuardGate(),
+        // tools may warn the user while they wait (e.g. a slow database); a closed stream is ignored
+        notify: (event, data) => {
+          try {
+            send(event, data);
+          } catch {
+            /* stream already closed */
+          }
+        },
+      });
       /** The fixed reply the hitl node wrote, out to the browser and to Convex. */
       const sendHitl = (update: { messages?: Array<{ type?: string; content?: unknown }> }) => {
         const reply = update.messages?.filter((m) => m.type === "ai").at(-1)?.content;

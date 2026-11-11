@@ -11,7 +11,8 @@ export function searchPool(): pg.Pool {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("SEARCH_NOT_CONFIGURED");
   // one pool per server process, kept across dev hot reloads
-  g.__searchPool ??= new pg.Pool({ connectionString: url, max: 5, idleTimeoutMillis: 30_000 });
+  // connectionTimeoutMillis: an unreachable database fails after 6s instead of hanging for a minute
+  g.__searchPool ??= new pg.Pool({ connectionString: url, max: 5, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 6_000 });
   return g.__searchPool;
 }
 

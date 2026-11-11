@@ -153,6 +153,29 @@ mcpRoute("/mcp/agent-schemas", async (ctx, b) =>
   }),
 );
 
+// ── MCP server: run an agent (human-in-the-loop) + poll a run ───────────────
+//   POST /mcp/run-agent   { userId, slug, input, clientName? }  → pending_approval | started | error
+//   POST /mcp/run-status  { userId, id }                        → request or run state (+ output when done)
+mcpRoute("/mcp/run-agent", async (ctx, b) => {
+  if (typeof b.userId !== "string" || !b.userId || typeof b.slug !== "string" || !SLUG_RE.test(b.slug)) {
+    return { ok: false, code: "INVALID_AGENT", message: "`slug` must be an agent slug" };
+  }
+  if (b.input === null || typeof b.input !== "object" || Array.isArray(b.input)) {
+    return { ok: false, code: "INVALID_INPUT", message: "`input` must be a JSON object" };
+  }
+  return ctx.runMutation(internal.mcpRuns.requestRun, {
+    userId: b.userId,
+    slug: b.slug,
+    inputJson: JSON.stringify(b.input),
+    clientName: typeof b.clientName === "string" ? b.clientName : undefined,
+  });
+});
+
+mcpRoute("/mcp/run-status", async (ctx, b) => {
+  if (typeof b.userId !== "string" || !b.userId || typeof b.id !== "string" || !b.id) return { found: false };
+  return ctx.runQuery(internal.mcpRuns.status, { userId: b.userId, id: b.id.slice(0, 64) });
+});
+
 // ── MCP server: access-token introspection ──────────────────────────────────
 // The MCP server forwards the user's OAuth access token here to learn who owns it.
 //   POST /mcp/introspect   Authorization: Bearer <MCP_BACKEND_SECRET>   { "token": "..." }

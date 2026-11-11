@@ -1,6 +1,7 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { components } from "./_generated/api";
 import { escrowCredits } from "./escrow";
+import { recordTx } from "./ledger";
 import { v } from "convex/values";
 import { MICROS_PER_CREDIT } from "../src/lib/agent-display";
 
@@ -95,6 +96,10 @@ export const addCredits = mutation({
       throw new Error("User not found");
     }
 
+    // A retried capture of the same PayPal order must not credit twice
+    const already = await ctx.db.query("wallet_transactions").withIndex("by_ref", (q) => q.eq("ref", args.orderId)).first();
+    if (already) return { success: true, newCredits: Number(user.credits ?? 0) };
+
     const currentCredits = Number(user.credits ?? 0);
     const newCredits = currentCredits + args.amountCredits;
 
@@ -107,6 +112,16 @@ export const addCredits = mutation({
           updatedAt: Date.now(),
         },
       },
+    });
+    await recordTx(ctx, {
+      userId: identity.subject,
+      type: "topup",
+      direction: "credit",
+      credits: args.amountCredits,
+      balanceAfter: newCredits,
+      status: "success",
+      ref: args.orderId,
+      note: "PayPal top-up",
     });
 
     return { success: true, newCredits };
@@ -162,6 +177,16 @@ export const deductCreditsForWithdrawal = mutation({
           updatedAt: Date.now(),
         },
       },
+    });
+    await recordTx(ctx, {
+      userId: identity.subject,
+      type: "withdrawal",
+      direction: "debit",
+      credits: args.amountCredits,
+      balanceAfter: newCredits,
+      status: "success",
+      ref: args.payoutId,
+      note: "PayPal withdrawal",
     });
 
     return { success: true, newCredits };

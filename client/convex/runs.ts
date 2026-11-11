@@ -5,6 +5,7 @@ import { components, internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { escrowCredits, getCredits, setCredits } from "./escrow";
+import { agentSnapshot, recordTx } from "./ledger";
 import { announceRunEnd } from "./chatRuns";
 import { recordEarning } from "./revenue";
 import { chargeMicrosFor, microsToCredits, runQuote, type PlanMicros } from "../src/lib/agent-display";
@@ -280,6 +281,66 @@ export const admit = internalMutation({
     return { ok: true, runId, timeoutSeconds };
   },
 });
+
+/**
+ * Opens a run that is paid for up front and queued in one step: used by the MCP flow, where the input is already
+ * known and the human approval happened beforehand. Holds the maximum cost (highest tier / max units), checks the
+ * agent's SDK limits, inserts the run as `queued`. The caller must then start the Temporal workflow.
+ */
+export async function admitHeldRun(
+  ctx: MutationCtx,
+  args: { userId: string; slug: string; inputJson: string; callerName?: string },
+): Promise<{ ok: true; runId: Id<"runs">; timeoutSeconds: number; holdCredits: number } | Rejection> {
+  if (args.inputJson.length > MAX_INPUT_CHARS) {
+    return { ok: false, status: 413, code: "PAYLOAD_TOO_LARGE", message: "Input is too large" };
+  }
+  try {
+    const parsed = JSON.parse(args.inputJson);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+  } catch {
+    return { ok: false, status: 400, code: "INVALID_INPUT", message: "Input must be a JSON object" };
+  }
+  const agent = await ctx.db
+    .query("agents")
+    .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+    .first();
+  if (!agent || agent.status === "archived" || agent.status === "suspended") {
+    return { ok: false, status: 404, code: "AGENT_NOT_FOUND", message: "Agent not found" };
+  }
+  if (agent.status !== "active") {
+    return { ok: false, status: 503, code: "AGENT_PAUSED", message: "This agent is not accepting runs right now" };
+  }
+  const plan = await latestPlan(ctx, agent._id);
+  const holdMicros = runQuote(plan).holdMicros;
+  if (!holdMicros) return { ok: false, status: 400, code: "NO_PRICE", message: "This agent has no price set" };
+  const holdCredits = microsToCredits(holdMicros);
+  const available = (await getCredits(ctx, args.userId)) - (await escrowCredits(ctx, args.userId));
+  if (available < holdCredits) {
+    return {
+      ok: false,
+      status: 402,
+      code: "INSUFFICIENT_FUNDS",
+      message: `Not enough credits: this run can cost up to ${holdCredits} and ${Math.max(0, Math.round(available * 100) / 100)} are available.`,
+    };
+  }
+  const timeoutSeconds = timeoutFor(agent);
+  const limited = await checkAgentLimits(ctx, agent, timeoutSeconds);
+  if (limited) return limited;
+
+  const runId = await ctx.db.insert("runs", {
+    agentId: agent._id,
+    userId: args.userId,
+    source: "session",
+    status: "queued",
+    inputJson: args.inputJson,
+    holdCredits,
+    holdStatus: "held",
+    timeoutSeconds,
+    createdAt: Date.now(),
+    callerName: args.callerName,
+  });
+  return { ok: true, runId, timeoutSeconds, holdCredits };
+}
 
 // ─── Human flow: hold the payment, then send the input ──────────────────────
 
@@ -562,7 +623,22 @@ export const complete = internalMutation({
       const hold = run.holdCredits ?? 0;
       charged = plan ? Math.min(hold, microsToCredits(chargeMicrosFor(plan, input, output))) : hold;
       const balance = await getCredits(ctx, run.userId);
-      await setCredits(ctx, run.userId, Math.max(0, balance - charged));
+      const balanceAfter = Math.max(0, balance - charged);
+      await setCredits(ctx, run.userId, balanceAfter);
+      if (charged > 0) {
+        await recordTx(ctx, {
+          userId: run.userId,
+          type: "run_charge",
+          direction: "debit",
+          credits: charged,
+          balanceAfter,
+          status: "success",
+          runId,
+          // MCP runs are named "MCP: <client>" at admission
+          via: run.callerName?.startsWith("MCP") ? run.callerName.replace(/^MCP:?\s*/, "") || "MCP client" : undefined,
+          ...(await agentSnapshot(ctx, run.agentId)),
+        });
+      }
       await ctx.db.patch(runId, { holdStatus: "settled", chargedCredits: charged });
       await recordEarning(ctx, run, charged, Date.now());
     }

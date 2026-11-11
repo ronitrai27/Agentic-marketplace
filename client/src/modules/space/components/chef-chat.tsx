@@ -249,6 +249,10 @@ export function useChefChat(chatId: string | null) {
             const p = payload as { id: string; step: number; name: string; status: "running" | "done" | "error"; args: unknown; output?: string };
             putBlock({ kind: "tool", id: p.id, step: p.step, name: p.name, args: p.args, status: p.status, output: p.output });
           }
+          if (event === "notice") {
+            const p = payload as { level?: "warning" | "info"; title: string; description?: string };
+            (p.level === "info" ? toast.info : toast.warning)(p.title, { description: p.description });
+          }
           if (event === "proposal") {
             const p = payload as { agentNames: string[]; totalCredits: number; enough: boolean };
             toast.info(`Approval needed: run ${p.agentNames.join(" and ")}?`, {

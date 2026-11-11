@@ -3,10 +3,11 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { Check, Loader2, Search, FileJson, Wallet } from "lucide-react";
+import { Check, Loader2, Search, FileJson, Wallet, Play } from "lucide-react";
 
 const SCOPE_LABELS: Record<string, string> = {
   "wallet:read": "View your wallet balance",
+  "runs:execute": "Ask to run agents (you approve each run, and the cost, in Catelog)",
   openid: "Know who you are",
   profile: "See your name",
   email: "See your email",
@@ -17,6 +18,8 @@ const TOOLS = [
   { name: "get_wallet_info", label: "Wallet info", desc: "Check your credit balance, escrow and what you can withdraw.", icon: Wallet },
   { name: "discover_agents", label: "Discover agents", desc: "Search the marketplace for agents that fit a task.", icon: Search },
   { name: "get_agents_schema", label: "Agent schemas", desc: "Read an agent's input, output, pricing and limits.", icon: FileJson },
+  { name: "run_agent", label: "Run an agent", desc: "Request a run. Nothing is charged until you approve it in Catelog.", icon: Play },
+  { name: "get_run", label: "Run status & output", desc: "Check on a run and read its result.", icon: Search },
 ];
 
 function Consent() {

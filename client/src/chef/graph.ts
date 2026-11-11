@@ -1,4 +1,4 @@
-import { StateGraph, START, END } from "@langchain/langgraph";
+import { StateGraph, START, END, MemorySaver } from "@langchain/langgraph";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { ChefGraphState } from "./state";
@@ -31,13 +31,31 @@ export function buildChefGraph(checkpointer: BaseCheckpointSaver) {
     .compile({ checkpointer });
 }
 
+/** How long Postgres gets to answer before the chef falls back to memory. */
+const PG_CONNECT_TIMEOUT_MS = 6_000;
+
 async function build() {
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is not set");
-  const checkpointer = PostgresSaver.fromConnString(url);
-  await checkpointer.setup();
-
-  return buildChefGraph(checkpointer);
+  if (url) {
+    const checkpointer = PostgresSaver.fromConnString(url);
+    try {
+      await Promise.race([
+        checkpointer.setup(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Postgres did not answer in ${PG_CONNECT_TIMEOUT_MS}ms`)), PG_CONNECT_TIMEOUT_MS),
+        ),
+      ]);
+      return buildChefGraph(checkpointer);
+    } catch (e) {
+      checkpointer.end().catch(() => {});
+      console.error("[chef] Postgres checkpointer unreachable, using in-memory checkpoints:", e instanceof Error ? e.message : e);
+    }
+  } else {
+    console.error("[chef] DATABASE_URL is not set, using in-memory checkpoints");
+  }
+  // Fallback: chats keep working, but paused approvals and thread memory are lost on a server restart.
+  // The chat history the UI shows lives in Convex, so it is not affected.
+  return buildChefGraph(new MemorySaver());
 }
 
 let graph: ReturnType<typeof build> | undefined;

@@ -21,12 +21,15 @@ import type * as crons from "../crons.js";
 import type * as escrow from "../escrow.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
+import type * as ledger from "../ledger.js";
 import type * as mcpAgents from "../mcpAgents.js";
+import type * as mcpRuns from "../mcpRuns.js";
 import type * as n8nAgents from "../n8nAgents.js";
 import type * as revenue from "../revenue.js";
 import type * as reviews from "../reviews.js";
 import type * as runs from "../runs.js";
 import type * as temporal from "../temporal.js";
+import type * as transactions from "../transactions.js";
 import type * as wallet from "../wallet.js";
 
 import type {
@@ -49,12 +52,15 @@ declare const fullApi: ApiFromModules<{
   escrow: typeof escrow;
   health: typeof health;
   http: typeof http;
+  ledger: typeof ledger;
   mcpAgents: typeof mcpAgents;
+  mcpRuns: typeof mcpRuns;
   n8nAgents: typeof n8nAgents;
   revenue: typeof revenue;
   reviews: typeof reviews;
   runs: typeof runs;
   temporal: typeof temporal;
+  transactions: typeof transactions;
   wallet: typeof wallet;
 }>;
 

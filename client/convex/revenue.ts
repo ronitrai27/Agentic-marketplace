@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { getCredits, setCredits } from "./escrow";
+import { agentSnapshot, recordTx } from "./ledger";
 import { MICROS_PER_CREDIT, microsToCredits } from "../src/lib/agent-display";
 
 /** Creator revenue rules. Fee rates are copied onto every ledger row, so changing them never rewrites history. */
@@ -88,6 +89,20 @@ export async function recordEarning(ctx: MutationCtx, run: Doc<"runs">, chargedC
     grossMicros,
     ...split,
   });
+  // Shows on the creator's statement as pending until the 48 hour hold clears
+  await recordTx(ctx, {
+    userId: agent.ownerId,
+    type: "run_earning",
+    direction: "credit",
+    credits: microsToCredits(split.creatorNetMicros),
+    status: "pending",
+    runId: run._id,
+    agentId: run.agentId,
+    agentName: agent.name,
+    agentLogoUrl: agent.logoUrl,
+    note: "Held for 48 hours",
+    createdAt: now,
+  });
 }
 
 /**
@@ -103,14 +118,33 @@ export const releaseDue = internalMutation({
       .withIndex("by_status_available", (q) => q.eq("status", "pending").lte("availableAt", now))
       .take(RELEASE_BATCH);
 
-    const perCreator = new Map<string, number>();
+    const balances = new Map<string, number>();
     for (const row of due) {
       await ctx.db.patch(row._id, { status: "available" });
-      perCreator.set(row.creatorId, (perCreator.get(row.creatorId) ?? 0) + row.creatorNetMicros);
+      const balance = balances.get(row.creatorId) ?? (await getCredits(ctx, row.creatorId));
+      const next = balance + microsToCredits(row.creatorNetMicros);
+      balances.set(row.creatorId, next);
+      // Flip the pending statement row to success with the balance it produced
+      const tx = (await ctx.db.query("wallet_transactions").withIndex("by_run", (q) => q.eq("runId", row.runId)).collect()).find(
+        (t) => t.type === "run_earning" && t.userId === row.creatorId,
+      );
+      if (tx) {
+        await ctx.db.patch(tx._id, { status: "success", balanceAfter: next, note: undefined });
+      } else {
+        // Row predates the statement: write it now
+        await recordTx(ctx, {
+          userId: row.creatorId,
+          type: "run_earning",
+          direction: "credit",
+          credits: microsToCredits(row.creatorNetMicros),
+          balanceAfter: next,
+          status: "success",
+          runId: row.runId,
+          ...(await agentSnapshot(ctx, row.agentId)),
+        });
+      }
     }
-    for (const [creatorId, micros] of perCreator) {
-      await setCredits(ctx, creatorId, (await getCredits(ctx, creatorId)) + microsToCredits(micros));
-    }
+    for (const [creatorId, balance] of balances) await setCredits(ctx, creatorId, balance);
     // More left than one batch: keep going right away instead of waiting for the next hour
     if (due.length === RELEASE_BATCH) await ctx.scheduler.runAfter(0, internal.revenue.releaseDue, {});
     return { released: due.length };
@@ -127,11 +161,31 @@ export const reverse = internalMutation({
     const row = await ctx.db.query("revenue_ledger").withIndex("by_run", (q) => q.eq("runId", runId)).first();
     if (!row || row.status === "reversed") return { ok: false as const };
     if (row.status === "paid") return { ok: false as const, reason: "already_paid_out" };
+    const now = Date.now();
+    const earning = (await ctx.db.query("wallet_transactions").withIndex("by_run", (q) => q.eq("runId", runId)).collect()).find(
+      (t) => t.type === "run_earning" && t.userId === row.creatorId,
+    );
     if (row.status === "available") {
       const balance = await getCredits(ctx, row.creatorId);
-      await setCredits(ctx, row.creatorId, Math.max(0, balance - microsToCredits(row.creatorNetMicros)));
+      const balanceAfter = Math.max(0, balance - microsToCredits(row.creatorNetMicros));
+      await setCredits(ctx, row.creatorId, balanceAfter);
+      await recordTx(ctx, {
+        userId: row.creatorId,
+        type: "earning_reversal",
+        direction: "debit",
+        credits: microsToCredits(row.creatorNetMicros),
+        balanceAfter,
+        status: "success",
+        runId,
+        agentId: row.agentId,
+        agentName: earning?.agentName,
+        agentLogoUrl: earning?.agentLogoUrl,
+        note: reason,
+      });
+    } else if (earning) {
+      // Never credited: the pending row is voided
+      await ctx.db.patch(earning._id, { status: "failed", note: reason });
     }
-    const now = Date.now();
     await ctx.db.patch(row._id, { status: "reversed", reversedAt: now, reversalReason: reason });
     await bumpDaily(ctx, { creatorId: row.creatorId, agentId: row.agentId, day: new Date(row.createdAt).toISOString().slice(0, 10) }, {
       reversedMicros: row.creatorNetMicros,

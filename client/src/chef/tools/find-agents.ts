@@ -179,8 +179,79 @@ const fail = (text: string): FindAgentsResult => ({ ok: false, text, agents: [],
 
 // ─── search + enrich ───
 
-/** Name lookup: index candidates in name order, then Convex facts. Archived and suspended agents do not survive the Convex step. */
+/** True when the search database could not be reached at all (network, firewall, paused database), as opposed to a bug. */
+function isConnectionError(e: unknown): boolean {
+  const errs = e instanceof AggregateError ? [e, ...e.errors] : [e];
+  return errs.some((x) => {
+    const code = (x as { code?: string } | null)?.code;
+    if (code && ["ETIMEDOUT", "ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN"].includes(code)) return true;
+    const msg = x instanceof Error ? x.message : String(x);
+    return /timeout exceeded when trying to connect|connection terminated|connect ETIMEDOUT|getaddrinfo/i.test(msg);
+  });
+}
+
+/** Requests that fell back to Convex because the main search database was down. */
+const degraded = new WeakSet<ChefRequest>();
+
+/** The model must tell the user why this took longer, so nobody blames the app. */
+const DEGRADED_NOTE =
+  "NOTE for the user: the main search database was unreachable, so the answer came from a simpler name match and took a few extra seconds. " +
+  "Say this in one short, friendly sentence and apologise for the wait.";
+
+/** Name match straight from Convex, when the main search database is down. Names only: no meaning search. */
+async function convexNameCandidates(req: ChefRequest, q: string) {
+  const all = (await req.convex.query(api.chefAgents.listForIndex, {})) as { id: string; name: string }[];
+  const near = all
+    .map((a) => ({ id: a.id, sim: nameSimilarity(a.name, q) }))
+    .filter((c) => c.sim >= 0.55)
+    .sort((x, y) => y.sim - x.sim)
+    .slice(0, 8);
+  if (near.length === 0) return [];
+  const rows = (await req.convex.query(api.chefAgents.enrich, { ids: near.map((c) => c.id) })) as Enriched[];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return near.flatMap((c, i) => {
+    const a = byId.get(c.id);
+    return a ? [{ a, fit: Math.max(0.2, 1 - i * 0.07) }] : [];
+  });
+}
+
+/** How long the search database gets before the user is told it is slow. */
+const SLOW_DB_NOTICE_MS = 5_000;
+const noticed = new WeakSet<ChefRequest>();
+
+/** Runs a database step; if it is still waiting after a few seconds, the user gets a toast so they know why it is slow. */
+async function withSlowNotice<T>(req: ChefRequest, fn: () => Promise<T>): Promise<T> {
+  const timer = setTimeout(() => {
+    if (noticed.has(req)) return;
+    noticed.add(req);
+    req.notify?.("notice", {
+      level: "warning",
+      title: "Temporary network failure",
+      description: "Our search database is slow to respond, so this may take a little longer than usual.",
+    });
+  }, SLOW_DB_NOTICE_MS);
+  try {
+    return await fn();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Name lookup. Uses the search index; when the database is unreachable it matches names in Convex instead. */
 async function candidates(req: ChefRequest, q: string) {
+  if (degraded.has(req)) return convexNameCandidates(req, q); // already known to be down: do not wait again
+  try {
+    return await withSlowNotice(req, () => indexCandidates(req, q));
+  } catch (e) {
+    if (!isConnectionError(e)) throw e;
+    console.error("[chef:find_agents] search database unreachable, matching names in Convex:", e instanceof Error ? e.message : e);
+    degraded.add(req);
+    return convexNameCandidates(req, q);
+  }
+}
+
+/** Index candidates in name order, then Convex facts. Archived and suspended agents do not survive the Convex step. */
+async function indexCandidates(req: ChefRequest, q: string) {
   await ensureIndexed(req.convex); // waits only when the index is empty; otherwise refreshes in the background
   const found = await searchRanked(q, { exact: 6, related: 8, similar: 0 });
 
@@ -265,6 +336,13 @@ async function byName(req: ChefRequest, modelQuery: string, limit: number, stric
     .map((c) => c.a);
 
   const list = [...(exact ? [exact] : []), ...similar].slice(0, limit);
+  if (list.length === 0 && degraded.has(req)) {
+    // Database down: only names could be checked, which is enough to say nothing is called that
+    return fail(
+      `No agent found currently with a name like "${usedRef}". Tell the user plainly that no agent has that name. ${DEGRADED_NOTE} ` +
+        `Offer to search by the task they need done once things are back to normal.`,
+    );
+  }
   if (list.length === 0) {
     // Nothing is called that. The model may have used "name" for what is really a task ("bestresearch agent"),
     // so search by meaning before giving up; only when that finds nothing too is it "No agent found currently".
@@ -286,7 +364,7 @@ ${byMeaning.text}` };
     : `No agent is named exactly "${usedRef}". Closest names (the user will pick one in the card list):`;
   return {
     ok: true,
-    text: `${head}\n${list.map((a, i) => line(i + 1, a, [])).join("\n")}`,
+    text: `${head}\n${list.map((a, i) => line(i + 1, a, [])).join("\n")}${degraded.has(req) ? `\n${DEGRADED_NOTE}` : ""}`,
     agents: list.map(toCard),
     needsChoice,
     preselect: exact?.slug ?? list[0].slug,
@@ -295,8 +373,10 @@ ${byMeaning.text}` };
 
 /** Task search: by what each agent is built for (description + tags), not by name. Only agents that fit come back. */
 async function taskCandidates(req: ChefRequest, q: string, limit: number): Promise<{ a: Enriched; fit: number }[]> {
-  await ensureTaskIndexed(req.convex);
-  const hits = await searchTask(q, limit);
+  const hits = await withSlowNotice(req, async () => {
+    await ensureTaskIndexed(req.convex);
+    return searchTask(q, limit);
+  });
   if (hits === null) throw new Error("TASK_SEARCH_UNAVAILABLE");
   if (hits.length === 0) return [];
   const rows = (await req.convex.query(api.chefAgents.enrich, { ids: hits.map((h) => h.id) })) as Enriched[];
@@ -359,6 +439,12 @@ export async function findAgents(rawArgs: unknown): Promise<FindAgentsResult> {
     if (msg === "SEARCH_NOT_CONFIGURED") {
       return fail("Agent search is not configured on the server. Tell the user it is unavailable right now; do not invent agents.");
     }
-    return fail("Agent search failed because of a temporary error. Tell the user briefly, do not invent agents, and offer to try again.");
+    if (isConnectionError(e)) {
+      return fail(
+        "The agent search could not run: the search database is unreachable (a network or connection problem on our side, not a missing agent). " +
+          "Tell the user exactly that, apologise for the delay, do not claim the agent does not exist, do not invent agents, and offer to try again.",
+      );
+    }
+    return fail("Agent search failed because of an unexpected error. Tell the user briefly, do not invent agents, and offer to try again.");
   }
 }
