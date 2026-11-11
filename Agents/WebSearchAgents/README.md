@@ -1,6 +1,6 @@
 # Contradictor and Alternative Finder
 
-Two independent Catelog 1.3.0 services share a Gemini Google Search adapter. The adapter returns provider grounding links alongside the passages they support. A result without grounding fails the run.
+Two independent Catelog 1.3.0 services use Vercel AI SDK ToolLoopAgent with the Gemini Google Search tool. The adapter returns provider grounding links alongside the passages they support. A result without grounding fails the run.
 
 ## Run locally
 
@@ -20,3 +20,4 @@ For persistence across deployments attach a persistent volume per service and se
 Use one bounded search request per billable run and limit Alternative Finder to three suggestions. Configure the price in Catelog. The agent manifest describes the scope and does not charge customers.
 
 Before publishing, run a live search on each service, verify gateway polling with authentication and three distinct buyers, and confirm a run stays visible after a browser disconnect. The local npm test command uses a fixture and does not spend provider credits.
+

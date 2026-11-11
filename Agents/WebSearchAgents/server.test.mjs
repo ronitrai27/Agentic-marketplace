@@ -9,7 +9,7 @@ for (const [id, agent] of Object.entries(agents)) {
     const port = id === "contradictor" ? 18721 : 18722;
     const child = spawn(process.execPath, ["--import", "./test-provider.mjs", "server.mjs"], {
       cwd: import.meta.dirname, env: { ...process.env, PORT: String(port), JOB_DB: ":memory:",
-        AGENT_KIND: id, GOOGLE_API_KEY: "fixture", GEMINI_MODEL: "fixture", CATELOG_SECRET_KEY: "cat_sec_fixture", CATELOG_TELEMETRY_DISABLED: "true" }
+        AGENT_KIND: id, GOOGLE_API_KEY: "fixture", GEMINI_MODEL: "gemini-2.5-flash-lite", CATELOG_SECRET_KEY: "cat_sec_fixture", CATELOG_TELEMETRY_DISABLED: "true" }
     });
     t.after(async () => { if (child.exitCode === null) { child.kill(); await once(child, "exit"); } });
     const call = (path, options) => fetch("http://127.0.0.1:" + port + path, options);
@@ -40,7 +40,9 @@ for (const [id, agent] of Object.entries(agents)) {
 }
 test("uncited provider result fails closed", async () => {
   await assert.rejects(search(agents.contradictor, "A valid claim", {
-    GOOGLE_API_KEY: "fixture", GEMINI_MODEL: "fixture"
-  }, async () => Response.json({ candidates: [] })), /no cited answer/);
+    GOOGLE_API_KEY: "fixture", GEMINI_MODEL: "gemini-2.5-flash-lite"
+  }, async () => Response.json({ candidates: [{ content: { parts: [{ text: "Uncited answer." }] } }] })), /no cited answer/);
 });
+
+
 
