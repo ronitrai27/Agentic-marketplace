@@ -17,6 +17,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
       ai:
         specifier: ^7.0.169
         version: 7.0.169(zod@4.6.7)
@@ -29,6 +32,9 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       unpdf:
         specifier: ^2.1.0
         version: 2.1.0
@@ -36,15 +42,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@types/node':
-        specifier: ^26.6.6
-        version: 26.6.6
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
 
 packages:
 
