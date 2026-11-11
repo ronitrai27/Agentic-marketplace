@@ -55,7 +55,8 @@ export default function Layout({
 
           {/* Main content square with rounded corners and border */}
           <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border/80 dark:border-neutral-700/60 bg-white dark:bg-neutral-950 overflow-hidden shadow-xs">
-            {children}
+            {/* Pages here read the current time (Date.now), so they render per request, not at build time. */}
+            <Suspense fallback={null}>{children}</Suspense>
           </div>
         </div>
       </SidebarInset>
