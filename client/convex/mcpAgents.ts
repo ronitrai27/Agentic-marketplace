@@ -115,21 +115,15 @@ export const schemasBySlugs = internalQuery({
         .order("desc")
         .first();
       const plan = (price?.plan as PlanMicros | undefined) ?? null;
-      let inputSchema: unknown = {};
-      let outputSchema: unknown = {};
-      try {
-        inputSchema = JSON.parse(a.inputSchemaJson);
-        outputSchema = JSON.parse(a.outputSchemaJson);
-      } catch {
-        /* keep empty schemas */
-      }
+      // Return schemas as raw JSON strings: Convex rejects object keys starting with "$"
+      // ($schema, $ref, $defs), so they are parsed in the HTTP route instead.
       found.push({
         slug: a.slug,
         name: a.name,
         description: a.description,
         tags: a.tags,
-        inputSchema,
-        outputSchema,
+        inputSchemaJson: a.inputSchemaJson,
+        outputSchemaJson: a.outputSchemaJson,
         pricing: publicPlan(plan),
         priceSummary: priceSummary(plan),
         platformFeeRate: 0.12,

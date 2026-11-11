@@ -147,11 +147,26 @@ mcpRoute("/mcp/discover-agents", async (ctx, b) =>
   }),
 );
 
-mcpRoute("/mcp/agent-schemas", async (ctx, b) =>
-  ctx.runQuery(internal.mcpAgents.schemasBySlugs, {
+mcpRoute("/mcp/agent-schemas", async (ctx, b) => {
+  const r = (await ctx.runQuery(internal.mcpAgents.schemasBySlugs, {
     slugs: Array.isArray(b.slugs) ? b.slugs.filter((s: unknown) => typeof s === "string").slice(0, 10) : [],
-  }),
-);
+  })) as { agents: any[]; notFound: string[] };
+  const parse = (s: string) => {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return {};
+    }
+  };
+  return {
+    notFound: r.notFound,
+    agents: r.agents.map(({ inputSchemaJson, outputSchemaJson, ...rest }) => ({
+      ...rest,
+      inputSchema: parse(inputSchemaJson),
+      outputSchema: parse(outputSchemaJson),
+    })),
+  };
+});
 
 // ── MCP server: run an agent (human-in-the-loop) + poll a run ───────────────
 //   POST /mcp/run-agent   { userId, slug, input, clientName? }  → pending_approval | started | error
