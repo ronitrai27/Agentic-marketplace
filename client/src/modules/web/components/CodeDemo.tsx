@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy } from "lucide-react";
+import { ArrowRight, Check, Copy } from "lucide-react";
+import Link from "next/link";
 
 // Real Catelog SDK usage (see sdk/py-sdk/README.md and sdk/ts-sdk/Catelog-TS.md)
 const FILES = [
@@ -97,7 +98,7 @@ export default function CodeDemo() {
 
   return (
     <section className="w-full bg-white px-4 pb-24 md:px-8">
-      <div className="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[0.8fr_1.2fr]">
+      <div className="mx-auto grid max-w-7xl items-center gap-12 lg:gap-24 lg:grid-cols-[0.8fr_1.2fr]">
         {/* Left */}
         <motion.div
           initial={{ opacity: 0, y: 24 }}
@@ -124,6 +125,13 @@ export default function CodeDemo() {
               </span>
             ))}
           </div>
+          <Link
+            href="/docs"
+            className="mt-8 inline-flex items-center gap-2 rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-700"
+          >
+            View Docs
+            <ArrowRight className="size-4" />
+          </Link>
         </motion.div>
 
         {/* Code card */}

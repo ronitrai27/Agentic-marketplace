@@ -222,13 +222,13 @@ export default function CreatorCredentialsPage() {
           </div>
 
           <div className="relative z-10 pt-1">
-            <button
-              type="button"
+            <a
+              href="/docs"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium bg-neutral-900 text-white hover:bg-black dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 transition-colors cursor-pointer shadow-xs"
             >
               <span>View Docs</span>
               <ArrowRight className="size-3.5" />
-            </button>
+            </a>
           </div>
         </div>
 

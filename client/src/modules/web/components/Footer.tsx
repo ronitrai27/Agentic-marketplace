@@ -82,7 +82,7 @@ export default function Footer() {
                 {c.links.map((l) => (
                   <li key={l}>
                     <a
-                      href="#"
+                      href={["SDK Docs", "Creator guide"].includes(l) ? "/docs" : "#"}
                       className="text-sm text-neutral-600 transition-colors hover:text-foreground"
                     >
                       {l}

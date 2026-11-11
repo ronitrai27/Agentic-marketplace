@@ -147,7 +147,7 @@ const STEPS = [
 export default function HowItWorks() {
   return (
     <section className="w-full bg-white px-4 pb-24 md:px-8 select-none">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-7xl">
         <h2 className="font-display text-4xl leading-[1.05] tracking-tight text-foreground md:text-5xl">
           How Catelog Marketplace works
         </h2>

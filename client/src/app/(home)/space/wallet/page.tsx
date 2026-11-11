@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "../../../../../convex/_generated/api";
+import { authClient } from "@/lib/auth-client";
 
 const PRESETS = [5, 10, 25, 50];
 
@@ -33,6 +34,7 @@ function releaseIn(at: number) {
 
 export default function WalletPage() {
   const wallet = useQuery(api.wallet.getWallet);
+  const { data: session, isPending: sessionPending } = authClient.useSession();
   const [clientId, setClientId] = useState<string | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
 
@@ -340,10 +342,14 @@ export default function WalletPage() {
                 Payment Method
               </span>
 
-              {loadingConfig ? (
+              {sessionPending || loadingConfig ? (
                 <div className="h-10 flex items-center justify-center text-xs text-muted-foreground">
                   <Loader2 className="size-4 animate-spin mr-1.5" /> Loading
                   PayPal Sandbox...
+                </div>
+              ) : !session ? (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                  You must be logged in to top up.
                 </div>
               ) : !clientId ? (
                 <div className="text-xs text-destructive text-center py-2">

@@ -98,13 +98,13 @@ export default function Hero({ children }: { children?: React.ReactNode }) {
               href="#pricing"
               className="transition-colors hover:text-foreground"
             >
-              Pricing
+              Marketplace
             </a>
             <a
-              href="#about"
+              href="/docs"
               className="transition-colors hover:text-foreground"
             >
-              About
+              Docs
             </a>
             <a
               href="#contact"
