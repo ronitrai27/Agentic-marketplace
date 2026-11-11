@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { toast } from "sonner";
 import { api } from "../../../../convex/_generated/api";
-import { creditsToUsd, mcpClient } from "../lib/mcp-clients";
+import { creditsToUsd, mcpClient } from "../mcp-clients";
 
 /** Number of MCP run requests waiting for the user (live). 0 until loaded. */
 export function usePendingApprovalCount(): number {

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Bot, Check, ChevronRight, Clock, Loader2, ShieldCheck, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { creditsToUsd, mcpClient, SUPPORTED_CLIENTS } from "@/modules/space/lib/mcp-clients";
+import { creditsToUsd, mcpClient, SUPPORTED_CLIENTS } from "@/modules/space/mcp-clients";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
