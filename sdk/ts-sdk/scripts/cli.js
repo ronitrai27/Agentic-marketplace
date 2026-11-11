@@ -7,7 +7,7 @@
  *   npx catelog --version | --help
  */
 
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -72,6 +72,22 @@ async function chooseLanguage() {
   }
 }
 
+const STAMP = /<!-- catelog-guide-version: ([^\s]+) -->/;
+
+/** Adds a version marker so later `init` runs can tell when a guide is out of date. */
+function stampGuide(text) {
+  const body = text.replace(STAMP, "").replace(/^\n+/, "");
+  return `<!-- catelog-guide-version: ${pkg.version} -->\n${body}`;
+}
+
+function guideVersion(file) {
+  try {
+    return STAMP.exec(readFileSync(file, "utf8"))?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
 async function init() {
   const yes = has("-y", "--yes");
   const force = has("-f", "--force");
@@ -101,13 +117,20 @@ async function init() {
   const source = join(pkgRoot, guide.file);
 
   if (existsSync(target) && !force) {
+    const installed = guideVersion(target);
+    if (installed !== pkg.version) {
+      console.log(
+        `! ${guide.file} is ${installed ? `from catelog v${installed}` : "from an older catelog"}; the installed SDK is v${pkg.version}. ` +
+          `Run \`npx catelog init --yes --force\` to update it (some options or examples may have changed).`,
+      );
+    }
     if (!interactive || !(await confirm(`${guide.file} already exists. Overwrite it?`, false))) {
       console.log(`Kept your existing ${guide.file}. Use --force to overwrite.`);
       return;
     }
   }
 
-  if (existsSync(source)) copyFileSync(source, target);
+  if (existsSync(source)) writeFileSync(target, stampGuide(readFileSync(source, "utf8")));
   else writeFileSync(target, "");
 
   console.log(`✔ Added ${target} (${guide.label})`);

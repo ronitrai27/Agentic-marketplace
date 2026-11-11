@@ -1,0 +1,27 @@
+{
+  "name": "job-hunt-pro",
+  "version": "0.1.0",
+  "description": "Search-verify-research loop job agent (FreeHire + SerpAPI Google Jobs/Glassdoor). Haiku + gpt-4.1-mini only.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "serve": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.102",
+    "@ai-sdk/openai": "^4.0.114",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ai": "^7.0.169",
+    "catelog": "^1.3.0",
+    "dotenv": "^18.0.10",
+    "fflate": "^0.8.3",
+    "unpdf": "^2.1.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

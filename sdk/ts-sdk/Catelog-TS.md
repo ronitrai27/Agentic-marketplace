@@ -112,7 +112,7 @@ Everything you call on `stream` inside `execute()` becomes a **Server-Sent Event
 | You call | SSE event sent | Use it for |
 | :--- | :--- | :--- |
 | `stream.progress(percent, message?)` | `task.progress` | Progress bar + status text (0–100) |
-| `stream.step(label)` | `task.progress` (0%) | "Now doing X" labels |
+| `stream.step(label)` | `task.progress` (keeps the last percent) | "Now doing X" labels; the bar never jumps back |
 | `stream.delta(text, type?)` | `task.delta` | Live LLM tokens. `type` = `"text"` (default) or `"json_patch"` |
 | `stream.write(text)` / `stream.chunk(text)` | `task.delta` | Aliases for `delta` |
 | `stream.activity(type, data?)` | `task.activity` | Tool calls, searches, DB queries |
@@ -453,6 +453,28 @@ createAgent({
 ```
 
 Works the same with `generateText`. Multi-step runs (tools, `maxSteps`) report the total usage of all steps.
+
+**Non-streaming calls (`generateObject`, `generateText`) made yourself.** The adapter only sees streams, so report each call with `ctx.usage.record()`. Many short calls in one run are fine; Catelog sums them per model.
+
+```ts
+import { generateObject } from "ai";
+
+async execute({ input, usage, signal }) {
+  const t = Date.now();
+  const res = await generateObject({ model, schema, prompt: input.prompt, abortSignal: signal });
+  usage.record({
+    model: res.response?.modelId ?? "gpt-4.1-mini",
+    provider: "openai",
+    tokens: { prompt: res.usage.inputTokens, completion: res.usage.outputTokens, total: res.usage.totalTokens },
+    latencyMs: Date.now() - t,
+  });
+  return { output: res.object };
+}
+```
+
+Cost is never estimated: add `costUsd` only if the provider returned it.
+
+**Cancellation.** When the buyer disconnects or the deadline passes, `signal` aborts and `stream.isClosed()` becomes `true`. Pass `signal` to every LLM call and `fetch` (`abortSignal: signal` in the AI SDK), and check `stream.isClosed()` between steps of a long loop. The run ends with `task.failed` and code `TASK_CANCELED`.
 
 ### C. OpenAI SDK, chat completions
 

@@ -2,7 +2,7 @@
 
 > Installed by `npx catelog init`. Read it yourself, or point your coding assistant at it.
 
-`catelog` turns any AI agent (OpenAI, Vercel AI SDK, LangGraph, or plain TypeScript) into a marketplace-ready HTTP service. You write one `execute()` function; the SDK provides:
+`catelog` turns any AI agent (Claude Agent SDK, OpenAI, Vercel AI SDK, LangGraph, or plain TypeScript) into a marketplace-ready HTTP service. You write one `execute()` function; the SDK provides:
 
 | Endpoint | Purpose |
 | :--- | :--- |
@@ -54,8 +54,8 @@ import { createAgent } from "catelog";
 import { z } from "zod";
 
 const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Summarizer",
-  description: "Summarizes text",
   inputSchema: z.object({ text: z.string().min(1) }),
   async execute({ input, stream }) {
     stream.progress(20, "Reading...");
@@ -69,6 +69,37 @@ agent.listen(3000);   // alias: agent.serve(3000)
 
 - **Return** a value → task completes. **Throw** → task fails. You never set task state by hand.
 - Returning `{ output, telemetry? }` or a plain object both work.
+
+---
+
+### Do I need a separate server file?
+
+**No.** `catelog` *is* the server. Pick one:
+
+| You have... | Do this |
+| :--- | :--- |
+| Nothing yet (new agent) | `agent.listen(3000)`. Done, that is the whole server. |
+| An existing Express / Fastify / `http` / Next.js server | `agent.handleRequest(req, res)` inside it. No second port, no second process. |
+
+A file like `server.ts` is just *where you call* `createAgent()` and `listen()`. Put them in your existing entry file if you like.
+
+```ts
+// Existing Express app: add the agent as one more route group
+import express from "express";
+import { agent } from "./my-agent.js";
+
+const app = express();
+app.get("/", (_req, res) => res.send("my existing app"));
+
+app.use("/agent", (req, res) => agent.handleRequest(req, res));   // /agent/health, /agent/schema, /agent/execute, /agent/tasks/:id
+app.use(express.json());                                           // your own body parser goes AFTER the mount
+
+app.listen(3000);
+```
+
+> **Gotcha:** `handleRequest` reads the raw request body itself. Do **not** run `express.json()` (or any body parser) before the mount, or `/execute` will hang because the body was already consumed. Mount the agent first, or only apply the parser to your own routes.
+
+When you register on the marketplace, give it the URL that serves `/health` and `/schema` (e.g. `https://api.example.com/agent`).
 
 ---
 
@@ -179,13 +210,108 @@ for (;;) {
 The adapters read the framework's stream and call `stream.delta` / `stream.activity` for you:
 
 ```ts
-import { pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeAsyncIterableStream } from "catelog";
+import { pipeOpenAiStream, pipeAiSdkStream, pipeLangGraphStream, pipeClaudeAgentStream, pipeAsyncIterableStream } from "catelog";
 
 return pipeOpenAiStream(await openai.chat.completions.create({ model, messages, stream: true }), stream);
 return pipeAiSdkStream(streamText({ model, prompt }), stream);                 // Vercel AI SDK
 return pipeLangGraphStream(graph, { input }, stream, { signal });              // LangGraph
+return pipeClaudeAgentStream(query({ prompt, options }), stream, { signal });   // Claude Agent SDK
 return pipeAsyncIterableStream(myAsyncGenerator(), stream);                    // CrewAI, LlamaIndex, custom
 ```
+
+### Recipes: Claude Agent SDK, OpenAI, LangGraph
+
+All three live inside `execute()`. The agent file below is the *whole* integration (add `agent.listen(3000)` or mount it, see above).
+
+**Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), one line with the adapter. Tool calls become `task.activity`, and cost, tokens and model go into telemetry:
+
+```ts
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { createAgent, pipeClaudeAgentStream } from "catelog";
+import { z } from "zod";
+
+export const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
+  name: "Claude Researcher",
+  mode: "async",                                   // Claude runs take 10-60s
+  inputSchema: z.object({ prompt: z.string() }),
+  async execute({ input, stream, signal, metric }) {
+    const run = query({
+      prompt: input.prompt,
+      options: {
+        model: "claude-haiku-5-5",
+        tools: ["WebSearch", "WebFetch"], allowedTools: ["WebSearch", "WebFetch"],
+        permissionMode: "dontAsk", settingSources: [], persistSession: false,
+        maxTurns: 10, maxBudgetUsd: 0.15,          // hard spend cap per run
+      },
+    });
+    return pipeClaudeAgentStream(run, stream, {
+      signal,                                      // client leaves / timeout => query.interrupt()
+      onUsage: (t) => metric.gauge("cost_usd", t.cost_usd ?? 0),   // optional: keep cost even when the run fails
+    });                                            // => { output: { text }, telemetry }
+  },
+});
+```
+
+Want typed JSON back instead of text? Add `outputFormat: { type: "json_schema", schema }` to the query options and pass `parse` to the adapter:
+
+```ts
+const Out = z.object({ answer: z.string() });
+const { $schema, ...schema } = z.toJSONSchema(Out) as Record<string, unknown>;   // the Claude CLI rejects "$schema"
+// query options: outputFormat: { type: "json_schema", schema }
+return pipeClaudeAgentStream(run, stream, { signal, parse: (v) => Out.parse(v) });   // => { output: { answer }, telemetry }
+```
+
+The adapter maps Claude failures to Catelog error codes: rate limit / overloaded → `MODEL_RATE_LIMIT` (retryable), budget cap → `BUDGET_EXCEEDED`, out of turns → `TOOL_FAILURE`, bad structured output → `INTERNAL_CRASH`. Full production example: `Agents/JobFitAgent/`.
+
+**OpenAI SDK**, one line with the adapter (streams tokens, captures model + usage):
+
+```ts
+import OpenAI from "openai";
+import { createAgent, pipeOpenAiStream } from "catelog";
+const client = new OpenAI();
+
+export const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
+  name: "OpenAI Assistant",
+  inputSchema: z.object({ prompt: z.string() }),
+  async execute({ input, stream }) {
+    const res = await client.chat.completions.create({
+      model: "gpt-4o-mini", stream: true, stream_options: { include_usage: true },
+      messages: [{ role: "user", content: input.prompt }],
+    });
+    return pipeOpenAiStream(res, stream);          // => { output: { text }, telemetry }
+  },
+});
+```
+
+(Responses API / web search: use `pipeOpenAiResponsesStream(await client.responses.create({...}), stream)`.)
+
+**LangGraph (TypeScript)**, one line; each graph node becomes a `task.activity` event:
+
+```ts
+import { createAgent, pipeLangGraphStream } from "catelog";
+import { graph } from "./my-graph.js";             // your compiled StateGraph
+
+export const agent = createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
+  name: "Research Graph",
+  mode: "async",
+  inputSchema: z.object({ topic: z.string() }),
+  async execute({ input, stream, signal }) {
+    return pipeLangGraphStream(graph, { messages: [input.topic] }, stream, { signal });
+  },
+});
+```
+
+| Framework | How | Telemetry you get for free |
+| :--- | :--- | :--- |
+| Claude Agent SDK | `pipeClaudeAgentStream` | model, tokens, cost, turns, per-tool counts |
+| OpenAI | `pipeOpenAiStream` / `pipeOpenAiResponsesStream` | model, tokens (+ cost for Responses) |
+| LangGraph | `pipeLangGraphStream` | nodes visited |
+| Vercel AI SDK | `pipeAiSdkStream` | tokens, tool calls |
+
+> Adapter output shape: OpenAI/AI SDK adapters return `{ text }`; LangGraph returns the last node's output. If your `outputSchema` needs a different shape, call the framework yourself and `return { output, telemetry }`.
 
 ### Events in `async` mode
 
@@ -217,6 +343,7 @@ Pass `last_seq` back as `?since=` to receive only new events. `step`, `progress`
 ```ts
 // Conversational: ask a question, then continue when the buyer answers
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "SQL Assistant",
   mode: "conversational",
   async execute({ input, needInput, session, stream }) {
@@ -244,11 +371,239 @@ On resume the client sends `POST /execute` with the new `input` and the `resume_
 | `signal` | `AbortSignal`: pass to `fetch` / LLM calls so cancellation stops the work |
 | `log` | `log.info/warn/error/debug(message, data?)` |
 | `metric` | `metric.count/gauge/timing(name, value)` → sent in telemetry |
+| `usage` | `usage.record({ model, provider?, tokens })` reports an LLM call to telemetry (see *Tracing and telemetry*) |
 | `runId`, `metadata`, `deadlineMs`, `resumeToken` | Run info from the marketplace |
 | `needInput(opts)` | Pause for buyer input (conversational mode) |
 | `session` | `get/set/getAll` state that persists across turns |
 
 Custom errors: `throw Object.assign(new Error("Out of credits"), { code: "MODEL_RATE_LIMIT", retryable: true })`.
+
+## Tracing and telemetry usage using catelog sdk
+
+The marketplace needs to see **which model your agent used and how many tokens it spent**. The dry run in the
+registration flow (Step 2) will not let you continue without it. Cost is calculated by the marketplace from
+tokens, so you never report prices.
+
+**What you must make visible, per LLM call:** model name and token counts (prompt + completion).
+Everything else (cached tokens, latency, cost) is optional. Nothing here can crash your agent.
+
+### Find your stack, copy the code
+
+| You use | Do this | Extra setup |
+| :--- | :--- | :--- |
+| Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) | [A](#a-claude-agent-sdk) | none |
+| Vercel AI SDK (`ai`) | [B](#b-vercel-ai-sdk) | none |
+| OpenAI SDK, chat completions | [C](#c-openai-sdk-chat-completions) | `stream_options` |
+| OpenAI SDK, Responses API | [D](#d-openai-sdk-responses-api) | none |
+| LangGraph | [E](#e-langgraph) | none |
+| LangChain (model, chain, `createReactAgent`) | [F](#f-langchain-without-langgraph) | none |
+| Anthropic SDK (`@anthropic-ai/sdk`), Groq, Ollama, Mistral, Gemini, fine-tuned, anything else | [G](#g-anything-else-one-line) | none |
+| Many calls inside libraries you can't edit (Mastra, LlamaIndex, ...) | [H](#h-opentelemetry-for-everything-else) | OpenTelemetry |
+
+Imports used below:
+
+```ts
+import {
+  createAgent,
+  pipeClaudeAgentStream,
+  pipeAiSdkStream,
+  pipeOpenAiStream,
+  pipeOpenAiResponsesStream,
+  pipeLangGraphStream,
+  createLangChainUsageHandler,
+  catelogSpanProcessor,
+} from "catelog";
+```
+
+### A. Claude Agent SDK
+
+```ts
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal }) {
+    const run = query({ prompt: input.prompt, options: { model: "claude-haiku-5-5" } });
+    return pipeClaudeAgentStream(run, stream, { signal });
+  },
+});
+```
+
+Captured automatically: every model used, tokens, cache tokens, and the **real cost** the Claude Agent SDK reports.
+
+### B. Vercel AI SDK
+
+```ts
+import { streamText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal }) {
+    const result = streamText({
+      model: openai("gpt-4o"),
+      prompt: input.prompt,
+      abortSignal: signal,
+    });
+    return pipeAiSdkStream(result, stream);
+  },
+});
+```
+
+Works the same with `generateText`. Multi-step runs (tools, `maxSteps`) report the total usage of all steps.
+
+### C. OpenAI SDK, chat completions
+
+```ts
+import OpenAI from "openai";
+const client = new OpenAI();
+
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal }) {
+    const completion = await client.chat.completions.create(
+      {
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: input.prompt }],
+        stream: true,
+        stream_options: { include_usage: true }, // REQUIRED when streaming, or OpenAI sends no token counts
+      },
+      { signal },
+    );
+    return pipeOpenAiStream(completion, stream);
+  },
+});
+```
+
+Without `stream_options: { include_usage: true }` OpenAI returns no usage while streaming and the dry run will fail
+the usage check. Non-streaming calls need nothing extra. OpenRouter, Groq, Together and any other
+OpenAI-compatible endpoint work the same way: point the client's `baseURL` at them.
+
+### D. OpenAI SDK, Responses API
+
+```ts
+const response = await client.responses.create({ model: "gpt-5", input: input.prompt });
+return pipeOpenAiResponsesStream(response, stream);
+```
+
+### E. LangGraph
+
+```ts
+createAgent({
+  name: "My Agent",
+  maxTimeoutMinute: 5,
+  async execute({ input, stream, signal, usage }) {
+    return pipeLangGraphStream(compiledGraph, { messages: [{ role: "user", content: input.prompt }] }, stream, {
+      signal,
+      usage, // <- this one line captures the model and tokens of EVERY LLM call inside the graph
+    });
+  },
+});
+```
+
+If you call `graph.invoke()` yourself instead of the adapter, pass the handler:
+
+```ts
+async execute({ input, usage }) {
+  const result = await graph.invoke({ messages: [...] }, { callbacks: [createLangChainUsageHandler(usage)] });
+  return { output: { text: result.messages.at(-1).content } };
+}
+```
+
+### F. LangChain without LangGraph
+
+Same handler, passed as a callback to the model, chain or agent:
+
+```ts
+import { ChatOpenAI } from "@langchain/openai";
+
+async execute({ input, usage }) {
+  const model = new ChatOpenAI({ model: "gpt-4.1-mini" });
+  const res = await model.invoke(input.prompt, { callbacks: [createLangChainUsageHandler(usage)] });
+  return { output: { text: String(res.content) } };
+}
+```
+
+Or attach it once when you build the model: `new ChatOpenAI({ model: "...", callbacks: [createLangChainUsageHandler(usage)] })`.
+The handler reads `usage_metadata` and the provider's model name from every call, including inside chains and agents.
+
+### G. Anything else (one line)
+
+If you call a model with any other library, report the call yourself with `usage.record(...)` right after it returns.
+Take the numbers from the provider's response, never from your own estimate.
+
+```ts
+// Anthropic SDK
+const msg = await anthropic.messages.create({ model: "claude-sonnet-5-5", max_tokens: 1024, messages });
+usage.record({
+  model: msg.model,
+  provider: "anthropic",
+  tokens: {
+    prompt: msg.usage.input_tokens,
+    completion: msg.usage.output_tokens,
+    cached: msg.usage.cache_read_input_tokens ?? undefined,
+  },
+});
+
+// Groq / Ollama / Mistral / a fine-tuned model: same shape
+const res = await groq.chat.completions.create({ model: "llama-3.3-70b-versatile", messages });
+usage.record({
+  model: res.model,
+  provider: "groq",
+  tokens: { prompt: res.usage?.prompt_tokens, completion: res.usage?.completion_tokens },
+});
+```
+
+`usage` comes from `execute({ usage })`. Call it once per LLM call. Several models in one run are fine; each is listed separately.
+Pass `costUsd` only if the provider itself returned a price (for example OpenRouter's `usage.cost`).
+
+### H. OpenTelemetry (for everything else)
+
+If a library makes the LLM calls for you and already emits OpenTelemetry spans (Vercel AI SDK with telemetry on,
+OpenLLMetry, Mastra, ...), add our span processor once at startup, **before** `agent.listen()`:
+
+```ts
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { catelogSpanProcessor } from "catelog";
+
+new NodeSDK({ spanProcessors: [catelogSpanProcessor] }).start();
+```
+
+Vercel AI SDK needs telemetry switched on per call: `generateText({ ..., experimental_telemetry: { isEnabled: true } })`.
+Spans are matched to the right run automatically, so concurrent runs never mix. If a framework also uses an adapter
+above, the data is not counted twice.
+
+### Check it before you register
+
+1. Start your agent and open **Register New Agent**. Step 2 (Dry run) shows the **Telemetry** tab.
+2. You should see `models` with your model name and `tokens`, plus a cost line.
+3. A red box saying *"Marketplace is not able to get your trace / insights"* means no model or no tokens arrived.
+
+| Problem | Fix |
+| :--- | :--- |
+| Red box, streaming OpenAI | Add `stream_options: { include_usage: true }` (section C) |
+| Red box, LangGraph / LangChain | Pass `usage` to `pipeLangGraphStream`, or add the callback handler (E, F) |
+| Red box, Vercel AI SDK with your own code | Return `pipeAiSdkStream(result, stream)`, or turn on `experimental_telemetry` + section H |
+| Red box, a library you can't edit | Section H, or wrap the call and use `usage.record` (G) |
+| Model shows as `unknown` | Your code sent tokens without a model name: pass `model` in `usage.record` |
+| Cost shows "price unknown" | The model is not in the marketplace price table yet. Tokens are still recorded. |
+| Agent never calls an LLM | Not supported yet: the dry run requires at least one model with tokens. |
+
+What you get in `telemetry` (shortened):
+
+```json
+{
+  "models": [{ "id": "gpt-4.1-mini-2025-04-14", "provider": "openai", "calls": 1,
+               "tokens": { "prompt": 100, "completion": 73, "total": 173 } }],
+  "llm_tokens": { "prompt": 100, "completion": 73, "total": 173 },
+  "model_used": "gpt-4.1-mini-2025-04-14"
+}
+```
+
+Failed and timed-out runs also keep the usage they already spent.
 
 ## 8. Production options
 
@@ -258,6 +613,7 @@ Custom errors: `throw Object.assign(new Error("Out of credits"), { code: "MODEL_
 import { createAgent, RedisJobStore, SqliteJobStore } from "catelog";
 
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "Deep Researcher",
   mode: "async",
   jobStore: new RedisJobStore(redisClient),                   // ioredis or node-redis client
@@ -272,6 +628,7 @@ Default is in-memory (lost on restart). With a store, finished results survive r
 
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: "My Agent",
   limits: {
     maxConcurrent: 10,                         // over the cap → 429 SERVER_BUSY
@@ -300,6 +657,8 @@ In Docker/Kubernetes set the stop grace period to at least `shutdownTimeoutMs` (
 import http from "node:http";
 http.createServer((req, res) => agent.handleRequest(req, res)).listen(3000);
 ```
+
+Express under a prefix (`app.use("/agent", (req, res) => agent.handleRequest(req, res))`) works too. Mount it **before** `express.json()`. See "Do I need a separate server file?" in section 4.
 
 ## 9. Authentication
 
@@ -331,18 +690,19 @@ curl -X POST http://localhost:3000/execute \
 
 1. Deploy the agent to a public URL.
 2. Dashboard → Creator Space → My Agents → Register New Agent.
-3. Paste the URL. The marketplace calls `/health` and `/schema`, then you set a price and publish.
+3. Paste the URL. The marketplace calls `/health` and `/schema`, then you pick tags, write a description (20 to 100 words) and set a price.
 
 ## 13. Quick reference
 
 ```ts
 createAgent({
+  maxTimeoutMinute: 5, // required: hard limit per run, in minutes
   name: string,                         // required
-  id?, version?, description?,
+  id?, version?,
   mode?: "sync" | "async" | "conversational",
   secretKey?, publicKey?,               // default: CATELOG_SECRET_KEY / CATELOG_PUBLIC_KEY
   inputSchema?, outputSchema?,          // Zod or JSON Schema
-  capabilities?: { max_timeout_seconds? },
+  maxTimeoutMinute: number,   // REQUIRED — hard per-run limit (sync, async, conversational)
   telemetry?: { endpoint?, disabled? },
   jobStore?: JobStore,                  // async persistence
   limits?: { maxConcurrent?, maxBodyBytes?, rateLimit?, trustProxy? },

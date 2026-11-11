@@ -34,6 +34,8 @@ export class SSEWriter implements AgentStream {
   private res: ServerResponse;
   private heartbeatTimer?: NodeJS.Timeout;
   private stepIndex = 0;
+  /** Last percent sent, so `step()` can relabel without moving the bar backwards. */
+  private lastPercent = 0;
   private deltaIndex = 0;
   private closed = false;
   private abortController: AbortController;
@@ -111,10 +113,11 @@ export class SSEWriter implements AgentStream {
   /** Progress tick (0-100). Does NOT complete the task. */
   public progress(percent: number, message?: string): void {
     this.stepIndex += 1;
+    this.lastPercent = Math.min(100, Math.max(0, percent));
     const payload: TaskProgressEvent = {
       event: "task.progress",
       run_id: this.runId,
-      percent: Math.min(100, Math.max(0, percent)),
+      percent: this.lastPercent,
       message,
       step: this.stepIndex,
       timestamp: Date.now(),
@@ -147,9 +150,9 @@ export class SSEWriter implements AgentStream {
     this.sendEvent("task.activity", payload);
   }
 
-  /** Legacy step (maps to progress internally) */
+  /** Relabel the current step. Keeps the last percent (0 before any progress), so the bar never jumps back. */
   public step(label: string): void {
-    this.progress(0, label);
+    this.progress(this.lastPercent, label);
   }
 
   /** Convenience alias for delta */
