@@ -1,17 +1,21 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { Check, Loader2, ShieldCheck, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, Loader2, ShieldCheck, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { creditsToUsd, mcpClient, SUPPORTED_CLIENTS } from "@/modules/space/lib/mcp-clients";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
-/** "Approve and allow up to" choices, in credits (100 credits = $1). Applies to external (MCP) agents only. */
+/** "Approve and allow future runs up to" choices, in credits (100 credits = $1). External (MCP) agents only. */
 const ALLOW_PRESETS = [100, 500, 1000];
+/** Auto-approve limit choices; 0 = always ask. */
+const LIMIT_CHOICES = [0, 100, 500, 1000];
 
 function minsLeft(at: number) {
   return Math.max(0, Math.ceil((at - Date.now()) / 60_000));
@@ -25,21 +29,34 @@ function prettyInput(json: string) {
   }
 }
 
+function ClientLogo({ name, size = 36 }: { name: string | null; size?: number }) {
+  const client = mcpClient(name);
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-xl border bg-white dark:bg-neutral-100"
+      style={{ width: size, height: size }}
+      title={client.label}
+    >
+      {client.logo ? (
+        <Image src={client.logo} alt={client.label} width={size / 2} height={size / 2} className="object-contain" />
+      ) : (
+        <Bot className="size-4 text-neutral-500" />
+      )}
+    </span>
+  );
+}
+
 function Approvals() {
   const highlight = useSearchParams().get("id");
   const pending = useQuery(api.mcpRuns.myPending);
   const settings = useQuery(api.mcpRuns.getSettings);
-  const decide = useMutation(api.mcpRuns.decide);
   const wallet = useQuery(api.wallet.getWallet);
+  const decide = useMutation(api.mcpRuns.decide);
   const setAutoApprove = useMutation(api.mcpRuns.setAutoApprove);
   const [busy, setBusy] = useState<string | null>(null);
-  const [limit, setLimit] = useState("");
 
   const available = wallet ? Math.max(0, wallet.credits - wallet.escrow) : null;
-
-  useEffect(() => {
-    if (settings) setLimit(String(settings.autoApproveCredits));
-  }, [settings]);
+  const limit = settings?.autoApproveCredits ?? 0;
 
   async function answer(id: string, approve: boolean, alwaysAllowCredits?: number) {
     setBusy(id);
@@ -47,7 +64,7 @@ function Approvals() {
       const res = await decide({ requestId: id as Id<"mcp_run_requests">, approve, alwaysAllowCredits });
       if (!res.ok) toast.error(res.message ?? "Could not complete that.");
       else if (!approve) toast.success("Denied.");
-      else if (alwaysAllowCredits) toast.success(`Approved. Future runs up to $${alwaysAllowCredits / 100} start automatically.`);
+      else if (alwaysAllowCredits) toast.success(`Approved. Future runs up to ${creditsToUsd(alwaysAllowCredits)} start automatically.`);
       else toast.success("Approved. The run is starting.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Something went wrong.");
@@ -56,108 +73,161 @@ function Approvals() {
     }
   }
 
-  async function saveLimit() {
+  async function saveLimit(credits: number) {
     try {
-      await setAutoApprove({ credits: Number(limit) });
-      toast.success("Saved.");
+      await setAutoApprove({ credits });
+      toast.success(credits === 0 ? "Auto-approve is off." : `Runs up to ${creditsToUsd(credits)} start automatically.`);
     } catch {
-      toast.error("Enter a number of credits between 0 and 10000.");
+      toast.error("Could not save that.");
     }
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Run approvals</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Assistants connected through MCP (Claude, Codex, Hermes...) ask here before an agent runs. Credits are held only
-          after you approve, and charged only if the run succeeds.
-          {available !== null && <> Wallet available: <strong>{Math.round(available * 100) / 100} credits</strong>.</>}
-        </p>
-      </div>
+    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Agent approvals</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Runs requested by your coding assistants. Credits are held only after you approve, and charged only if the run
+            succeeds.
+          </p>
+        </div>
+        {available !== null && (
+          <div className="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium">
+            <Wallet className="size-3.5 text-muted-foreground" />
+            {creditsToUsd(available)}
+          </div>
+        )}
+      </header>
 
-      {pending === undefined ? (
-        <Loader2 className="size-5 animate-spin text-neutral-400" />
-      ) : pending.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-neutral-500">Nothing is waiting for approval.</p>
-      ) : (
-        <ul className="space-y-3">
-          {pending.map((r) => (
-            <li
-              key={r.id}
-              className={`rounded-2xl border p-4 ${r.id === highlight ? "border-neutral-900 ring-1 ring-neutral-900" : ""}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-medium">{r.agentName}</p>
-                  <p className="text-xs text-neutral-500">
-                    Requested by {r.clientName ?? "an MCP client"} · expires in {minsLeft(r.expiresAt)} min
-                  </p>
-                </div>
-                <p className="shrink-0 text-sm font-medium">up to {r.holdCredits} credits</p>
-              </div>
-              <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-neutral-100 p-3 text-xs dark:bg-neutral-900">
-                {prettyInput(r.inputPreview)}
-              </pre>
-              {available !== null && available < r.holdCredits && (
-                <p className="mt-3 text-xs text-red-600">
-                  Not enough credits: this run can cost up to {r.holdCredits} and you have {Math.round(available * 100) / 100}{" "}
-                  available. Top up your wallet to approve.
-                </p>
-              )}
-              <div className="mt-3 flex gap-2">
-                <Button variant="outline" disabled={busy === r.id} onClick={() => answer(r.id, false)}>
-                  <X className="mr-1 size-4" /> Deny
-                </Button>
-                <Button
-                  disabled={busy === r.id || (available !== null && available < r.holdCredits)}
-                  onClick={() => answer(r.id, true)}
-                >
-                  {busy === r.id ? <Loader2 className="mr-1 size-4 animate-spin" /> : <Check className="mr-1 size-4" />}
-                  Approve and run
-                </Button>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-                <span>Or approve and allow future runs up to</span>
-                {ALLOW_PRESETS.filter((c) => c >= r.holdCredits).map((c) => (
-                  <Button
-                    key={c}
-                    size="sm"
-                    variant="outline"
-                    disabled={busy === r.id || (available !== null && available < r.holdCredits)}
-                    onClick={() => answer(r.id, true, c)}
-                  >
-                    ${c / 100}
-                  </Button>
-                ))}
-                <span>per run</span>
-              </div>
-            </li>
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span>Works with</span>
+        <div className="flex items-center gap-2">
+          {SUPPORTED_CLIENTS.map((c) => (
+            <span key={c.label} className="flex items-center gap-1.5 rounded-full border px-2.5 py-1">
+              <Image src={c.logo} alt="" width={14} height={14} className="size-3.5 object-contain dark:rounded-sm dark:bg-white dark:p-px" />
+              {c.label}
+            </span>
           ))}
-        </ul>
-      )}
-
-      <div className="rounded-2xl border p-4">
-        <div className="flex items-center gap-2 font-medium">
-          <ShieldCheck className="size-4" /> Auto-approve small runs
-        </div>
-        <p className="mt-1 text-sm text-neutral-500">
-          Runs whose maximum cost is at or under this many credits start without asking (100 credits = $1). 0 means always ask.
-        </p>
-        <div className="mt-3 flex gap-2">
-          <Input type="number" min={0} max={10000} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />
-          <Button variant="outline" onClick={saveLimit}>
-            Save
-          </Button>
         </div>
       </div>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">
+          Waiting for you{pending && pending.length > 0 ? ` (${pending.length})` : ""}
+        </h2>
+
+        {pending === undefined ? (
+          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        ) : pending.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed py-12 text-center">
+            <ShieldCheck className="size-6 text-muted-foreground" strokeWidth={1.5} />
+            <p className="text-sm text-muted-foreground">Nothing is waiting for approval.</p>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {pending.map((r) => {
+              const client = mcpClient(r.clientName);
+              const short = available !== null && available < r.holdCredits;
+              const disabled = busy === r.id || short;
+              return (
+                <li
+                  key={r.id}
+                  className={cn("rounded-2xl border p-4", r.id === highlight && "border-foreground ring-1 ring-foreground")}
+                >
+                  <div className="flex items-start gap-3">
+                    <ClientLogo name={r.clientName} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">
+                        <span className="font-medium">{client.label}</span>
+                        <span className="text-muted-foreground"> wants to run </span>
+                        <span className="font-medium">{r.agentName}</span>
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="size-3" /> expires in {minsLeft(r.expiresAt)} min
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-medium">up to {creditsToUsd(r.holdCredits)}</p>
+                  </div>
+
+                  <details className="group mt-3">
+                    <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                      <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
+                      View input
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs">{prettyInput(r.inputPreview)}</pre>
+                  </details>
+
+                  {short && (
+                    <p className="mt-3 text-xs text-red-600">
+                      Not enough credits: you have {creditsToUsd(available ?? 0)} available. Top up your wallet to approve.
+                    </p>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Button size="sm" disabled={disabled} onClick={() => answer(r.id, true)}>
+                      {busy === r.id ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <Check className="mr-1 size-3.5" />}
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={busy === r.id} onClick={() => answer(r.id, false)}>
+                      <X className="mr-1 size-3.5" /> Deny
+                    </Button>
+                    <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span>Approve and allow up to</span>
+                      {ALLOW_PRESETS.filter((c) => c >= r.holdCredits).map((c) => (
+                        <Button
+                          key={c}
+                          size="xs"
+                          variant="outline"
+                          disabled={disabled}
+                          onClick={() => answer(r.id, true, c)}
+                        >
+                          {creditsToUsd(c)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="space-y-3 rounded-2xl border p-4">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <ShieldCheck className="size-4" /> Auto-approve
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Runs from your assistants that cost up to this amount start without asking. Anything higher still needs your
+          approval.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {LIMIT_CHOICES.map((c) => (
+            <Button
+              key={c}
+              size="sm"
+              variant={limit === c ? "default" : "outline"}
+              disabled={settings === undefined}
+              onClick={() => saveLimit(c)}
+            >
+              {c === 0 ? "Always ask" : `Up to ${creditsToUsd(c)}`}
+            </Button>
+          ))}
+          {settings && !LIMIT_CHOICES.includes(limit) && (
+            <Button size="sm" variant="default" disabled>
+              Up to {creditsToUsd(limit)}
+            </Button>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
 
 export default function ApprovalsPage() {
   return (
-    <Suspense fallback={<Loader2 className="m-6 size-5 animate-spin text-neutral-400" />}>
+    <Suspense fallback={<Loader2 className="m-6 size-5 animate-spin text-muted-foreground" />}>
       <Approvals />
     </Suspense>
   );

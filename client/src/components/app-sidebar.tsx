@@ -22,8 +22,11 @@ import {
   ChevronDown,
   Home,
   History,
+  Layers,
   LogOut,
   Receipt,
+  Rocket,
+  ShieldCheck,
   Sparkles,
   Store,
   Wallet,
@@ -35,6 +38,28 @@ import { LogoutDialog } from "@/modules/space/components/logout-dialog";
 import { ActiveRunsIndicator, RecentRunsList, useSidebarRuns } from "@/modules/space/components/runs/active-runs-pill";
 import { ChatHistoryNav } from "@/modules/space/components/chat-history-nav";
 import { CardDitherBackground } from "@/components/ui/card-dither-background";
+import { ApprovalToaster, usePendingApprovalCount } from "@/modules/space/components/use-pending-approvals";
+
+/** Collapsed by default under "More". */
+const MORE_LINKS = [
+  { label: "Creator space", href: "/space/creator", icon: Rocket },
+  { label: "Agents approval", href: "/space/approvals", icon: ShieldCheck },
+];
+
+function CountBadge({ count, className }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-label={`${count} waiting for approval`}
+      className={cn(
+        "ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white",
+        className,
+      )}
+    >
+      {count > 9 ? "9+" : count}
+    </span>
+  );
+}
 
 const NAV_LINKS = [
   { label: "Home", href: "/space", icon: Home },
@@ -49,6 +74,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
   const { active: activeRuns, finished } = useSidebarRuns();
   const [recentOpen, setRecentOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const pendingApprovals = usePendingApprovalCount();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -181,6 +208,47 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuItem>
                 );
               })}
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="More"
+                  aria-expanded={moreOpen}
+                  onClick={() => setMoreOpen((v) => !v)}
+                  className="h-9 cursor-pointer gap-2.5 rounded-lg px-3 text-[13px] font-medium text-black hover:bg-black/5 hover:text-black dark:text-white dark:hover:bg-white/10 dark:hover:text-white"
+                >
+                  <Layers className="size-4 text-neutral-600" strokeWidth={1.75} />
+                  <span>More</span>
+                  <span className="ml-auto flex items-center gap-1.5 group-data-[collapsible=icon]:hidden">
+                    {!moreOpen && <CountBadge count={pendingApprovals} className="ml-0" />}
+                    <ChevronDown
+                      className={cn("size-4 text-neutral-600 transition-transform", moreOpen && "rotate-180")}
+                    />
+                  </span>
+                </SidebarMenuButton>
+                {moreOpen && (
+                  <ul className="mt-0.5 ml-5 flex flex-col gap-0.5 border-l border-neutral-300/70 pl-2 group-data-[collapsible=icon]:hidden dark:border-neutral-700">
+                    {MORE_LINKS.map(({ label, href, icon: Icon }) => {
+                      const active = pathname === href || pathname.startsWith(`${href}/`);
+                      return (
+                        <li key={href}>
+                          <Link
+                            href={href}
+                            aria-current={active ? "page" : undefined}
+                            className={cn(
+                              "flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-black hover:bg-black/5 dark:text-white dark:hover:bg-white/10",
+                              active && "bg-black/[0.07] dark:bg-white/10",
+                            )}
+                          >
+                            <Icon className="size-4 text-neutral-600" strokeWidth={1.75} />
+                            <span>{label}</span>
+                            {href === "/space/approvals" && <CountBadge count={pendingApprovals} />}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </SidebarMenuItem>
             </SidebarMenu>
             <ChatHistoryNav />
           </SidebarGroup>
@@ -261,6 +329,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarRail />
       </Sidebar>
 
+      <ApprovalToaster />
       <LogoutDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
     </>
   );
