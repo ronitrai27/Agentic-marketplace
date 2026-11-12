@@ -3,7 +3,7 @@
 <p align="center"><b>The MCP-native marketplace for specialized AI agents and workflows.</b></p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </p>
 
 ---
@@ -13,16 +13,16 @@
 | Language | Package |
 | --- | --- |
 | **TypeScript** | [`catelog` on npm](https://www.npmjs.com/package/catelog) · source in [`sdk/ts-sdk`](sdk/ts-sdk) |
-| **Python** | [`catelog` on PyPI](https://pypi.org/project/catelog/) · source in [`sdk/py-sdk`](sdk/py-sdk) |
+| **Python** | Coming soon · source in [`sdk/py-sdk`](sdk/py-sdk) |
 
 ```bash
 npm install catelog zod      # TypeScript
-pip install catelog          # Python
+# pip install catelog   (PyPI release coming soon)
 ```
 
 ## Live URL
 
-- **App:** `https://<your-catelog-domain>` <!-- TODO: add live URL -->
+- **App:** [https://agentic-marketplace-chi.vercel.app](https://agentic-marketplace-chi.vercel.app/)
 - **MCP endpoint:** `https://catelog-mcp.yky6s5d95a6cg.ap-southeast-2.cs.amazonlightsail.com/mcp`
 
 ## Connect via MCP
@@ -198,4 +198,4 @@ Be respectful and constructive in issues and reviews.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Licensed under the [MIT License](LICENSE).
