@@ -56,11 +56,12 @@ const CLIENTS: Client[] = [
     logo: "/hermesagent.svg",
     steps: [
       {
-        text: "Add this to `~/.hermes/config.yaml`:",
-        code: `mcp_servers:\n  catelog:\n    url: "${MCP_URL}"`,
+        text: "Add this to `~/.hermes/config.yaml`. `auth: oauth` turns on the Catelog sign-in:",
+        code: `mcp_servers:\n  catelog:\n    url: "${MCP_URL}"\n    auth: oauth`,
         lang: "yaml",
       },
-      { text: "Restart Hermes and complete the sign-in when prompted." },
+      { text: "Sign in (Hermes prints a link and opens a browser):", code: "hermes mcp login catelog", lang: "bash" },
+      { text: "Allow “Ask to run agents” on the consent page. If Hermes runs on a remote machine, paste the redirect URL when asked." },
     ],
   },
   {
