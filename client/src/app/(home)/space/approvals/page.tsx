@@ -5,7 +5,8 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { Bot, Check, ChevronRight, Clock, Loader2, ShieldCheck, Wallet, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, History, Loader2, ShieldCheck, Wallet, X } from "lucide-react";
+import { CardDitherBackground } from "@/components/ui/card-dither-background";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { creditsToUsd, mcpClient, SUPPORTED_CLIENTS } from "@/modules/space/mcp-clients";
@@ -29,7 +30,7 @@ function prettyInput(json: string) {
   }
 }
 
-function ClientLogo({ name, size = 36 }: { name: string | null; size?: number }) {
+function ClientLogo({ name, size = 44 }: { name: string | null; size?: number }) {
   const client = mcpClient(name);
   return (
     <span
@@ -38,7 +39,7 @@ function ClientLogo({ name, size = 36 }: { name: string | null; size?: number })
       title={client.label}
     >
       {client.logo ? (
-        <Image src={client.logo} alt={client.label} width={size / 2} height={size / 2} className="object-contain" />
+        <Image src={client.logo} alt={client.label} width={Math.round(size * 0.56)} height={Math.round(size * 0.56)} className="object-contain" />
       ) : (
         <Bot className="size-4 text-neutral-500" />
       )}
@@ -49,6 +50,8 @@ function ClientLogo({ name, size = 36 }: { name: string | null; size?: number })
 function Approvals() {
   const highlight = useSearchParams().get("id");
   const pending = useQuery(api.mcpRuns.myPending);
+  const recent = useQuery(api.mcpRuns.myRecent);
+  const [showRecent, setShowRecent] = useState(false);
   const settings = useQuery(api.mcpRuns.getSettings);
   const wallet = useQuery(api.wallet.getWallet);
   const decide = useMutation(api.mcpRuns.decide);
@@ -105,7 +108,7 @@ function Approvals() {
         <div className="flex items-center gap-2">
           {SUPPORTED_CLIENTS.map((c) => (
             <span key={c.label} className="flex items-center gap-1.5 rounded-full border px-2.5 py-1">
-              <Image src={c.logo} alt="" width={14} height={14} className="size-3.5 object-contain dark:rounded-sm dark:bg-white dark:p-px" />
+              <Image src={c.logo} alt="" width={18} height={18} className="size-[18px] object-contain dark:rounded-sm dark:bg-white dark:p-px" />
               {c.label}
             </span>
           ))}
@@ -113,9 +116,61 @@ function Approvals() {
       </div>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">
-          Waiting for you{pending && pending.length > 0 ? ` (${pending.length})` : ""}
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium">
+            Waiting for you{pending && pending.length > 0 ? ` (${pending.length})` : ""}
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowRecent((v) => !v)}
+            aria-expanded={showRecent}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
+              showRecent && "border-foreground text-foreground",
+            )}
+          >
+            <History className="size-3.5" /> Recent requests
+          </button>
+        </div>
+
+        {showRecent && (
+          <div className="overflow-hidden rounded-xl border border-neutral-300 dark:border-neutral-700">
+            {recent === undefined ? (
+              <Loader2 className="m-4 size-4 animate-spin text-muted-foreground" />
+            ) : recent.length === 0 ? (
+              <p className="p-4 text-center text-xs text-muted-foreground">No requests yet.</p>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-neutral-300 text-muted-foreground dark:border-neutral-700">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Requested by</th>
+                    <th className="px-3 py-2 font-medium">Action</th>
+                    <th className="px-3 py-2 font-medium">Agent</th>
+                    <th className="px-3 py-2 text-right font-medium">Credits</th>
+                    <th className="px-3 py-2 text-right font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.map((r) => (
+                    <tr key={r.id} className="border-b border-neutral-300 last:border-0 dark:border-neutral-700">
+                      <td className="px-3 py-2">
+                        <ClientLogo name={r.clientName} size={28} />
+                      </td>
+                      <td className="px-3 py-2 capitalize">{r.status}</td>
+                      <td className="px-3 py-2 font-medium">{r.agentName}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {r.credits !== null ? creditsToUsd(r.credits) : "-"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-muted-foreground">
+                        {new Date(r.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         {pending === undefined ? (
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -194,15 +249,16 @@ function Approvals() {
         )}
       </section>
 
-      <section className="space-y-3 rounded-2xl border p-4">
-        <div className="flex items-center gap-2 text-sm font-medium">
+      <section className="relative space-y-3 overflow-hidden rounded-2xl border p-4">
+        <CardDitherBackground className="opacity-40" />
+        <div className="relative flex items-center gap-2 text-sm font-medium">
           <ShieldCheck className="size-4" /> Auto-approve
         </div>
-        <p className="text-sm text-muted-foreground">
+        <p className="relative text-sm text-muted-foreground">
           Runs from your assistants that cost up to this amount start without asking. Anything higher still needs your
           approval.
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="relative flex flex-wrap gap-2">
           {LIMIT_CHOICES.map((c) => (
             <Button
               key={c}

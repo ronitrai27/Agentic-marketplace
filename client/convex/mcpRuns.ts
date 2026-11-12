@@ -252,6 +252,37 @@ export const myPending = query({
   },
 });
 
+/** The user's already-answered requests (approved, denied, expired, failed), newest first. Drives "Recent requests". */
+export const myRecent = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const rows = await ctx.db
+      .query("mcp_run_requests")
+      .withIndex("by_user_created", (q) => q.eq("userId", identity.subject))
+      .order("desc")
+      .take(40);
+    const now = Date.now();
+    const done = rows.filter((r) => r.status !== "pending" || r.expiresAt <= now).slice(0, 20);
+    return Promise.all(
+      done.map(async (r) => {
+        const run = r.runId ? await ctx.db.get(r.runId) : null;
+        return {
+          id: r._id as string,
+          agentName: r.agentName,
+          clientName: r.clientName ?? null,
+          status: (r.status === "pending" ? "expired" : r.status) as "approved" | "denied" | "expired" | "failed",
+          /** What the run actually cost; null when it never ran or has not finished charging. */
+          credits: run?.chargedCredits ?? null,
+          holdCredits: r.holdCredits,
+          at: r.decidedAt ?? r.createdAt,
+        };
+      }),
+    );
+  },
+});
+
 /** Approve (hold the money and start the run) or deny. Failures are recorded on the request and returned, not thrown. */
 export const decide = mutation({
   args: {
